@@ -8,6 +8,8 @@
 
 VBLIS is a powerful, privacy-focused local image search application that uses advanced Vision-Language Models (VLMs) like SigLIP-2 and CLIP to index and search your local image library semantically.
 
+![VBLIS main UI screenshot](demo-pic-main-ui.JPG)
+
 ## Features
 
 - **Semantic Search**: Search your images using natural language (e.g., "sunset at the beach" or "a cat sitting on a laptop").
