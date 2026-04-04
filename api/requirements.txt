@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+Pillow
+pillow-heif
+chromadb
+torch>=2.6
+transformers
+tqdm
+huggingface_hub
