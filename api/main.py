@@ -170,7 +170,7 @@ class BatchFolderRequest(BaseModel):
 
 class GPUSettingsRequest(BaseModel):
     use_gpu: bool
-    batch_size: int = 16
+    batch_size: int = 0
     precision_mode: str = "auto"
 
 @app.get("/settings/gpu")
@@ -181,6 +181,7 @@ async def get_gpu_settings():
         "cuda_available": torch.cuda.is_available(),
         "device": model_manager.device,
         "batch_size": model_manager.batch_size,
+        "effective_batch_size": model_manager.get_effective_batch_size(),
         "precision_mode": model_manager.precision_mode,
         "active_precision": model_manager.get_active_precision(),
         "fp16_supported": model_manager.check_fp16_support(),
@@ -193,7 +194,7 @@ async def get_gpu_settings():
 async def set_gpu_settings(req: GPUSettingsRequest):
     print(f"Set GPU settings requested: GPU={req.use_gpu}, Batch={req.batch_size}, Precision={req.precision_mode}")
     result = model_manager.set_device(req.use_gpu)
-    model_manager.batch_size = max(1, req.batch_size)
+    model_manager.batch_size = max(0, req.batch_size)
     model_manager.precision_mode = req.precision_mode.lower()
     
     # Persist settings to .env
@@ -366,39 +367,6 @@ async def list_models():
         "active_model": model_manager.current_model_id,
         "models": results
     }
-
-@app.post("/models/delete")
-async def delete_model(req: ModelDeleteRequest):
-    if model_manager.is_downloading:
-        raise HTTPException(status_code=400, detail="Cannot delete model while a download is in progress.")
-        
-    model_id = req.model_name
-    # If the model to delete is currently active, unload it first
-    if model_manager.current_model_id == model_id:
-        model_manager.unload_model()
-    
-    # Deriving collection name manually to delete index if requested
-    if req.delete_index:
-        collection_name = model_id.replace("/", "_").replace("-", "_")
-        indexer.delete_collection(collection_name)
-
-    hub_path = api_dir / "models" / "hub"
-    folder_name = f"models--{model_id.replace('/', '--')}"
-    model_path = hub_path / folder_name
-    
-    if not model_path.exists():
-        raise HTTPException(status_code=404, detail="Model folder not found locally.")
-        
-    try:
-        shutil.rmtree(model_path)
-        # Also try to remove locks if any
-        locks_path = hub_path / ".locks" / folder_name
-        if locks_path.exists():
-            shutil.rmtree(locks_path)
-            
-        return {"status": "success", "message": f"Model {model_id} deleted successfully."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
 
 @app.post("/index/cancel")
 def cancel_indexing():

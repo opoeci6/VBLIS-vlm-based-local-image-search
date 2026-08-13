@@ -23,9 +23,10 @@ class ModelManager:
         self.device = "cuda" if self.use_gpu else "cpu"
         
         try:
-            self.batch_size = max(1, int(os.getenv("BATCH_SIZE", "16")))
+            val = int(os.getenv("BATCH_SIZE", "0"))
+            self.batch_size = max(0, val)
         except ValueError:
-            self.batch_size = 16
+            self.batch_size = 0  # Default to 0 (Auto)
             
         self.precision_mode = os.getenv("PRECISION_MODE", "auto").lower()
         
@@ -33,11 +34,34 @@ class ModelManager:
         hub_path = api_dir / "models" / "hub"
         self.downloader = ModelDownloader(hub_path)
         
-        print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Available: {cuda_available}, Batch: {self.batch_size}, Precision Mode: {self.precision_mode})")
+        print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Available: {cuda_available}, Configured Batch: {self.batch_size}, Precision Mode: {self.precision_mode})")
         self.is_loading_model = False
         self.oom_triggered = False
         self.oom_triggered_count = 0
         self._lock = threading.Lock()
+
+    def get_effective_batch_size(self) -> int:
+        """Calculate effective working batch size based on settings and available hardware/model."""
+        if self.batch_size > 0:
+            return self.batch_size
+            
+        # batch_size == 0 -> Auto Dynamic Calculation
+        if not self.use_gpu or not torch.cuda.is_available():
+            return 8  # CPU processing default
+            
+        try:
+            total_vram_mb = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
+            model_id = (self.current_model_id or "").lower()
+            is_large_model = "so400m" in model_id or "384" in model_id or "naflex" in model_id
+            
+            if total_vram_mb >= 11000:   # 12GB+ GPUs
+                return 32 if is_large_model else 64
+            elif total_vram_mb >= 7000:  # 8GB GPUs
+                return 16 if is_large_model else 32
+            else:                        # <= 6GB GPUs
+                return 8 if is_large_model else 16
+        except Exception:
+            return 16
 
     def check_fp16_support(self) -> bool:
         if not torch.cuda.is_available():

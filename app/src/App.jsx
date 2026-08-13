@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut, XCircle } from 'lucide-react';
+import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut, XCircle, Copy } from 'lucide-react';
 import TitleBar from './TitleBar';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -43,6 +43,18 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
       }}
       onClick={() => onSelect(res)}
     >
+      {res.isDuplicate && (
+        <div 
+          className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full text-[10px] font-bold text-white shadow-lg backdrop-blur-md flex items-center gap-1.5"
+          style={{ backgroundColor: `${res.dupeColor || '#6366f1'}ee` }}
+        >
+          {res.duplicateType === 'exact' ? <Copy className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+          <span>
+            {res.duplicateType === 'exact' ? 'Exact Copy' : 'Visual Duplicate'} ({res.otherPaths ? res.otherPaths.length + 1 : 2})
+          </span>
+        </div>
+      )}
+
       <img
         src={`${API_BASE}/image?path=${encodeURIComponent(res.path)}&size=thumbnail`}
         alt="Result"
@@ -142,7 +154,8 @@ function App() {
     use_gpu: false, 
     cuda_available: false, 
     device: 'cpu', 
-    batch_size: 16, 
+    batch_size: 0, 
+    effective_batch_size: 16,
     precision_mode: 'auto', 
     active_precision: 'fp32', 
     fp16_supported: false, 
@@ -175,7 +188,7 @@ function App() {
     
     const payload = {
       use_gpu: updates.use_gpu !== undefined ? updates.use_gpu : gpuSettings.use_gpu,
-      batch_size: updates.batch_size !== undefined ? Number(updates.batch_size) : (gpuSettings.batch_size || 16),
+      batch_size: updates.batch_size !== undefined ? Number(updates.batch_size) : (gpuSettings.batch_size ?? 0),
       precision_mode: updates.precision_mode !== undefined ? updates.precision_mode : (gpuSettings.precision_mode || 'auto')
     };
 
@@ -331,48 +344,107 @@ function App() {
   }, [status.is_indexing, status.errors, status.last_task_id]);
 
   const processSearchResults = (dataResults) => {
-    // Duplicate detection logic
-    const resultsWithDuplicates = dataResults || [];
-    const hashGroups = {};
+    const results = dataResults || [];
+    if (results.length === 0) return [];
 
-    resultsWithDuplicates.forEach(res => {
-      // Fallback to path if hash is missing (though normally they should have hashes)
-      const id = res.hash || res.path;
-      if (id) {
-        if (!hashGroups[id]) hashGroups[id] = [];
-        hashGroups[id].push(res.path);
+    // Helper: Fast dot product for normalized vectors
+    const vectorDot = (a, b) => {
+      if (!a || !b || a.length !== b.length) return 0;
+      let sum = 0;
+      for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
+      return sum;
+    };
+
+    // 1. Group exact file duplicates by SHA-256 hash
+    const exactHashGroups = {};
+    results.forEach(res => {
+      if (res.hash) {
+        if (!exactHashGroups[res.hash]) exactHashGroups[res.hash] = [];
+        exactHashGroups[res.hash].push(res.path);
       }
     });
 
-    // Filter groups that actually have duplicates
-    const dupeGroups = Object.entries(hashGroups)
-      .filter(([_, paths]) => paths.length > 1)
-      .reduce((acc, [id, paths]) => ({ ...acc, [id]: paths }), {});
+    const exactDupeHashes = new Set(
+      Object.keys(exactHashGroups).filter(h => exactHashGroups[h].length > 1)
+    );
 
-    // Assign unique colors to each dupe group
-    // Vibrant colors for outlines
-    const vibrantColors = [
-      '#6366f1', // Indigo
-      '#ef4444', // Red
-      '#10b981', // Emerald
-      '#f59e0b', // Amber
-      '#ec4899', // Pink
-      '#8b5cf6', // Violet
-      '#06b6d4', // Cyan
-      '#f97316', // Orange
-    ];
+    // 2. Pairwise Cosine Similarity for Visual Duplicates (Threshold >= 0.985)
+    const VISUAL_THRESHOLD = 0.985;
+    const visualGroups = []; // Array of Sets of indices
 
-    const dupeColorMap = {};
-    Object.keys(dupeGroups).forEach((hash, i) => {
-      dupeColorMap[hash] = vibrantColors[i % vibrantColors.length];
+    for (let i = 0; i < results.length; i++) {
+      for (let j = i + 1; j < results.length; j++) {
+        const itemA = results[i];
+        const itemB = results[j];
+
+        // Skip if already exact hash match
+        if (itemA.hash && itemB.hash && itemA.hash === itemB.hash) continue;
+
+        if (itemA.embedding && itemB.embedding) {
+          const sim = vectorDot(itemA.embedding, itemB.embedding);
+          if (sim >= VISUAL_THRESHOLD) {
+            let targetGroup = visualGroups.find(g => g.has(i) || g.has(j));
+            if (!targetGroup) {
+              targetGroup = new Set();
+              visualGroups.push(targetGroup);
+            }
+            targetGroup.add(i);
+            targetGroup.add(j);
+          }
+        }
+      }
+    }
+
+    // Color Palettes
+    const exactColors = ['#8b5cf6', '#ec4899', '#3b82f6', '#06b6d4']; // Purple / Pink / Blue / Cyan
+    const visualColors = ['#f59e0b', '#10b981', '#f97316', '#eab308']; // Amber / Emerald / Orange / Yellow
+
+    const exactColorMap = {};
+    let exactIdx = 0;
+    exactDupeHashes.forEach(h => {
+      exactColorMap[h] = exactColors[exactIdx % exactColors.length];
+      exactIdx++;
     });
 
-    return resultsWithDuplicates.map(res => ({
-      ...res,
-      isDuplicate: !!dupeGroups[res.hash],
-      dupeColor: dupeColorMap[res.hash] || null,
-      otherPaths: dupeGroups[res.hash] ? dupeGroups[res.hash].filter(p => p !== res.path) : []
-    }));
+    const visualColorMap = new Map();
+    const visualPathsMap = new Map();
+    visualGroups.forEach((gSet, gIdx) => {
+      const color = visualColors[gIdx % visualColors.length];
+      const indices = Array.from(gSet);
+      const paths = indices.map(idx => results[idx].path);
+      indices.forEach(idx => {
+        visualColorMap.set(idx, color);
+        visualPathsMap.set(idx, paths.filter(p => p !== results[idx].path));
+      });
+    });
+
+    // 3. Map final enhanced result objects
+    return results.map((res, idx) => {
+      const isExact = !!(res.hash && exactDupeHashes.has(res.hash));
+      const isVisual = !isExact && visualColorMap.has(idx);
+
+      let duplicateType = null;
+      let dupeColor = null;
+      let otherPaths = [];
+
+      if (isExact) {
+        duplicateType = 'exact';
+        dupeColor = exactColorMap[res.hash];
+        otherPaths = exactHashGroups[res.hash].filter(p => p !== res.path);
+      } else if (isVisual) {
+        duplicateType = 'visual';
+        dupeColor = visualColorMap.get(idx);
+        otherPaths = visualPathsMap.get(idx) || [];
+      }
+
+      return {
+        ...res,
+        isDuplicate: isExact || isVisual,
+        duplicateType: duplicateType, // 'exact' | 'visual' | null
+        dupeColor: dupeColor,
+        otherPaths: otherPaths
+      };
+    });
   };
 
   const handleSearch = async (e) => {
@@ -912,20 +984,23 @@ function App() {
                       Batch Size
                     </label>
                     <select
-                      value={gpuSettings.batch_size || 16}
+                      value={gpuSettings.batch_size ?? 0}
                       onChange={(e) => handleUpdatePerformanceSettings({ batch_size: e.target.value })}
                       disabled={isSwitchingGpu}
                       className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
-                      <option value="1">1 (Single / Safest)</option>
+                      <option value="0">Auto</option>
+                      <option value="1">1</option>
                       <option value="4">4</option>
                       <option value="8">8</option>
-                      <option value="16">16 (Recommended)</option>
-                      <option value="32">32 (High VRAM)</option>
-                      <option value="64">64 (Max Throughput)</option>
+                      <option value="16">16</option>
+                      <option value="32">32</option>
+                      <option value="64">64</option>
                     </select>
                     <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1">
-                      Higher batch size increases GPU utilization.
+                      {gpuSettings.batch_size === 0 
+                        ? `Auto mode active (Effective batch size: ${gpuSettings.effective_batch_size || 16})` 
+                        : "Higher batch size increases GPU utilization."}
                     </span>
                   </div>
 
@@ -1755,9 +1830,18 @@ function App() {
               Match Score: {Math.round(selectedImage.score * 100)}%
             </p>
             {selectedImage.isDuplicate && (
-              <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/20 border border-amber-500/30 rounded-lg text-amber-300 text-xs font-bold animate-in zoom-in-95 duration-300">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Duplicate detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}</span>
+              <div 
+                className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold animate-in zoom-in-95 duration-300 shadow-lg border"
+                style={{ 
+                  backgroundColor: `${selectedImage.dupeColor || '#6366f1'}25`,
+                  borderColor: `${selectedImage.dupeColor || '#6366f1'}60`,
+                  color: selectedImage.dupeColor || '#a5b4fc'
+                }}
+              >
+                {selectedImage.duplicateType === 'exact' ? <Copy className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
+                <span>
+                  {selectedImage.duplicateType === 'exact' ? 'Exact File Copy' : 'Visual Duplicate (98.5%+ Similarity)'} detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}
+                </span>
               </div>
             )}
             <p className="text-sm text-neutral-400 font-mono break-all max-w-3xl">
