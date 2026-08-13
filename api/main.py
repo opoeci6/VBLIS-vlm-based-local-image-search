@@ -293,7 +293,10 @@ async def get_status():
 
 @app.get("/models")
 async def list_models():
-    available = ["google/siglip2-base-patch16-224", "openai/clip-vit-base-patch32"]
+    available = ["google/siglip2-base-patch16-224",
+                 "openai/clip-vit-base-patch32",
+                 "google/siglip2-so400m-patch14-384",
+                 ]
     results = []
     hub_path = api_dir / "models" / "hub"
     for m in available:

@@ -9,3 +9,4 @@ torch>=2.6
 transformers
 tqdm
 huggingface_hub
+python-multipart
