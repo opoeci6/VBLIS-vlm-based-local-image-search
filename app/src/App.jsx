@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut } from 'lucide-react';
+import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut, XCircle } from 'lucide-react';
 import TitleBar from './TitleBar';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -138,12 +138,71 @@ function App() {
   const [selectedFolders, setSelectedFolders] = useState([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
-  const [gpuSettings, setGpuSettings] = useState({ use_gpu: false, cuda_available: false, device: 'cpu' });
+  const [gpuSettings, setGpuSettings] = useState({ 
+    use_gpu: false, 
+    cuda_available: false, 
+    device: 'cpu', 
+    batch_size: 16, 
+    precision_mode: 'auto', 
+    active_precision: 'fp32', 
+    fp16_supported: false, 
+    gpu_name: '' 
+  });
   const [isSwitchingGpu, setIsSwitchingGpu] = useState(false);
+  const [isCancellingIndexing, setIsCancellingIndexing] = useState(false);
   const lastToastedError = useRef(null);
   const prevIsDownloading = useRef(false);
   const prevIsIndexing = useRef(false);
   const prevLastTaskId = useRef(0);
+
+  const handleCancelIndexing = async () => {
+    if (isCancellingIndexing) return;
+    setIsCancellingIndexing(true);
+    try {
+      await fetch(`${API_BASE}/index/cancel`, { method: 'POST' });
+      setToast({ message: "Indexing cancellation requested.", type: 'info' });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Failed to cancel indexing.", type: 'error' });
+    } finally {
+      setIsCancellingIndexing(false);
+    }
+  };
+
+  const handleUpdatePerformanceSettings = async (updates) => {
+    if (isSwitchingGpu) return;
+    setIsSwitchingGpu(true);
+    
+    const payload = {
+      use_gpu: updates.use_gpu !== undefined ? updates.use_gpu : gpuSettings.use_gpu,
+      batch_size: updates.batch_size !== undefined ? Number(updates.batch_size) : (gpuSettings.batch_size || 16),
+      precision_mode: updates.precision_mode !== undefined ? updates.precision_mode : (gpuSettings.precision_mode || 'auto')
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/settings/gpu`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      setGpuSettings(data);
+      setToast({ message: "Performance settings updated.", type: 'success' });
+      
+      const resModels = await fetch(`${API_BASE}/models`);
+      const dataModels = await resModels.json();
+      setModels(dataModels);
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Failed to update settings.", type: 'error' });
+    } finally {
+      setIsSwitchingGpu(false);
+    }
+  };
+
+  const handleToggleGpu = async () => {
+    await handleUpdatePerformanceSettings({ use_gpu: !gpuSettings.use_gpu });
+  };
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -625,40 +684,7 @@ function App() {
     }
   };
 
-  const handleToggleGpu = async () => {
-    if (isSwitchingGpu) return;
-    setIsSwitchingGpu(true);
-    const newValue = !gpuSettings.use_gpu;
-    
-    try {
-      const res = await fetch(`${API_BASE}/settings/gpu`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ use_gpu: newValue })
-      });
-      const data = await res.json();
-      setGpuSettings(data);
-      
-      if (data.device === 'cuda' && newValue) {
-        setToast({ message: "GPU Acceleration enabled successfully.", type: 'success' });
-      } else if (data.device === 'cpu' && !newValue) {
-        setToast({ message: "Switched to CPU inference.", type: 'success' });
-      } else if (newValue && data.device === 'cpu') {
-        setToast({ message: "GPU requested but not available. Falling back to CPU.", type: 'warning' });
-      }
-      
-      // Refresh models state as the active model might have been reloaded
-      const resModels = await fetch(`${API_BASE}/models`);
-      const dataModels = await resModels.json();
-      setModels(dataModels);
-      
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Failed to update GPU settings.", type: 'error' });
-    } finally {
-      setIsSwitchingGpu(false);
-    }
-  };
+
 
   const handleClearImageSearch = () => {
     setImageSearchContext(null);
@@ -832,10 +858,10 @@ function App() {
             </h2>
             <div className="space-y-6">
               <div className="pt-2">
-                <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">Hardware Acceleration</label>
+                <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">Hardware Acceleration & Batching</label>
                 <div 
                   className={cn(
-                    "flex items-center justify-between p-3 border rounded-xl transition-all duration-200",
+                    "flex items-center justify-between p-3 border rounded-xl transition-all duration-200 mb-3",
                     gpuSettings.use_gpu && gpuSettings.cuda_available
                       ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30"
                       : "bg-gray-50 dark:bg-neutral-800/30 border-gray-100 dark:border-neutral-800"
@@ -845,7 +871,9 @@ function App() {
                     <span className="text-sm font-bold text-neutral-700 dark:text-neutral-200">NVIDIA GPU Support</span>
                     <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-medium">
                       {gpuSettings.cuda_available 
-                        ? (gpuSettings.use_gpu ? "Currently using CUDA" : "Directs tasks to GPU") 
+                        ? (gpuSettings.use_gpu 
+                            ? (gpuSettings.gpu_name ? `Using ${gpuSettings.gpu_name}` : "Currently using CUDA") 
+                            : "Directs tasks to GPU") 
                         : "No NVIDIA GPU detected"}
                     </span>
                   </div>
@@ -870,10 +898,66 @@ function App() {
                     )}
                   </button>
                 </div>
+
                 {!gpuSettings.cuda_available && (
-                  <p className="text-[10px] text-amber-500 font-medium mt-1.5 px-1 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> CUDA-capable GPU is required for this feature.
+                  <p className="text-[10px] text-amber-500 font-medium mt-1 mb-3 px-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> CUDA-capable GPU is required for GPU acceleration.
                   </p>
+                )}
+
+                {/* Batch Size & Precision Mode Grid */}
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div className="p-3 border border-gray-100 dark:border-neutral-800 rounded-xl bg-gray-50/50 dark:bg-neutral-800/20">
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Batch Size
+                    </label>
+                    <select
+                      value={gpuSettings.batch_size || 16}
+                      onChange={(e) => handleUpdatePerformanceSettings({ batch_size: e.target.value })}
+                      disabled={isSwitchingGpu}
+                      className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="1">1 (Single / Safest)</option>
+                      <option value="4">4</option>
+                      <option value="8">8</option>
+                      <option value="16">16 (Recommended)</option>
+                      <option value="32">32 (High VRAM)</option>
+                      <option value="64">64 (Max Throughput)</option>
+                    </select>
+                    <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1">
+                      Higher batch size increases GPU utilization.
+                    </span>
+                  </div>
+
+                  <div className="p-3 border border-gray-100 dark:border-neutral-800 rounded-xl bg-gray-50/50 dark:bg-neutral-800/20">
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                      Precision Mode
+                    </label>
+                    <select
+                      value={gpuSettings.precision_mode || 'auto'}
+                      onChange={(e) => handleUpdatePerformanceSettings({ precision_mode: e.target.value })}
+                      disabled={isSwitchingGpu}
+                      className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="auto">Auto ({gpuSettings.active_precision ? gpuSettings.active_precision.toUpperCase() : 'FP32'})</option>
+                      <option value="fp16">FP16 (Half Precision)</option>
+                      <option value="fp32">FP32 (Full Precision)</option>
+                    </select>
+                    <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1">
+                      {gpuSettings.fp16_supported ? "FP16 Tensor Cores supported" : "Auto fallback to FP32 for legacy GPUs"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* OOM Protection Badge - Only displayed if an OOM / VRAM spill event actually occurred */}
+                {(gpuSettings.oom_triggered || status.oom_triggered) && (
+                  <div className="mt-2.5 p-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg flex items-center justify-between text-[10px] text-amber-700 dark:text-amber-300 animate-in fade-in duration-200">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                      OOM / Memory Safety Fallback Triggered
+                    </span>
+                    <span className="text-[9px] opacity-90">Auto-scaled to micro-batches to protect VRAM</span>
+                  </div>
                 )}
               </div>
 
@@ -932,9 +1016,9 @@ function App() {
                               {isActive ? (
                                 <button
                                   onClick={handleUnloadModel}
-                                  disabled={isUnloadingModel}
+                                  disabled={isUnloadingModel || status.is_indexing}
                                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 rounded-lg font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-                                  title="Unload model to free GPU VRAM"
+                                  title={status.is_indexing ? "Cannot eject model while indexing is in progress" : "Unload model to free GPU VRAM"}
                                 >
                                   <LogOut className="w-3.5 h-3.5" />
                                   {isUnloadingModel ? "Unloading..." : "Eject"}
@@ -942,8 +1026,9 @@ function App() {
                               ) : m.downloaded ? (
                                   <button
                                     onClick={() => handleModelSwitch(m.id)}
-                                    disabled={isSwitchingModel || status.is_downloading}
+                                    disabled={isSwitchingModel || status.is_downloading || status.is_indexing}
                                   className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 dark:hover:bg-indigo-600 text-neutral-900 dark:text-white rounded-lg font-bold transition-all disabled:opacity-50 border border-gray-200 dark:border-transparent shadow-sm dark:shadow-none"
+                                  title={status.is_indexing ? "Cannot switch model while indexing is in progress" : "Activate model"}
                                 >
                                   {isSwitchingModel && pendingModel === m.id ? "..." : "Activate"}
                                 </button>
@@ -1012,8 +1097,8 @@ function App() {
                                 </button>
                               )}
 
-                              {/* Delete Action (Visible for any downloaded or incomplete model when NOT downloading) */}
-                              {(m.downloaded || m.incomplete) && !isDownloading && (
+                              {/* Delete Action (Visible for any downloaded or incomplete model when NOT downloading or indexing) */}
+                              {(m.downloaded || m.incomplete) && !isDownloading && !status.is_indexing && (
                                 <div className="relative ml-1">
                                   {showConfirmDeleteModel === m.id ? (
                                     <div className="flex flex-col items-end gap-1 animate-in slide-in-from-right-2 duration-200">
@@ -1437,7 +1522,18 @@ function App() {
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Extracting Embeddings ({status.progress})
               </span>
-              <span className="text-indigo-600 dark:text-indigo-400/80">{Math.round(status.percent)}%</span>
+              <div className="flex items-center gap-3">
+                <span className="text-indigo-600 dark:text-indigo-400/80">{Math.round(status.percent)}%</span>
+                <button
+                  onClick={handleCancelIndexing}
+                  disabled={isCancellingIndexing || status.cancel_requested}
+                  className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white text-xs font-semibold rounded-lg transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Stop and cancel current indexing task"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  {isCancellingIndexing || status.cancel_requested ? "Cancelling..." : "Cancel"}
+                </button>
+              </div>
             </div>
             <div className="w-full h-1.5 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
               <div
@@ -1827,9 +1923,9 @@ function App() {
                 </button>
                 <button
                   onClick={handleUnloadModel}
-                  disabled={isUnloadingModel}
+                  disabled={isUnloadingModel || status.is_indexing}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-                  title="Unload model to free GPU VRAM"
+                  title={status.is_indexing ? "Cannot eject model while indexing is in progress" : "Unload model to free GPU VRAM"}
                 >
                   <LogOut className="w-3.5 h-3.5 text-rose-500" />
                   {isUnloadingModel ? "Unloading..." : "Eject"}

@@ -90,6 +90,30 @@ def compute_hash(filepath):
             hasher.update(chunk)
     return hasher.hexdigest()
 
+def persist_active_model(model_name: str):
+    try:
+        env_path = api_dir / ".env"
+        lines = []
+        if env_path.exists():
+            with open(env_path, "r") as f:
+                lines = f.readlines()
+        
+        updated = False
+        new_lines = []
+        for line in lines:
+            if line.startswith("ACTIVE_MODEL="):
+                new_lines.append(f"ACTIVE_MODEL={model_name}\n")
+                updated = True
+            else:
+                new_lines.append(line)
+        if not updated:
+            new_lines.append(f"ACTIVE_MODEL={model_name}\n")
+            
+        with open(env_path, "w") as f:
+            f.writelines(new_lines)
+    except Exception as e:
+        print(f"Failed to persist active model: {e}")
+
 from model_manager import ModelManager
 from indexer import Indexer
 
@@ -99,11 +123,13 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize indexer and models gracefully
     print("Starting API backend...")
+    active_model = os.getenv("ACTIVE_MODEL", "google/siglip2-base-patch16-224")
     try:
-        model_manager.load_model("google/siglip2-base-patch16-224", local_files_only=True)
+        print(f"Loading last active model: {active_model}")
+        model_manager.load_model(active_model, local_files_only=True)
         indexer.switch_collection(model_manager.get_collection_name())
     except Exception as e:
-        print(f"[Notice] Default model not found locally: {e}. Ready for manual download.")
+        print(f"[Notice] Active model '{active_model}' not loaded: {e}. Ready for manual download.")
     yield
     print("Shutting down API backend...")
 
@@ -144,6 +170,8 @@ class BatchFolderRequest(BaseModel):
 
 class GPUSettingsRequest(BaseModel):
     use_gpu: bool
+    batch_size: int = 16
+    precision_mode: str = "auto"
 
 @app.get("/settings/gpu")
 async def get_gpu_settings():
@@ -151,15 +179,24 @@ async def get_gpu_settings():
     return {
         "use_gpu": model_manager.use_gpu,
         "cuda_available": torch.cuda.is_available(),
-        "device": model_manager.device
+        "device": model_manager.device,
+        "batch_size": model_manager.batch_size,
+        "precision_mode": model_manager.precision_mode,
+        "active_precision": model_manager.get_active_precision(),
+        "fp16_supported": model_manager.check_fp16_support(),
+        "gpu_name": model_manager.get_gpu_name(),
+        "oom_triggered": model_manager.oom_triggered,
+        "oom_triggered_count": model_manager.oom_triggered_count
     }
 
 @app.post("/settings/gpu")
 async def set_gpu_settings(req: GPUSettingsRequest):
-    print(f"Set GPU settings requested: {req.use_gpu}")
+    print(f"Set GPU settings requested: GPU={req.use_gpu}, Batch={req.batch_size}, Precision={req.precision_mode}")
     result = model_manager.set_device(req.use_gpu)
+    model_manager.batch_size = max(1, req.batch_size)
+    model_manager.precision_mode = req.precision_mode.lower()
     
-    # Persist setting to .env
+    # Persist settings to .env
     try:
         env_path = api_dir / ".env"
         lines = []
@@ -167,26 +204,41 @@ async def set_gpu_settings(req: GPUSettingsRequest):
             with open(env_path, "r") as f:
                 lines = f.readlines()
         
-        updated = False
+        settings_map = {
+            "USE_GPU=": f"USE_GPU={req.use_gpu}\n",
+            "BATCH_SIZE=": f"BATCH_SIZE={model_manager.batch_size}\n",
+            "PRECISION_MODE=": f"PRECISION_MODE={model_manager.precision_mode}\n"
+        }
+        
         new_lines = []
+        updated_keys = set()
         for line in lines:
-            if line.startswith("USE_GPU="):
-                new_lines.append(f"USE_GPU={req.use_gpu}\n")
-                updated = True
-            else:
+            matched = False
+            for key, val in settings_map.items():
+                if line.startswith(key):
+                    new_lines.append(val)
+                    updated_keys.add(key)
+                    matched = True
+                    break
+            if not matched:
                 new_lines.append(line)
         
-        if not updated:
-            new_lines.append(f"USE_GPU={req.use_gpu}\n")
+        for key, val in settings_map.items():
+            if key not in updated_keys:
+                new_lines.append(val)
             
         with open(env_path, "w") as f:
             f.writelines(new_lines)
     except Exception as e:
-        print(f"Failed to persist GPU setting: {e}")
+        print(f"Failed to persist GPU settings: {e}")
 
     if result["status"] == "error":
         raise HTTPException(status_code=500, detail=result["message"])
-    return result
+    
+    res_dict = await get_gpu_settings()
+    res_dict["status"] = "success"
+    res_dict["message"] = result["message"]
+    return res_dict
 
 @app.post("/search")
 def search_images(req: SearchQuery):
@@ -348,8 +400,50 @@ async def delete_model(req: ModelDeleteRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
 
+@app.post("/index/cancel")
+def cancel_indexing():
+    indexer.cancel_indexing()
+    return {"status": "success", "message": "Indexing cancellation requested."}
+
+@app.post("/models/delete")
+async def delete_model(req: ModelDeleteRequest):
+    if indexer.is_indexing:
+        raise HTTPException(status_code=400, detail="Cannot delete model while indexing is in progress.")
+    if model_manager.is_downloading:
+        raise HTTPException(status_code=400, detail="Cannot delete model while a download is in progress.")
+        
+    model_id = req.model_name
+    # If the model to delete is currently active, unload it first
+    if model_manager.current_model_id == model_id:
+        model_manager.unload_model()
+    
+    # Deriving collection name manually to delete index if requested
+    if req.delete_index:
+        collection_name = model_id.replace("/", "_").replace("-", "_")
+        indexer.delete_collection(collection_name)
+
+    hub_path = api_dir / "models" / "hub"
+    folder_name = f"models--{model_id.replace('/', '--')}"
+    model_path = hub_path / folder_name
+    
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model folder not found locally.")
+        
+    try:
+        shutil.rmtree(model_path)
+        # Also try to remove locks if any
+        locks_path = hub_path / ".locks" / folder_name
+        if locks_path.exists():
+            shutil.rmtree(locks_path)
+            
+        return {"status": "success", "message": f"Model {model_id} deleted successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
+
 @app.post("/models/download")
 async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTasks):
+    if indexer.is_indexing:
+        raise HTTPException(status_code=400, detail="Cannot download or switch model while indexing is in progress.")
     if model_manager.is_downloading:
         return {"status": "Error", "message": "A download is already in progress."}
     
@@ -357,6 +451,7 @@ async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTa
         try:
             model_manager.load_model(model_name, local_files_only=False)
             indexer.switch_collection(model_manager.get_collection_name())
+            persist_active_model(model_name)
             print(f"Successfully downloaded and loaded {model_name}")
         except Exception as e:
             error_msg = str(e)
@@ -375,16 +470,21 @@ async def cancel_download():
 
 @app.post("/models/switch")
 def switch_model(req: ModelSwitchRequest):
+    if indexer.is_indexing:
+        raise HTTPException(status_code=400, detail="Cannot switch model while indexing is in progress.")
     try:
         model_manager.load_model(req.model_name, local_files_only=True)
         # Switching models connects to a different ChromaDB collection
         indexer.switch_collection(model_manager.get_collection_name())
+        persist_active_model(req.model_name)
         return {"status": "Model switched correctly", "active_model": req.model_name}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Model not found locally: {str(e)}")
 
 @app.post("/models/unload")
 def unload_model():
+    if indexer.is_indexing:
+        raise HTTPException(status_code=400, detail="Cannot unload or eject model while indexing is in progress.")
     try:
         model_manager.unload_model()
         return {"status": "success", "message": "Model unloaded and VRAM cleared successfully."}

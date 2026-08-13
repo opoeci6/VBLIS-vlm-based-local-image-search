@@ -30,12 +30,17 @@ class Indexer:
             self.switch_collection(self.model_manager.get_collection_name())
             
         self.is_indexing = False
+        self.cancel_requested = False
         self.total_files = 0
         self.indexed_files = 0
         self.current_file = ""
         self.error_count = 0
         self.failed_files = []
         self.last_task_id = 0
+
+    def cancel_indexing(self):
+        self.cancel_requested = True
+        print("[Notice] Indexing cancellation requested by user.")
 
         
     def switch_collection(self, collection_name: str):
@@ -139,7 +144,9 @@ class Indexer:
             "download_eta": self.model_manager.download_eta,
             "download_error": self.model_manager.download_error,
             "cancel_download": self.model_manager.cancel_download,
-            "is_loading_model": self.model_manager.is_loading_model
+            "is_loading_model": self.model_manager.is_loading_model,
+            "oom_triggered": getattr(self.model_manager, "oom_triggered", False),
+            "cancel_requested": self.cancel_requested
         }
 
 
@@ -152,8 +159,11 @@ class Indexer:
             return  # Prevent concurrent indexing
             
         self.is_indexing = True
+        self.cancel_requested = False
         self.error_count = 0
         self.indexed_files = 0
+        self.model_manager.oom_triggered = False
+        self.model_manager.oom_triggered_count = 0
         
         # Ensure collection is set
         if not self.collection:
@@ -166,10 +176,14 @@ class Indexer:
             files_to_index = []
             
             for directory in folder_paths:
+                if self.cancel_requested:
+                    break
                 if not os.path.isdir(directory):
                     print(f"[Warning] Indexer: Skipping invalid directory {directory}")
                     continue
                 for root, _, files in os.walk(directory):
+                    if self.cancel_requested:
+                        break
                     for file in files:
                         if os.path.splitext(file)[1].lower() in valid_extensions:
                             files_to_index.append(os.path.join(root, file))
@@ -180,45 +194,93 @@ class Indexer:
             existing_results = self.collection.get(include=[])
             existing_ids = set(existing_results["ids"]) if existing_results and "ids" in existing_results else set()
             
-            for filepath in files_to_index:
-                self.current_file = filepath
-                
-                try:
-                    if filepath in existing_ids:
+            # Filter out already indexed files
+            pending_files = [f for f in files_to_index if f not in existing_ids]
+            self.indexed_files = self.total_files - len(pending_files)
+
+            batch_size = max(1, getattr(self.model_manager, "batch_size", 16))
+
+            for i in range(0, len(pending_files), batch_size):
+                if self.cancel_requested:
+                    print("[Notice] Indexing cancelled by user.")
+                    break
+
+                chunk_files = pending_files[i:i + batch_size]
+                if not chunk_files:
+                    continue
+                self.current_file = chunk_files[0]
+
+                valid_images = []
+                valid_metas = []
+                valid_ids = []
+
+                for filepath in chunk_files:
+                    if self.cancel_requested:
+                        break
+                    try:
+                        file_hash = compute_file_hash(filepath)
+
+                        # Try to reuse existing embedding for the same content
+                        existing_entries = self.collection.get(
+                            where={"hash": file_hash},
+                            include=["embeddings"],
+                            limit=1
+                        )
+
+                        if existing_entries.get("embeddings") is not None and len(existing_entries["embeddings"]) > 0:
+                            embedding = existing_entries["embeddings"][0]
+                            self.collection.add(
+                                embeddings=[embedding],
+                                metadatas=[{"path": filepath, "hash": file_hash}],
+                                ids=[filepath]
+                            )
+                            existing_ids.add(filepath)
+                            self.indexed_files += 1
+                        else:
+                            image = Image.open(filepath)
+                            valid_images.append(image)
+                            valid_metas.append({"path": filepath, "hash": file_hash})
+                            valid_ids.append(filepath)
+                    except Exception as e:
+                        print(f"Error preparing {filepath}: {e}")
+                        self.error_count += 1
+                        self.failed_files.append(filepath)
                         self.indexed_files += 1
-                        continue
-                        
-                    file_hash = compute_file_hash(filepath)
-                    
-                    # Try to reuse existing embedding for the same content
-                    existing_entries = self.collection.get(
-                        where={"hash": file_hash},
-                        include=["embeddings"],
-                        limit=1
-                    )
-                    
-                    if existing_entries.get("embeddings") is not None and len(existing_entries["embeddings"]) > 0:
-                        embedding = existing_entries["embeddings"][0]
-                    else:
-                        # Process image
-                        image = Image.open(filepath)
-                        embedding = self.model_manager.get_image_embedding(image)
-                    
-                    self.collection.add(
-                        embeddings=[embedding],
-                        metadatas=[{"path": filepath, "hash": file_hash}],
-                        ids=[filepath]
-                    )
-                    
-                    existing_ids.add(filepath)
-                    
-                except Exception as e:
-                    print(f"Error indexing {filepath}: {e}")
-                    self.error_count += 1
-                    self.failed_files.append(filepath)
-                
-                self.indexed_files += 1
-                
+
+                if valid_images:
+                    try:
+                        embeddings = self.model_manager.get_image_embeddings_batch(valid_images)
+                        self.collection.add(
+                            embeddings=embeddings,
+                            metadatas=valid_metas,
+                            ids=valid_ids
+                        )
+                        for fid in valid_ids:
+                            existing_ids.add(fid)
+                        self.indexed_files += len(valid_ids)
+                    except Exception as e:
+                        print(f"Batch embedding failed, falling back to item-by-item: {e}")
+                        for img, meta, fid in zip(valid_images, valid_metas, valid_ids):
+                            try:
+                                emb = self.model_manager.get_image_embedding(img)
+                                self.collection.add(
+                                    embeddings=[emb],
+                                    metadatas=[meta],
+                                    ids=[fid]
+                                )
+                                existing_ids.add(fid)
+                            except Exception as ex:
+                                print(f"Error indexing item fallback {fid}: {ex}")
+                                self.error_count += 1
+                                self.failed_files.append(fid)
+                            finally:
+                                self.indexed_files += 1
+                    finally:
+                        for img in valid_images:
+                            try:
+                                img.close()
+                            except Exception:
+                                pass
         finally:
             self.is_indexing = False
             self.current_file = ""

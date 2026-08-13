@@ -1,9 +1,10 @@
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import torch
 from PIL import Image
 from transformers import AutoProcessor, AutoModel
 import gc
 import time
-import os
 import threading
 from pathlib import Path
 from model_downloader import ModelDownloader
@@ -15,19 +16,51 @@ class ModelManager:
         self.processor = None
         self.model = None
         
-        # Read device preference from environment
+        # Read device and performance preferences from environment
         env_use_gpu = os.getenv("USE_GPU", "True").lower() == "true"
         cuda_available = torch.cuda.is_available()
         self.use_gpu = env_use_gpu and cuda_available
         self.device = "cuda" if self.use_gpu else "cpu"
         
+        try:
+            self.batch_size = max(1, int(os.getenv("BATCH_SIZE", "16")))
+        except ValueError:
+            self.batch_size = 16
+            
+        self.precision_mode = os.getenv("PRECISION_MODE", "auto").lower()
+        
         api_dir = Path(__file__).parent.resolve()
         hub_path = api_dir / "models" / "hub"
         self.downloader = ModelDownloader(hub_path)
         
-        print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Available: {cuda_available})")
+        print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Available: {cuda_available}, Batch: {self.batch_size}, Precision Mode: {self.precision_mode})")
         self.is_loading_model = False
+        self.oom_triggered = False
+        self.oom_triggered_count = 0
         self._lock = threading.Lock()
+
+    def check_fp16_support(self) -> bool:
+        if not torch.cuda.is_available():
+            return False
+        try:
+            major, minor = torch.cuda.get_device_capability()
+            # Compute capability 7.5+ (Turing / Ampere / Ada Lovelace) has native FP16 Tensor Cores
+            return major > 7 or (major == 7 and minor >= 5)
+        except Exception:
+            return False
+
+    def get_gpu_name(self) -> str:
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_name(0)
+        return "N/A"
+
+    def get_active_precision(self) -> str:
+        if self.precision_mode == "fp16":
+            return "fp16"
+        elif self.precision_mode == "fp32":
+            return "fp32"
+        else: # "auto"
+            return "fp16" if (self.use_gpu and self.check_fp16_support()) else "fp32"
 
     @property
     def is_downloading(self):
@@ -179,40 +212,97 @@ class ModelManager:
         return self.current_model_id.replace("/", "_").replace("-", "_")
 
     @torch.no_grad()
-    def get_image_embedding(self, image: Image.Image) -> list[float]:
-        print("Generating image embedding...")
+    def get_image_embeddings_batch(self, images: list[Image.Image]) -> list[list[float]]:
+        if not images:
+            return []
+
         # Atomic capture of model and processor
         with self._lock:
             model = self.model
             processor = self.processor
-            device = self.device
             
         if model is None or processor is None:
             raise RuntimeError("Model not loaded. Please select and download a model first.")
 
-        # Convert to RGB just in case it's RGBA or Grayscale
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-            
-        inputs = processor(images=image, return_tensors="pt")
-        
-        model_device = next(model.parameters()).device
-        inputs = {k: v.to(model_device) for k, v in inputs.items()}
-        
-        print(f"Inference session (Image) on: {model_device}")
-        image_features = model.get_image_features(**inputs)
-        
-        # Extract embeddings depending on the model output structure
-        if hasattr(image_features, "image_embeds"):
-            image_features = image_features.image_embeds
-        elif hasattr(image_features, "pooler_output"):
-            image_features = image_features.pooler_output
-            
-        if not isinstance(image_features, torch.Tensor) and isinstance(image_features, (list, tuple)):
-            image_features = image_features[0]
+        # VRAM Guard: Prevent Windows WDDM from spilling dedicated VRAM allocations into System Shared Memory
+        if self.use_gpu and torch.cuda.is_available() and len(images) > 1:
+            try:
+                free_bytes, total_bytes = torch.cuda.mem_get_info()
+                reserved_bytes = torch.cuda.memory_reserved()
+                allocated_bytes = torch.cuda.memory_allocated()
+                cached_free = max(0, reserved_bytes - allocated_bytes)
+                usable_free = free_bytes + cached_free
+                
+                # Windows DWM + Display OS overhead margin: ~850 MB / 15% reserved for display server
+                min_free = max(850 * 1024 * 1024, int(total_bytes * 0.15))
+                
+                if free_bytes < min_free or usable_free < min_free:
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                    free_bytes, total_bytes = torch.cuda.mem_get_info()
+                    reserved_bytes = torch.cuda.memory_reserved()
+                    allocated_bytes = torch.cuda.memory_allocated()
+                    usable_free = free_bytes + max(0, reserved_bytes - allocated_bytes)
+                    
+                    if free_bytes < min_free or usable_free < min_free:
+                        mid = len(images) // 2
+                        left_len, right_len = mid, len(images) - mid
+                        print(f"[VRAM Guard] OS Free VRAM ({free_bytes / 1024**2:.1f} MB) / Usable ({usable_free / 1024**2:.1f} MB) < threshold ({min_free / 1024**2:.1f} MB). Micro-batching batch_size={len(images)} -> ({left_len}, {right_len})...")
+                        self.oom_triggered = True
+                        self.oom_triggered_count += 1
+                        left_embeds = self.get_image_embeddings_batch(images[:mid])
+                        right_embeds = self.get_image_embeddings_batch(images[mid:])
+                        return left_embeds + right_embeds
+            except Exception as e:
+                pass
 
-        image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
-        return image_features.cpu().numpy().flatten().tolist()
+        rgb_images = [img.convert("RGB") if img.mode != "RGB" else img for img in images]
+
+        try:
+            inputs = processor(images=rgb_images, return_tensors="pt")
+            model_device = next(model.parameters()).device
+            inputs = {k: v.to(model_device) for k, v in inputs.items()}
+
+            active_precision = self.get_active_precision()
+            if active_precision == "fp16" and self.use_gpu:
+                with torch.cuda.amp.autocast(dtype=torch.float16):
+                    image_features = model.get_image_features(**inputs)
+            else:
+                image_features = model.get_image_features(**inputs)
+
+            if hasattr(image_features, "image_embeds"):
+                image_features = image_features.image_embeds
+            elif hasattr(image_features, "pooler_output"):
+                image_features = image_features.pooler_output
+
+            if not isinstance(image_features, torch.Tensor) and isinstance(image_features, (list, tuple)):
+                image_features = image_features[0]
+
+            image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+            return image_features.cpu().numpy().tolist()
+
+        except torch.cuda.OutOfMemoryError as oom:
+            self.oom_triggered = True
+            self.oom_triggered_count += 1
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+            if len(images) > 1:
+                mid = len(images) // 2
+                left_len, right_len = mid, len(images) - mid
+                print(f"[OOM Warning] CUDA Out of memory (batch_size={len(images)}). Flushing cache and micro-batching -> ({left_len}, {right_len})...")
+                left_embeds = self.get_image_embeddings_batch(images[:mid])
+                right_embeds = self.get_image_embeddings_batch(images[mid:])
+                return left_embeds + right_embeds
+            else:
+                print(f"[OOM Error] CUDA Out of memory on single item (batch_size=1).")
+                raise oom
+
+    @torch.no_grad()
+    def get_image_embedding(self, image: Image.Image) -> list[float]:
+        res = self.get_image_embeddings_batch([image])
+        return res[0] if res else []
 
     @torch.no_grad()
     def get_text_embedding(self, text: str) -> list[float]:
