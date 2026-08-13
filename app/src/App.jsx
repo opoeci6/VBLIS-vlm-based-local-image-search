@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react';
-import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info } from 'lucide-react';
+import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut } from 'lucide-react';
 import TitleBar from './TitleBar';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -113,8 +113,7 @@ function App() {
     cancel_download: false,
     is_loading_model: false
   });
-  const [showSettingsDownloadHint, setShowSettingsDownloadHint] = useState(false);
-  const [showGlobalDownloadHint, setShowGlobalDownloadHint] = useState(false);
+  const [modelLoadError, setModelLoadError] = useState(null);
 
 
   const [models, setModels] = useState({ active_model: '', models: [] });
@@ -123,6 +122,7 @@ function App() {
   const [pendingModel, setPendingModel] = useState("google/siglip2-base-patch16-224");
   const [backendReady, setBackendReady] = useState(false);
   const [isSwitchingModel, setIsSwitchingModel] = useState(false);
+  const [isUnloadingModel, setIsUnloadingModel] = useState(false);
   const [isDeletingModel, setIsDeletingModel] = useState(false);
   const [deleteIndexWithModel, setDeleteIndexWithModel] = useState(false);
   const [showConfirmDeleteModel, setShowConfirmDeleteModel] = useState(null);
@@ -192,16 +192,12 @@ function App() {
 
     fetchStatus();
     fetchGpuSettings();
-
-    let modelsLoaded = false;
-    fetchModels().then(success => { modelsLoaded = success; });
+    fetchModels();
 
     const interval = setInterval(() => {
       fetchStatus();
       fetchGpuSettings();
-      if (!modelsLoaded) {
-        fetchModels().then(success => { modelsLoaded = success; });
-      }
+      fetchModels();
     }, 1500);
 
     return () => {
@@ -237,6 +233,7 @@ function App() {
     // 2. Error case: download error detected
     if (status.download_error && status.download_error !== lastToastedError.current) {
       setToast({ message: `Download failed: ${status.download_error}`, type: 'error' });
+      setModelLoadError({ model: pendingModel, message: status.download_error });
       lastToastedError.current = status.download_error;
     }
 
@@ -472,6 +469,7 @@ function App() {
   const handleModelSwitch = async (model_name) => {
     setIsSwitchingModel(true);
     setShowSettings(false);
+    setModelLoadError(null);
     // Reset search state immediately when switching models
     setResults([]);
     setHasSearched(false);
@@ -485,12 +483,15 @@ function App() {
         body: JSON.stringify({ model_name })
       });
       if (!res.ok) {
-        if (res.status === 404) {
-          setModels(prev => ({ ...prev, active_model: '' }));
-          setPendingModel(model_name);
-        } else {
-          console.error("Failed to switch model:", res.statusText);
-        }
+        const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+        const errorMessage = errorData.detail || "Failed to load model into memory.";
+        setToast({ message: `Model load error: ${errorMessage}`, type: 'error' });
+        setModelLoadError({ model: model_name, message: errorMessage });
+        
+        // Refresh models list to ensure status is accurate
+        const resModels = await fetch(`${API_BASE}/models`);
+        const data = await resModels.json();
+        setModels(data);
         return;
       }
       // Refresh models to get correct active state and status
@@ -498,10 +499,36 @@ function App() {
       const data = await resModels.json();
       setModels(data);
       setPendingModel(model_name);
+      setModelLoadError(null);
+      setToast({ message: `Successfully activated ${model_name.split('/').pop()}`, type: 'success' });
     } catch (err) {
       console.error(err);
+      setToast({ message: `Network error while loading model: ${err.message}`, type: 'error' });
+      setModelLoadError({ model: model_name, message: err.message });
     } finally {
       setIsSwitchingModel(false);
+    }
+  };
+
+  const handleUnloadModel = async () => {
+    setIsUnloadingModel(true);
+    try {
+      const res = await fetch(`${API_BASE}/models/unload`, { method: 'POST' });
+      if (res.ok) {
+        setToast({ message: 'Model unloaded and GPU memory freed successfully.', type: 'success' });
+        // Refresh models list
+        const resModels = await fetch(`${API_BASE}/models`);
+        const data = await resModels.json();
+        setModels(data);
+      } else {
+        const error = await res.json();
+        setToast({ message: `Unload error: ${error.detail}`, type: 'error' });
+      }
+    } catch (err) {
+      console.error(err);
+      setToast({ message: 'Failed to unload model.', type: 'error' });
+    } finally {
+      setIsUnloadingModel(false);
     }
   };
 
@@ -515,6 +542,7 @@ function App() {
 
   const handleDownloadModel = async (model_name) => {
     lastToastedError.current = null;
+    setModelLoadError(null);
     setStatus(prev => ({ ...prev, download_error: null, is_downloading: true }));
     try {
       await fetch(`${API_BASE}/models/download`, {
@@ -889,18 +917,28 @@ function App() {
                               </div>
                               <span className={cn(
                                 "text-[10px] uppercase tracking-wider font-bold mt-0.5",
-                                m.downloaded ? "text-emerald-400/70" : "text-amber-400/70"
+                                m.downloaded ? "text-emerald-400/70" : m.incomplete ? "text-amber-500 font-extrabold flex items-center gap-1" : "text-neutral-400"
                               )}>
-                                {m.downloaded ? "Ready to use" : "Not Downloaded"}
+                                {m.downloaded
+                                  ? "Ready to use"
+                                  : m.incomplete
+                                    ? `⚠️ Incomplete (${formatBytes(m.download_current_bytes)} / ${formatBytes(m.download_total_bytes)})`
+                                    : "Not Downloaded"}
                               </span>
                             </div>
 
                             <div className="flex items-center gap-2">
                               {/* Action Buttons: Activate or Checkmark */}
                               {isActive ? (
-                                <div className="p-2 text-indigo-400">
-                                  <CheckCircle2 className="w-5 h-5 font-bold" />
-                                </div>
+                                <button
+                                  onClick={handleUnloadModel}
+                                  disabled={isUnloadingModel}
+                                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 rounded-lg font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                                  title="Unload model to free GPU VRAM"
+                                >
+                                  <LogOut className="w-3.5 h-3.5" />
+                                  {isUnloadingModel ? "Unloading..." : "Eject"}
+                                </button>
                               ) : m.downloaded ? (
                                   <button
                                     onClick={() => handleModelSwitch(m.id)}
@@ -917,25 +955,6 @@ function App() {
                                     <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
                                       <Loader2 className="w-3 h-3 animate-spin" />
                                       <span className="text-[10px] font-bold uppercase">Downloading...</span>
-                                      <div
-                                        className="relative flex items-center"
-                                        onMouseEnter={() => setShowSettingsDownloadHint(true)}
-                                        onMouseLeave={() => setShowSettingsDownloadHint(false)}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setShowSettingsDownloadHint(!showSettingsDownloadHint);
-                                        }}
-                                      >
-                                        <Info className="w-3 h-3 text-amber-500/60 dark:text-amber-400/60 hover:text-amber-600 dark:hover:text-amber-400 cursor-help transition-colors" />
-                                        {showSettingsDownloadHint && (
-                                          <div className="absolute bottom-full right-0 mb-2 w-56 p-2.5 bg-white dark:bg-neutral-800/95 backdrop-blur-md border border-gray-100 dark:border-neutral-700 rounded-xl shadow-2xl z-[100] text-center animate-in fade-in zoom-in-95 duration-200 pointer-events-none">
-                                            <p className="text-[10px] leading-relaxed text-neutral-800 dark:text-neutral-200 font-bold text-center">
-                                              Progression may not be accurate and is for reference only. Cancellation requires time.
-                                            </p>
-                                            <div className="absolute top-full right-[3px] border-[6px] border-transparent border-t-white dark:border-t-neutral-800/95" />
-                                          </div>
-                                        )}
-                                      </div>
                                     </div>
                                     {status.download_total_bytes > 0 && (
                                       <div className="flex flex-col w-full gap-1.5 mt-1.5">
@@ -967,6 +986,19 @@ function App() {
                                     </span>
                                   </div>
                                 </div>
+                              ) : m.incomplete ? (
+                                <button
+                                  onClick={() => {
+                                    setPendingModel(m.id);
+                                    handleDownloadModel(m.id);
+                                  }}
+                                  disabled={status.is_downloading}
+                                  className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 shadow-sm"
+                                  title="Resume interrupted download"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  Resume
+                                </button>
                               ) : (
                                 <button
                                   onClick={() => {
@@ -980,20 +1012,23 @@ function App() {
                                 </button>
                               )}
 
-                              {/* Delete Action (Visible for any downloaded model) */}
-                              {m.downloaded && (
+                              {/* Delete Action (Visible for any downloaded or incomplete model when NOT downloading) */}
+                              {(m.downloaded || m.incomplete) && !isDownloading && (
                                 <div className="relative ml-1">
                                   {showConfirmDeleteModel === m.id ? (
                                     <div className="flex flex-col items-end gap-1 animate-in slide-in-from-right-2 duration-200">
-                                      <label className="flex items-center gap-1.5 cursor-pointer group/check mb-1">
-                                        <input
-                                          type="checkbox"
-                                          checked={deleteIndexWithModel}
-                                          onChange={(e) => setDeleteIndexWithModel(e.target.checked)}
-                                          className="w-2.5 h-2.5 rounded border-neutral-700 bg-neutral-800 text-rose-500 focus:ring-rose-500/20"
-                                        />
-                                        <span className="text-[9px] text-neutral-500 group-hover/check:text-neutral-300 transition-colors">Wipe Index</span>
-                                      </label>
+                                      {/* Only show "Wipe Index" checkbox for fully downloaded models that could have been used */}
+                                      {m.downloaded && (
+                                        <label className="flex items-center gap-1.5 cursor-pointer group/check mb-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={deleteIndexWithModel}
+                                            onChange={(e) => setDeleteIndexWithModel(e.target.checked)}
+                                            className="w-2.5 h-2.5 rounded border-neutral-700 bg-neutral-800 text-rose-500 focus:ring-rose-500/20"
+                                          />
+                                          <span className="text-[9px] text-neutral-500 group-hover/check:text-neutral-300 transition-colors">Wipe Index</span>
+                                        </label>
+                                      )}
                                       <div className="flex gap-2">
                                         <button
                                           onClick={() => handleDeleteModel(m.id)}
@@ -1013,10 +1048,10 @@ function App() {
                                   ) : (
                                     <button
                                       onClick={() => setShowConfirmDeleteModel(m.id)}
-                                      className="p-2 text-neutral-500 hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100"
-                                      title="Delete local files"
+                                      className="p-2 text-neutral-500 hover:text-rose-400 transition-colors"
+                                      title={m.incomplete ? "Delete partial files" : "Delete local files"}
                                     >
-                                      <Trash2 className="w-4 h-4" />
+                                      <Trash2 className="w-4 h-4 text-rose-500/80 hover:text-rose-500" />
                                     </button>
                                   )}
                                 </div>
@@ -1321,12 +1356,36 @@ function App() {
       {/* Header */}
       <header className="w-full max-w-7xl px-6 py-8 flex gap-6 items-center flex-col md:flex-row justify-between relative mt-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20">
+          <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
             <ImageIcon className="w-5 h-5" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 dark:from-indigo-400 dark:to-cyan-400 bg-clip-text text-transparent">VBLIS</h1>
-            <p className="text-xs text-neutral-500 dark:text-neutral-500 font-bold tracking-wider uppercase">Local AI Vision</p>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 dark:from-indigo-400 dark:to-cyan-400 bg-clip-text text-transparent">VBLIS</h1>
+            </div>
+            {models.active_model ? (
+              <div className="mt-0.5">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-indigo-600 dark:text-indigo-300 cursor-pointer shadow-sm"
+                  title={`Active Vision Engine: ${models.active_model} (Click to manage models)`}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                  <span className="font-mono text-[10px] truncate max-w-[200px]">{models.active_model.split('/').pop()}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="mt-0.5">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-50/80 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 border border-amber-200/80 dark:border-amber-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-amber-600 dark:text-amber-400 cursor-pointer shadow-sm"
+                  title="No model currently loaded into memory. Click to select and activate a model in Settings."
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                  <span className="font-mono text-[10px] tracking-wider uppercase">No Model Loaded</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1423,6 +1482,52 @@ function App() {
         </div>
       )}
 
+      {modelLoadError && !status.is_downloading && (
+        <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
+          <div className="bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border border-rose-500/30 dark:border-rose-500/20 rounded-2xl p-4 flex flex-col gap-3 relative text-rose-800 dark:text-rose-200 shadow-sm">
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-rose-100 dark:bg-rose-500/20 rounded-xl flex items-center justify-center flex-shrink-0 text-rose-600 dark:text-rose-400">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-rose-900 dark:text-rose-200">
+                    Model Failed to Load: {modelLoadError.model ? modelLoadError.model.split('/').pop() : 'Vision Model'}
+                  </h3>
+                  <p className="text-xs text-rose-700/80 dark:text-rose-300/80 font-medium">
+                    The vision model weights or configuration could not be initialized into memory.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const targetModel = modelLoadError.model || pendingModel;
+                    setModelLoadError(null);
+                    setPendingModel(targetModel);
+                    handleDownloadModel(targetModel);
+                  }}
+                  className="text-xs px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry / Resume
+                </button>
+                <button
+                  onClick={() => setModelLoadError(null)}
+                  className="p-1.5 text-rose-400 hover:text-rose-600 dark:hover:text-rose-200 rounded-lg transition-colors cursor-pointer"
+                  title="Dismiss error"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="text-[11px] font-mono bg-white/80 dark:bg-neutral-900/60 p-2.5 rounded-xl border border-rose-200 dark:border-rose-500/20 break-all text-rose-800 dark:text-rose-300">
+              {modelLoadError.message}
+            </div>
+          </div>
+        </div>
+      )}
+
       {status.is_downloading && (
         <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
           <div className="bg-gradient-to-r from-emerald-500/5 to-transparent dark:from-emerald-500/10 dark:to-transparent border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 flex flex-col gap-2 relative text-emerald-700 dark:text-emerald-300">
@@ -1436,25 +1541,6 @@ function App() {
                       ? "Verifying & Finalizing download..."
                       : `Downloading AI Vision Engine: ${pendingModel.split('/').pop()}`}
                 </span>
-                <div
-                  className="relative flex items-center"
-                  onMouseEnter={() => setShowGlobalDownloadHint(true)}
-                  onMouseLeave={() => setShowGlobalDownloadHint(false)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowGlobalDownloadHint(!showGlobalDownloadHint);
-                  }}
-                >
-                  <Info className="w-4 h-4 text-emerald-500/60 dark:text-emerald-400/60 hover:text-emerald-700 dark:hover:text-emerald-300 cursor-help transition-colors" />
-                  {showGlobalDownloadHint && (
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-3 bg-white dark:bg-neutral-900/95 backdrop-blur-md border border-gray-200 dark:border-neutral-700 rounded-2xl shadow-2xl z-[100] text-center animate-in fade-in zoom-in-95 duration-200 pointer-events-none">
-                      <p className="text-xs leading-relaxed text-neutral-800 dark:text-neutral-200 font-bold">
-                        Progression may not be accurate and is for reference only. Cancellation requires time.
-                      </p>
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-[6px] border-transparent border-b-white dark:border-b-neutral-900/95 rotate-180" />
-                    </div>
-                  )}
-                </div>
               </span>
               <div className="flex items-center gap-3">
                 <button
@@ -1659,24 +1745,68 @@ function App() {
           </div>
         )}
 
-        {backendReady && !isSwitchingModel && !models.active_model && !status.is_downloading && results.length === 0 && (
-          <div className="flex flex-col items-center justify-center mt-32 gap-6 animate-in fade-in duration-1000">
-            <div className="w-24 h-24 rounded-full bg-rose-500/10 flex items-center justify-center relative">
-              <div className="absolute inset-0 rounded-full border border-rose-500/20 animate-ping opacity-20" style={{ animationDuration: '3s' }} />
-              <ImageIcon className="w-10 h-10 text-rose-400 opacity-80" />
+        {backendReady && !isSwitchingModel && !models.active_model && !status.is_downloading && results.length === 0 && (() => {
+          const downloadedModels = models.models?.filter(m => m.downloaded) || [];
+          const hasDownloaded = downloadedModels.length > 0;
+
+          if (hasDownloaded) {
+            return (
+              <div className="flex flex-col items-center justify-center mt-32 gap-6 animate-in fade-in duration-1000">
+                <div className="w-24 h-24 rounded-full bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center relative">
+                  <div className="absolute inset-0 rounded-full border border-amber-200 dark:border-amber-500/20 animate-ping opacity-20" style={{ animationDuration: '3s' }} />
+                  <ImageIcon className="w-10 h-10 text-amber-500 dark:text-amber-400 opacity-80" />
+                </div>
+                <div className="text-center space-y-4 flex flex-col items-center">
+                  <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">No Model Loaded</h2>
+                  <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
+                    No Vision-Language model is currently active in memory. Select one of your downloaded models to activate it or manage models in Settings.
+                  </p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <button
+                      onClick={() => handleModelSwitch(downloadedModels[0].id)}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg transition-all text-xs font-semibold hover:scale-105 active:scale-95 cursor-pointer"
+                    >
+                      Activate {downloadedModels[0].id.split('/').pop()}
+                    </button>
+                    <button
+                      onClick={() => setShowSettings(true)}
+                      className="px-5 py-2.5 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-xs font-semibold hover:scale-105 active:scale-95 cursor-pointer"
+                    >
+                      Open Settings
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="flex flex-col items-center justify-center mt-32 gap-6 animate-in fade-in duration-1000">
+              <div className="w-24 h-24 rounded-full bg-rose-500/10 flex items-center justify-center relative">
+                <div className="absolute inset-0 rounded-full border border-rose-500/20 animate-ping opacity-20" style={{ animationDuration: '3s' }} />
+                <ImageIcon className="w-10 h-10 text-rose-400 opacity-80" />
+              </div>
+              <div className="text-center space-y-4 flex flex-col items-center">
+                <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">AI Model Required</h2>
+                <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">The Vision-Language Model tensors must be downloaded locally before you can index or search images.</p>
+                <div className="flex items-center gap-3 mt-2">
+                  <button
+                    onClick={() => handleDownloadModel(pendingModel)}
+                    className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg transition-all font-medium text-sm hover:scale-105 active:scale-95 cursor-pointer"
+                  >
+                    Download {pendingModel === "openai/clip-vit-base-patch32" ? "OpenAI CLIP" : pendingModel.split('/').pop()}
+                  </button>
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="px-5 py-3 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-sm font-semibold hover:scale-105 active:scale-95 cursor-pointer"
+                  >
+                    Open Settings
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="text-center space-y-4">
-              <h2 className="text-2xl font-light text-neutral-300">AI Model Required</h2>
-              <p className="text-neutral-500 max-w-md">The Vision-Language Model tensors must be downloaded locally before you can index or search images.</p>
-              <button
-                onClick={() => handleDownloadModel(pendingModel)}
-                className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg transition-all font-medium"
-              >
-                Download {pendingModel === "openai/clip-vit-base-patch32" ? "OpenAI CLIP" : pendingModel === "google/siglip2-base-patch16-224" ? "SigLIP 2" : pendingModel.split('/').pop()}
-              </button>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {models.active_model && results.length === 0 && !isSearching && query.length === 0 && !isSwitchingModel && (
           <div className="flex flex-col items-center justify-center mt-32 gap-6 animate-in fade-in duration-1000">
@@ -1684,9 +1814,27 @@ function App() {
               <div className="absolute inset-0 rounded-full border border-indigo-200 dark:border-indigo-500/20 animate-ping opacity-20" style={{ animationDuration: '3s' }} />
               <ImageIcon className="w-10 h-10 text-indigo-500 dark:text-indigo-400 opacity-80" />
             </div>
-            <div className="text-center space-y-2">
+            <div className="text-center space-y-3 flex flex-col items-center">
               <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">Ready to Search</h2>
               <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">Select a folder to extract intelligence, then search your memories using natural language.</p>
+              <div className="flex items-center gap-2 mt-2">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
+                >
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Active Model: <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
+                </button>
+                <button
+                  onClick={handleUnloadModel}
+                  disabled={isUnloadingModel}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                  title="Unload model to free GPU VRAM"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                  {isUnloadingModel ? "Unloading..." : "Eject"}
+                </button>
+              </div>
             </div>
           </div>
         )}

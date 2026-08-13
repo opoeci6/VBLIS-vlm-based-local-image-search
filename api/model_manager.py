@@ -1,12 +1,12 @@
 import torch
 from PIL import Image
 from transformers import AutoProcessor, AutoModel
-from huggingface_hub import hf_hub_download, HfApi, snapshot_download
-from tqdm.auto import tqdm
 import gc
 import time
 import os
 import threading
+from pathlib import Path
+from model_downloader import ModelDownloader
 
 
 class ModelManager:
@@ -21,79 +21,61 @@ class ModelManager:
         self.use_gpu = env_use_gpu and cuda_available
         self.device = "cuda" if self.use_gpu else "cpu"
         
+        api_dir = Path(__file__).parent.resolve()
+        hub_path = api_dir / "models" / "hub"
+        self.downloader = ModelDownloader(hub_path)
+        
         print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Available: {cuda_available})")
-        
-        self.is_downloading = False
-        
-        # Download metrics
-        self.download_total_bytes = 0.0
-        self.download_current_bytes = 0.0
-        self.download_speed = 0.0
-        self.download_eta = 0.0
-        self.download_start_time = 0.0
-        self.download_error = None
-        self.cancel_download = False
         self.is_loading_model = False
         self._lock = threading.Lock()
-        
-    def _update_progress(self, delta_bytes: float):
-        """Update download progress metrics."""
-        self.download_current_bytes += delta_bytes
-        
-        if self.download_total_bytes > 0 and self.download_current_bytes > self.download_total_bytes:
-            self.download_total_bytes = self.download_current_bytes + 1024
-            
-        elapsed = time.time() - self.download_start_time
-        if elapsed > 0:
-            self.download_speed = self.download_current_bytes / elapsed
-            if self.download_total_bytes > 0:
-                remaining = float(self.download_total_bytes - self.download_current_bytes)
-                self.download_eta = max(0.0, remaining / self.download_speed) if self.download_speed > 0 else 0.0
-            else:
-                self.download_eta = 0.0
+
+    @property
+    def is_downloading(self):
+        return self.downloader.is_downloading
+
+    @is_downloading.setter
+    def is_downloading(self, val: bool):
+        self.downloader.is_downloading = val
+
+    @property
+    def download_total_bytes(self):
+        return self.downloader.download_total_bytes
+
+    @property
+    def download_current_bytes(self):
+        return self.downloader.download_current_bytes
+
+    @property
+    def download_speed(self):
+        return self.downloader.download_speed
+
+    @property
+    def download_eta(self):
+        return self.downloader.download_eta
+
+    @property
+    def download_error(self):
+        return self.downloader.download_error
+
+    @download_error.setter
+    def download_error(self, val):
+        self.downloader.download_error = val
+
+    @property
+    def cancel_download(self):
+        return self.downloader.cancel_requested
+
+    @cancel_download.setter
+    def cancel_download(self, val: bool):
+        self.downloader.cancel_requested = val
 
     def load_model(self, model_id: str, local_files_only: bool = False):
-        if self.current_model_id == model_id:
+        if self.current_model_id == model_id and self.model is not None:
             return
-            
-        self.download_error = None
-        self.cancel_download = False
 
         if not local_files_only:
-            print(f"Ensuring {model_id} is downloaded...")
-            
-            # Get repo file list and sizes
-            api = HfApi()
-            model_info = api.model_info(model_id, files_metadata=True)
-            if self.cancel_download:
-                raise RuntimeError("Download cancelled")
-
-            self.download_total_bytes = float(sum(s.size or 0 for s in model_info.siblings))
-            self.download_current_bytes = 0.0
-            self.download_eta = 0.0
-            self.download_start_time = time.time()
-            
-            # snapshot_download handles the download for all files in the repo.
-            class ProgressHook(tqdm):
-                def __init__(inner_self, *args, **kwargs):
-                    kwargs['disable'] = True
-                    super().__init__(*args, **kwargs)
-                    
-                def update(inner_self, n=1):
-                    if self.cancel_download:
-                        raise RuntimeError("Download cancelled")
-                    # Use a lock-free update for progress metrics as they are mostly for polling
-                    self._update_progress(float(n))
-                    return super().update(n)
-
-            snapshot_download(
-                repo_id=model_id,
-                tqdm_class=ProgressHook,
-                max_workers=1 
-            )
-            
-            self.download_speed = 0.0
-            self.download_eta = 0.0
+            print(f"Ensuring {model_id} is downloaded via ModelDownloader...")
+            self.downloader.download_model(model_id)
 
         # Swap phase - LOCKED to ensure atomic switch
         with self._lock:

@@ -293,32 +293,22 @@ async def get_status():
 
 @app.get("/models")
 async def list_models():
-    available = ["google/siglip2-base-patch16-224",
-                 "openai/clip-vit-base-patch32",
-                 "google/siglip2-so400m-patch14-384",
-                 ]
+    available = [
+        "google/siglip2-base-patch16-224",
+        "google/siglip2-base-patch16-naflex",
+        "google/siglip2-so400m-patch14-384",
+        "google/siglip2-so400m-patch16-naflex",
+        "openai/clip-vit-base-patch32",
+    ]
     results = []
-    hub_path = api_dir / "models" / "hub"
     for m in available:
-        folder_name = f"models--{m.replace('/', '--')}"
-        model_root = hub_path / folder_name
-        is_downloaded = False
-        if model_root.exists():
-            # A model is considered "downloaded" only if it has a config.json in any snapshot
-            snapshots_dir = model_root / "snapshots"
-            if snapshots_dir.exists():
-                for snapshot in snapshots_dir.iterdir():
-                    if (snapshot / "config.json").exists():
-                        # Also check for heavy weights
-                        has_weights = (snapshot / "model.safetensors").exists() or (snapshot / "pytorch_model.bin").exists()
-                        if has_weights:
-                            is_downloaded = True
-                            break
-
-        
+        status_info = model_manager.downloader.inspect_model_status(m)
         results.append({
             "id": m,
-            "downloaded": is_downloaded
+            "downloaded": status_info["downloaded"],
+            "incomplete": status_info["incomplete"],
+            "download_total_bytes": status_info["download_total_bytes"],
+            "download_current_bytes": status_info["download_current_bytes"]
         })
     return {
         "active_model": model_manager.current_model_id,
@@ -364,28 +354,16 @@ async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTa
         return {"status": "Error", "message": "A download is already in progress."}
     
     def download_and_switch(model_name):
-        model_manager.is_downloading = True
-        model_manager.download_error = None
         try:
             model_manager.load_model(model_name, local_files_only=False)
             indexer.switch_collection(model_manager.get_collection_name())
             print(f"Successfully downloaded and loaded {model_name}")
         except Exception as e:
             error_msg = str(e)
-            if "Download cancelled" in error_msg:
+            if "cancelled by user" in error_msg.lower():
                 error_msg = "Download cancelled by user"
-                # Clean up partial download files
-                hub_path = api_dir / "models" / "hub"
-                folder_name = f"models--{model_name.replace('/', '--')}"
-                model_path = hub_path / folder_name
-                if model_path.exists():
-                    shutil.rmtree(model_path, ignore_errors=True)
-                    print(f"Cleaned up partial download at {model_path}")
             model_manager.download_error = error_msg
             print(f"Error downloading {model_name}: {error_msg}")
-        finally:
-            model_manager.is_downloading = False
-            model_manager.cancel_download = False
 
     background_tasks.add_task(download_and_switch, req.model_name)
     return {"status": "Downloading"}
@@ -404,6 +382,14 @@ def switch_model(req: ModelSwitchRequest):
         return {"status": "Model switched correctly", "active_model": req.model_name}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Model not found locally: {str(e)}")
+
+@app.post("/models/unload")
+def unload_model():
+    try:
+        model_manager.unload_model()
+        return {"status": "success", "message": "Model unloaded and VRAM cleared successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unload model: {str(e)}")
 
 
 @app.post("/image/cache/clear")

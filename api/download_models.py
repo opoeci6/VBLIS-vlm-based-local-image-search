@@ -23,6 +23,9 @@ if __name__ == "__main__":
     
     models_to_cache = [
         "google/siglip2-base-patch16-224",
+        "google/siglip2-base-patch16-naflex",
+        "google/siglip2-so400m-patch14-384",
+        "google/siglip2-so400m-patch16-naflex",
         "openai/clip-vit-base-patch32"
     ]
     
