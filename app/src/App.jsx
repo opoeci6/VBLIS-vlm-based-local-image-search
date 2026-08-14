@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, memo } from 'react';
-import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut, XCircle, Copy } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut, XCircle, Copy, Video } from 'lucide-react';
 import TitleBar from './TitleBar';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -28,6 +28,24 @@ const formatDuration = (seconds) => {
   return `${s}s`;
 };
 
+const formatVideoTimestamp = (seconds = 0) => {
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
+    : `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+};
+
+const getMediaPreviewUrl = (API_BASE, item, size = 'thumbnail') => {
+  const params = new URLSearchParams({ path: item.path, size });
+  if (item.media_type === 'video') {
+    params.set('timestamp', String(item.timestamp_seconds || 0));
+  }
+  return `${API_BASE}/image?${params.toString()}`;
+};
+
 const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
   return (
     <div
@@ -44,10 +62,7 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
       onClick={() => onSelect(res)}
     >
       {res.isDuplicate && (
-        <div 
-          className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full text-[10px] font-bold text-white shadow-lg backdrop-blur-md flex items-center gap-1.5"
-          style={{ backgroundColor: `${res.dupeColor || '#6366f1'}ee` }}
-        >
+        <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full text-[10px] font-bold text-white bg-black border border-white shadow-lg flex items-center gap-1.5">
           {res.duplicateType === 'exact' ? <Copy className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
           <span>
             {res.duplicateType === 'exact' ? 'Exact Copy' : 'Visual Duplicate'} ({res.otherPaths ? res.otherPaths.length + 1 : 2})
@@ -55,15 +70,22 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
         </div>
       )}
 
+      {res.media_type === 'video' && (
+        <div className="absolute top-3 right-3 z-10 px-2.5 py-1 bg-black/70 text-cyan-300 text-[10px] font-bold shadow-lg backdrop-blur-md flex items-center gap-1.5">
+          <Video className="w-3 h-3" />
+          <span>{formatVideoTimestamp(res.timestamp_seconds)}</span>
+        </div>
+      )}
+
       <img
-        src={`${API_BASE}/image?path=${encodeURIComponent(res.path)}&size=thumbnail`}
-        alt="Result"
+        src={getMediaPreviewUrl(API_BASE, res)}
+        alt={res.media_type === 'video' ? `Video frame at ${formatVideoTimestamp(res.timestamp_seconds)}` : 'Result'}
         className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
         loading="lazy"
       />
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-5">
-        <div className="translate-y-4 group-hover:translate-y-0 transition-transform duration-300 ease-out">
+      <div className="media-result-overlay absolute inset-x-0 bottom-0 bg-black border-t border-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-4">
+        <div className="translate-y-2 group-hover:translate-y-0 transition-transform duration-300 ease-out">
           <p className="text-xs font-semibold text-emerald-400 mb-1 flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
             {Math.round(res.score * 100)}% Match
@@ -76,6 +98,457 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
     </div>
   );
 });
+
+const VideoResultFolder = memo(({ group, idx, API_BASE, onSelect }) => {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className="group border border-white bg-black cursor-pointer overflow-hidden animate-in fade-in zoom-in-95 fill-mode-both focus:outline-none focus:ring-2 focus:ring-white"
+      style={{
+        animationDelay: `${idx * 50}ms`,
+        animationDuration: '400ms'
+      }}
+      onClick={() => onSelect(group)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(group);
+        }
+      }}
+    >
+      <div className="relative h-48 border-b border-white overflow-hidden">
+        <img
+          src={getMediaPreviewUrl(API_BASE, group.bestFrame)}
+          alt={`Best matching frame from ${group.name}`}
+          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          loading="lazy"
+        />
+        <div className="absolute top-3 left-3 flex items-center gap-2 px-2.5 py-1 bg-black border border-white text-xs font-bold">
+          <FolderOpen className="w-4 h-4" />
+          VIDEO
+        </div>
+        <div className="absolute bottom-3 right-3 px-2.5 py-1 bg-black border border-white text-xs font-bold">
+          BEST {Math.round(group.bestScore * 100)}%
+        </div>
+      </div>
+
+      <div className="p-4 flex items-center gap-3">
+        <div className="icon-tile flex h-11 w-11 flex-shrink-0 items-center justify-center border border-white">
+          <Video className="w-5 h-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-bold truncate" title={group.path}>{group.name}</p>
+          <p className="text-xs mt-1">{group.frames.length} returned frame{group.frames.length === 1 ? '' : 's'}</p>
+        </div>
+        <ChevronRight className="w-5 h-5 flex-shrink-0 transition-transform group-hover:translate-x-1" />
+      </div>
+    </div>
+  );
+});
+
+const ASCII_GLYPHS = {
+  V: ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
+  B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
+  L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  I: ['11111', '00100', '00100', '00100', '00100', '00100', '11111'],
+  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110']
+};
+
+const buildAsciiLogoPoints = () => {
+  const text = 'VBLIS';
+  const points = [];
+  const letterWidth = 5;
+  const spacing = 1.5;
+  const totalWidth = text.length * letterWidth + (text.length - 1) * spacing;
+
+  text.split('').forEach((letter, letterIndex) => {
+    ASCII_GLYPHS[letter].forEach((row, rowIndex) => {
+      row.split('').forEach((cell, columnIndex) => {
+        if (cell !== '1') return;
+
+        const centerX = letterIndex * (letterWidth + spacing) + columnIndex - totalWidth / 2;
+        const centerY = rowIndex - 3;
+        const samples = [-0.38, 0, 0.38];
+        const depthSamples = [-1.35, -0.68, 0, 0.68, 1.35];
+
+        samples.forEach(offsetX => {
+          samples.forEach(offsetY => {
+            points.push({ x: centerX + offsetX, y: centerY + offsetY, z: -1.35 });
+            points.push({ x: centerX + offsetX, y: centerY + offsetY, z: 1.35 });
+          });
+        });
+
+        depthSamples.forEach(z => {
+          samples.forEach(offset => {
+            points.push({ x: centerX - 0.38, y: centerY + offset, z });
+            points.push({ x: centerX + 0.38, y: centerY + offset, z });
+            points.push({ x: centerX + offset, y: centerY - 0.38, z });
+            points.push({ x: centerX + offset, y: centerY + 0.38, z });
+          });
+        });
+      });
+    });
+  });
+
+  return points;
+};
+
+const VBLIS_ASCII_POINTS = buildAsciiLogoPoints();
+
+const RotatingAsciiLogo = () => {
+  const outputRef = useRef(null);
+  const stageRef = useRef(null);
+  const particleCanvasRef = useRef(null);
+
+  useEffect(() => {
+    const columns = 86;
+    const rows = 22;
+    const luminance = '.,:;irsXA253hMHGS#9B&@';
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let frameId;
+    let scatterFrameId;
+    let angle = -0.45;
+    let isScattered = false;
+    let latestCharacters = [];
+    let particles = [];
+    let canvasWidth = window.innerWidth;
+    let canvasHeight = window.innerHeight;
+
+    const resizeCanvas = () => {
+      const canvas = particleCanvasRef.current;
+      if (!canvas) return;
+
+      const previousWidth = canvasWidth;
+      const previousHeight = canvasHeight;
+      canvasWidth = window.innerWidth;
+      canvasHeight = window.innerHeight;
+      const pixelRatio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(canvasWidth * pixelRatio);
+      canvas.height = Math.round(canvasHeight * pixelRatio);
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${canvasHeight}px`;
+
+      if (isScattered && previousWidth > 0 && previousHeight > 0) {
+        const scaleX = canvasWidth / previousWidth;
+        const scaleY = canvasHeight / previousHeight;
+        particles.forEach(particle => {
+          particle.x *= scaleX;
+          particle.y *= scaleY;
+          particle.startX *= scaleX;
+          particle.startY *= scaleY;
+          particle.targetX *= scaleX;
+          particle.targetY *= scaleY;
+        });
+      }
+    };
+
+    const drawParticles = () => {
+      const canvas = particleCanvasRef.current;
+      const output = outputRef.current;
+      if (!canvas || !output) return;
+
+      const context = canvas.getContext('2d');
+      const pixelRatio = window.devicePixelRatio || 1;
+      const outputStyle = window.getComputedStyle(output);
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.clearRect(0, 0, canvasWidth, canvasHeight);
+      context.fillStyle = outputStyle.color;
+      context.font = `${outputStyle.fontWeight} ${outputStyle.fontSize} ${outputStyle.fontFamily}`;
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+
+      particles.forEach(particle => {
+        context.fillText(particle.character, particle.x, particle.y);
+      });
+    };
+
+    const getProtectedRectangles = () => {
+      const selectors = [
+        'header',
+        'button',
+        'input',
+        'select',
+        'h1',
+        'h2',
+        'h3',
+        'p',
+        'label',
+        '[data-ascii-protected="true"]'
+      ];
+
+      return Array.from(document.querySelectorAll(selectors.join(',')))
+        .map(element => element.getBoundingClientRect())
+        .filter(rectangle => rectangle.width > 0 && rectangle.height > 0)
+        .map(rectangle => ({
+          left: rectangle.left - 14,
+          right: rectangle.right + 14,
+          top: rectangle.top - 10,
+          bottom: rectangle.bottom + 10
+        }));
+    };
+
+    const startScatter = () => {
+      const output = outputRef.current;
+      if (!output || isScattered || latestCharacters.length === 0) return;
+
+      isScattered = true;
+      window.clearTimeout(frameId);
+      resizeCanvas();
+
+      const outputRectangle = output.getBoundingClientRect();
+      const outputStyle = window.getComputedStyle(output);
+      const lineHeight = parseFloat(outputStyle.lineHeight) || parseFloat(outputStyle.fontSize);
+      const cellWidth = outputRectangle.width / columns;
+      const centerX = outputRectangle.left + outputRectangle.width / 2;
+      const centerY = outputRectangle.top + outputRectangle.height / 2;
+      const protectedRectangles = getProtectedRectangles();
+      const occupiedDestinations = new Set();
+      const minimumDistance = Math.min(canvasWidth, canvasHeight) * 0.2;
+
+      const isSafeDestination = (x, y) => {
+        if (x < 12 || x > canvasWidth - 12 || y < 42 || y > canvasHeight - 12) return false;
+        if (Math.hypot(x - centerX, y - centerY) < minimumDistance) return false;
+        if (protectedRectangles.some(rectangle => (
+          x >= rectangle.left
+          && x <= rectangle.right
+          && y >= rectangle.top
+          && y <= rectangle.bottom
+        ))) return false;
+
+        const destinationKey = `${Math.round(x / 11)}:${Math.round(y / 14)}`;
+        if (occupiedDestinations.has(destinationKey)) return false;
+        occupiedDestinations.add(destinationKey);
+        return true;
+      };
+
+      particles = latestCharacters.map((item, index) => {
+        const startX = outputRectangle.left + (item.column + 0.5) * cellWidth;
+        const startY = outputRectangle.top + (item.row + 0.5) * lineHeight;
+        let targetX = startX;
+        let targetY = startY;
+
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const candidateX = 12 + Math.random() * Math.max(1, canvasWidth - 24);
+          const candidateY = 42 + Math.random() * Math.max(1, canvasHeight - 54);
+          if (isSafeDestination(candidateX, candidateY)) {
+            targetX = candidateX;
+            targetY = candidateY;
+            break;
+          }
+        }
+
+        return {
+          character: item.character,
+          column: item.column,
+          row: item.row,
+          startX,
+          startY,
+          targetX,
+          targetY,
+          x: startX,
+          y: startY,
+          delay: (index % 13) * 12,
+          duration: 1050 + Math.random() * 650
+        };
+      });
+
+      output.style.visibility = 'hidden';
+      const animationStart = performance.now();
+
+      const animateScatter = currentTime => {
+        let animationComplete = true;
+
+        particles.forEach(particle => {
+          const elapsed = currentTime - animationStart - particle.delay;
+          const progress = Math.max(0, Math.min(1, elapsed / particle.duration));
+          const easedProgress = 1 - Math.pow(1 - progress, 3);
+          particle.x = particle.startX + (particle.targetX - particle.startX) * easedProgress;
+          particle.y = particle.startY + (particle.targetY - particle.startY) * easedProgress;
+          if (progress < 1) animationComplete = false;
+        });
+
+        drawParticles();
+        if (!animationComplete && !reduceMotion) {
+          scatterFrameId = window.requestAnimationFrame(animateScatter);
+        } else if (reduceMotion) {
+          particles.forEach(particle => {
+            particle.x = particle.targetX;
+            particle.y = particle.targetY;
+          });
+          drawParticles();
+        }
+      };
+
+      scatterFrameId = window.requestAnimationFrame(animateScatter);
+    };
+
+    const returnScatter = () => {
+      const output = outputRef.current;
+      const canvas = particleCanvasRef.current;
+      if (!output || !canvas || !isScattered || particles.length === 0) return;
+
+      window.cancelAnimationFrame(scatterFrameId);
+      const outputRectangle = output.getBoundingClientRect();
+      const outputStyle = window.getComputedStyle(output);
+      const lineHeight = parseFloat(outputStyle.lineHeight) || parseFloat(outputStyle.fontSize);
+      const cellWidth = outputRectangle.width / columns;
+      const animationStart = performance.now();
+
+      particles.forEach((particle, index) => {
+        particle.returnStartX = particle.x;
+        particle.returnStartY = particle.y;
+        particle.homeX = outputRectangle.left + (particle.column + 0.5) * cellWidth;
+        particle.homeY = outputRectangle.top + (particle.row + 0.5) * lineHeight;
+        particle.returnDelay = ((particles.length - index) % 11) * 8;
+        particle.returnDuration = 780 + Math.random() * 320;
+      });
+
+      const finishReturn = () => {
+        const context = canvas.getContext('2d');
+        const pixelRatio = window.devicePixelRatio || 1;
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        context.clearRect(0, 0, canvasWidth, canvasHeight);
+        output.style.visibility = 'visible';
+        isScattered = false;
+        particles = [];
+
+        if (reduceMotion) {
+          renderFrame();
+        } else {
+          animate();
+        }
+
+        if (stageRef.current?.matches(':hover')) {
+          startScatter();
+        }
+      };
+
+      const animateReturn = currentTime => {
+        let animationComplete = true;
+
+        particles.forEach(particle => {
+          const elapsed = currentTime - animationStart - particle.returnDelay;
+          const progress = Math.max(0, Math.min(1, elapsed / particle.returnDuration));
+          const easedProgress = progress < 0.5
+            ? 4 * progress * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+          particle.x = particle.returnStartX + (particle.homeX - particle.returnStartX) * easedProgress;
+          particle.y = particle.returnStartY + (particle.homeY - particle.returnStartY) * easedProgress;
+          if (progress < 1) animationComplete = false;
+        });
+
+        drawParticles();
+        if (!animationComplete && !reduceMotion) {
+          scatterFrameId = window.requestAnimationFrame(animateReturn);
+        } else {
+          particles.forEach(particle => {
+            particle.x = particle.homeX;
+            particle.y = particle.homeY;
+          });
+          drawParticles();
+          finishReturn();
+        }
+      };
+
+      if (reduceMotion) {
+        finishReturn();
+      } else {
+        scatterFrameId = window.requestAnimationFrame(animateReturn);
+      }
+    };
+
+    const renderFrame = () => {
+      const characters = Array(columns * rows).fill(' ');
+      const depthBuffer = Array(columns * rows).fill(-Infinity);
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      const tilt = -0.12;
+      const tiltCosine = Math.cos(tilt);
+      const tiltSine = Math.sin(tilt);
+
+      VBLIS_ASCII_POINTS.forEach(point => {
+        const rotatedX = point.x * cosine + point.z * sine;
+        const rotatedZ = -point.x * sine + point.z * cosine;
+        const rotatedY = point.y * tiltCosine - rotatedZ * tiltSine;
+        const finalZ = point.y * tiltSine + rotatedZ * tiltCosine;
+        const perspective = 34 / (34 - finalZ);
+        const screenX = Math.round(columns / 2 + rotatedX * 2.15 * perspective);
+        const screenY = Math.round(rows / 2 + rotatedY * 1.65 * perspective);
+
+        if (screenX < 0 || screenX >= columns || screenY < 0 || screenY >= rows) return;
+
+        const index = screenY * columns + screenX;
+        if (finalZ <= depthBuffer[index]) return;
+
+        const shade = Math.max(0, Math.min(1, (finalZ + 17) / 34));
+        characters[index] = luminance[Math.round(shade * (luminance.length - 1))];
+        depthBuffer[index] = finalZ;
+      });
+
+      if (outputRef.current) {
+        latestCharacters = characters.reduce((visibleCharacters, character, index) => {
+          if (character !== ' ') {
+            visibleCharacters.push({
+              character,
+              column: index % columns,
+              row: Math.floor(index / columns)
+            });
+          }
+          return visibleCharacters;
+        }, []);
+        outputRef.current.textContent = Array.from({ length: rows }, (_, row) =>
+          characters.slice(row * columns, (row + 1) * columns).join('').trimEnd()
+        ).join('\n');
+      }
+    };
+
+    const animate = () => {
+      if (isScattered) return;
+      renderFrame();
+      angle += 0.035;
+      frameId = window.setTimeout(animate, 70);
+    };
+
+    if (reduceMotion) {
+      renderFrame();
+    } else {
+      animate();
+    }
+
+    resizeCanvas();
+    const stage = stageRef.current;
+    stage?.addEventListener('mouseenter', startScatter);
+    stage?.addEventListener('mouseleave', returnScatter);
+    window.addEventListener('resize', resizeCanvas);
+
+    const themeObserver = new MutationObserver(() => {
+      if (isScattered) drawParticles();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class']
+    });
+
+    return () => {
+      window.clearTimeout(frameId);
+      window.cancelAnimationFrame(scatterFrameId);
+      stage?.removeEventListener('mouseenter', startScatter);
+      stage?.removeEventListener('mouseleave', returnScatter);
+      window.removeEventListener('resize', resizeCanvas);
+      themeObserver.disconnect();
+    };
+  }, []);
+
+  return (
+    <>
+      <canvas ref={particleCanvasRef} className="ascii-particle-layer" aria-hidden="true" />
+      <div ref={stageRef} className="vblis-ascii-stage" role="img" aria-label="VBLIS rotating 3D ASCII logo">
+        <pre ref={outputRef} className="vblis-ascii-output" aria-hidden="true" />
+      </div>
+    </>
+  );
+};
 
 function App() {
   const [theme, setTheme] = useState(() => {
@@ -102,6 +575,8 @@ function App() {
   const [isClearing, setIsClearing] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedVideoGroup, setSelectedVideoGroup] = useState(null);
+  const [showSearchResults, setShowSearchResults] = useState(false);
 
   const [minScore, setMinScore] = useState(0.20);
   const [maxResults, setMaxResults] = useState(50);
@@ -123,7 +598,9 @@ function App() {
     download_eta: 0,
     download_error: null,
     cancel_download: false,
-    is_loading_model: false
+    is_loading_model: false,
+    discovered_video_count: 0,
+    indexed_video_frames: 0
   });
   const [modelLoadError, setModelLoadError] = useState(null);
 
@@ -146,9 +623,12 @@ function App() {
   const [dragError, setDragError] = useState(null);
   const [indexedFolders, setIndexedFolders] = useState([]);
   const [isFetchingFolders, setIsFetchingFolders] = useState(false);
-  const [showFolderManager, setShowFolderManager] = useState(false);
   const [selectedFolders, setSelectedFolders] = useState([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  const [showFolderContents, setShowFolderContents] = useState(false);
+  const [browsingFolder, setBrowsingFolder] = useState(null);
+  const [folderContents, setFolderContents] = useState(null);
+  const [isFetchingFolderContents, setIsFetchingFolderContents] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [gpuSettings, setGpuSettings] = useState({ 
     use_gpu: false, 
@@ -163,10 +643,55 @@ function App() {
   });
   const [isSwitchingGpu, setIsSwitchingGpu] = useState(false);
   const [isCancellingIndexing, setIsCancellingIndexing] = useState(false);
+  const searchInputRef = useRef(null);
   const lastToastedError = useRef(null);
   const prevIsDownloading = useRef(false);
   const prevIsIndexing = useRef(false);
   const prevLastTaskId = useRef(0);
+
+  const imageResults = useMemo(
+    () => results.filter(result => result.media_type !== 'video'),
+    [results]
+  );
+
+  const videoGroups = useMemo(() => {
+    const groupsByPath = new Map();
+
+    results.forEach(frame => {
+      if (frame.media_type !== 'video') return;
+
+      const existingGroup = groupsByPath.get(frame.path);
+      if (existingGroup) {
+        existingGroup.frames.push(frame);
+        if ((frame.score || 0) > existingGroup.bestScore) {
+          existingGroup.bestScore = frame.score || 0;
+          existingGroup.bestFrame = frame;
+        }
+        return;
+      }
+
+      groupsByPath.set(frame.path, {
+        path: frame.path,
+        name: frame.path.split('\\').pop().split('/').pop() || frame.path,
+        frames: [frame],
+        bestScore: frame.score || 0,
+        bestFrame: frame
+      });
+    });
+
+    return Array.from(groupsByPath.values())
+      .map(group => ({
+        ...group,
+        frames: [...group.frames].sort(
+          (first, second) => {
+            const scoreDifference = (second.score || 0) - (first.score || 0);
+            if (scoreDifference !== 0) return scoreDifference;
+            return (first.timestamp_seconds || 0) - (second.timestamp_seconds || 0);
+          }
+        )
+      }))
+      .sort((first, second) => second.bestScore - first.bestScore);
+  }, [results]);
 
   const handleCancelIndexing = async () => {
     if (isCancellingIndexing) return;
@@ -323,9 +848,14 @@ function App() {
     if (status.last_task_id > prevLastTaskId.current) {
       if (status.errors > 0) {
         setShowErrorAlert(true);
+      } else if (status.discovered_video_count > 0) {
+        setToast({
+          message: `Indexed ${status.indexed_video_frames || 0} adaptive frame(s) from ${status.discovered_video_count} video file(s).`,
+          type: 'success'
+        });
       } else if (status.total_files === 0 && !status.is_indexing) {
         // Only toast about 0 files if it's a "fresh" completion
-        setToast({ message: "No supported images (.jpg, .png, etc.) found in the selected folder.", type: 'error' });
+        setToast({ message: "No supported images or videos were found in the selected folder.", type: 'error' });
       }
     }
 
@@ -341,7 +871,7 @@ function App() {
 
     prevIsIndexing.current = status.is_indexing;
     prevLastTaskId.current = status.last_task_id;
-  }, [status.is_indexing, status.errors, status.last_task_id]);
+  }, [status.is_indexing, status.errors, status.last_task_id, status.total_files, status.discovered_video_count, status.indexed_video_frames]);
 
   const processSearchResults = (dataResults) => {
     const results = dataResults || [];
@@ -358,7 +888,7 @@ function App() {
     // 1. Group exact file duplicates by SHA-256 hash
     const exactHashGroups = {};
     results.forEach(res => {
-      if (res.hash) {
+      if (res.media_type !== 'video' && res.hash) {
         if (!exactHashGroups[res.hash]) exactHashGroups[res.hash] = [];
         exactHashGroups[res.hash].push(res.path);
       }
@@ -376,6 +906,8 @@ function App() {
       for (let j = i + 1; j < results.length; j++) {
         const itemA = results[i];
         const itemB = results[j];
+
+        if (itemA.media_type === 'video' || itemB.media_type === 'video') continue;
 
         // Skip if already exact hash match
         if (itemA.hash && itemB.hash && itemA.hash === itemB.hash) continue;
@@ -396,7 +928,7 @@ function App() {
     }
 
     // Color Palettes
-    const exactColors = ['#8b5cf6', '#ec4899', '#3b82f6', '#06b6d4']; // Purple / Pink / Blue / Cyan
+    const exactColors = ['#0078d4', '#ec4899', '#10b981', '#f59e0b']; // System blue / Pink / Emerald / Amber
     const visualColors = ['#f59e0b', '#10b981', '#f97316', '#eab308']; // Amber / Emerald / Orange / Yellow
 
     const exactColorMap = {};
@@ -469,6 +1001,7 @@ function App() {
       });
       const data = await res.json();
       setResults(processSearchResults(data.results));
+      setShowSearchResults(true);
     } catch (err) {
       console.error(err);
     } finally {
@@ -503,7 +1036,8 @@ function App() {
 
       const data = await res.json();
       setResults(processSearchResults(data.results));
-      setToast({ message: `Found ${data.results?.length || 0} similar images.`, type: 'success' });
+      setShowSearchResults(true);
+      setToast({ message: `Found ${data.results?.length || 0} similar media result(s).`, type: 'success' });
     } catch (err) {
       console.error(err);
       setToast({ message: "Failed to search by image.", type: 'error' });
@@ -778,6 +1312,39 @@ function App() {
     }
   };
 
+  const handleBrowseFolderContents = async (folder) => {
+    setBrowsingFolder(folder);
+    setFolderContents(null);
+    setShowFolderContents(true);
+    setIsFetchingFolderContents(true);
+
+    try {
+      const url = new URL(`${API_BASE}/index/folder/contents`);
+      url.searchParams.set('folder_path', folder.path);
+      const res = await fetch(url.toString());
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || 'Failed to browse folder contents.');
+      }
+
+      setFolderContents(data);
+    } catch (err) {
+      console.error(err);
+      setToast({ message: err.message || 'Failed to browse folder contents.', type: 'error' });
+      setShowFolderContents(false);
+      setBrowsingFolder(null);
+    } finally {
+      setIsFetchingFolderContents(false);
+    }
+  };
+
+  const handleCloseFolderContents = () => {
+    setShowFolderContents(false);
+    setBrowsingFolder(null);
+    setFolderContents(null);
+  };
+
   const handleReindexFolder = async (folder_path) => {
     try {
       const res = await fetch(`${API_BASE}/index/folder/reindex`, {
@@ -806,6 +1373,7 @@ function App() {
       });
       if (res.ok) {
         setToast({ message: 'Folder index removed successfully.', type: 'success' });
+        setSelectedFolders(prev => prev.filter(path => path !== folder_path));
         fetchIndexedFolders();
         // Reset results as they might be stale
         setResults([]);
@@ -885,14 +1453,18 @@ function App() {
   };
 
   useEffect(() => {
-    if (showSettings || showFolderManager) {
+    if (models.active_model) {
       fetchIndexedFolders();
     }
-  }, [showSettings, showFolderManager, models.active_model]);
+  }, [models.active_model, status.last_task_id]);
+
+  useEffect(() => {
+    setSelectedFolders([]);
+  }, [models.active_model]);
 
   return (
     <div
-      className="h-screen w-full overflow-y-auto overflow-x-hidden bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans flex flex-col items-center relative pt-8 custom-scrollbar"
+      className="terminal-theme isolate h-screen w-full overflow-y-auto overflow-x-hidden bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans flex flex-col items-center relative pt-8 custom-scrollbar"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -903,7 +1475,7 @@ function App() {
       {isDragging && (
         <div className="fixed inset-0 z-[100] bg-indigo-600/20 backdrop-blur-sm flex items-center justify-center p-8 pointer-events-none animate-in fade-in duration-200">
           <div className="w-full max-w-2xl h-64 border-2 border-dashed border-indigo-400 rounded-3xl bg-neutral-900/80 flex flex-col items-center justify-center gap-4 shadow-2xl scale-110">
-            <div className="w-20 h-20 bg-indigo-500/20 text-indigo-400 rounded-2xl flex items-center justify-center ring-1 ring-indigo-500/40">
+            <div className="icon-tile w-20 h-20 bg-indigo-500/20 text-indigo-400 rounded-2xl flex items-center justify-center ring-1 ring-indigo-500/40">
               <ImageIcon className="w-10 h-10 animate-bounce" />
             </div>
             <div className="text-center">
@@ -917,18 +1489,20 @@ function App() {
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 p-6 rounded-2xl w-[480px] max-w-full max-h-[90vh] overflow-y-auto shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 custom-scrollbar">
+          <div className="relative w-[480px] max-w-full animate-in fade-in zoom-in-95 duration-200">
             <button
               onClick={() => setShowSettings(false)}
-              className="absolute top-4 right-4 p-2 text-neutral-400 dark:text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all"
+              className="absolute top-3 right-3 sm:top-1 sm:-right-14 z-10 p-3 bg-white/95 dark:bg-neutral-900/95 border border-gray-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-white dark:hover:bg-neutral-800 rounded-2xl shadow-xl transition-all"
+              title="Close settings"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-neutral-900 dark:text-white">
-              <Settings className="w-5 h-5 text-indigo-500 dark:text-indigo-400" /> Settings
-            </h2>
-            <div className="space-y-6">
+            <div className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 p-6 rounded-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl custom-scrollbar">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-neutral-900 dark:text-white">
+                <Settings className="w-5 h-5 text-indigo-500 dark:text-indigo-400" /> Settings
+              </h2>
+              <div className="space-y-6">
               <div className="pt-2">
                 <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">Hardware Acceleration & Batching</label>
                 <div 
@@ -952,22 +1526,12 @@ function App() {
                   <button
                     onClick={handleToggleGpu}
                     disabled={!gpuSettings.cuda_available || isSwitchingGpu}
-                    className={cn(
-                      "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-30",
-                      gpuSettings.use_gpu ? "bg-indigo-600" : "bg-gray-200 dark:bg-neutral-700"
-                    )}
+                    className="relative inline-flex h-7 w-7 items-center justify-center bg-black border border-white focus:outline-none disabled:cursor-not-allowed"
+                    aria-label={gpuSettings.use_gpu ? "Disable NVIDIA GPU support" : "Enable NVIDIA GPU support"}
                   >
-                    <span
-                      className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                        gpuSettings.use_gpu ? "translate-x-6" : "translate-x-1"
-                      )}
-                    />
-                    {isSwitchingGpu && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-full">
-                        <Loader2 className="w-3 h-3 text-white animate-spin" />
-                      </div>
-                    )}
+                    {isSwitchingGpu
+                      ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                      : gpuSettings.use_gpu && <Check className="w-5 h-5 text-white" strokeWidth={3} />}
                   </button>
                 </div>
 
@@ -1055,38 +1619,41 @@ function App() {
                         <div
                           key={m.id}
                           className={cn(
-                            "group flex flex-col p-3 border rounded-xl transition-all duration-200",
+                            "group flex flex-col p-4 border rounded-xl transition-all duration-200",
                             isActive
                               ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/50 ring-1 ring-indigo-500/10 dark:ring-indigo-500/20"
                               : "bg-gray-50 dark:bg-neutral-800/30 border-gray-100 dark:border-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-800/50"
                           )}
                         >
-                          <div className="flex items-center justify-between">
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <span className={cn("text-sm font-semibold", isActive ? "text-indigo-600 dark:text-indigo-300" : "text-neutral-700 dark:text-neutral-200")}>
-                                  {m.id.split('/').pop()}
+                          <div className="flex items-center justify-between gap-5">
+                            <div className="min-w-0 flex-1">
+                              <span
+                                className={cn("block truncate whitespace-nowrap text-sm font-semibold", isActive ? "text-indigo-600 dark:text-indigo-300" : "text-neutral-700 dark:text-neutral-200")}
+                                title={m.id}
+                              >
+                                {m.id.split('/').pop()}
+                              </span>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className={cn(
+                                  "text-[10px] uppercase tracking-wider font-bold whitespace-nowrap",
+                                  m.downloaded ? "text-emerald-400/70" : m.incomplete ? "text-amber-500 font-extrabold flex items-center gap-1" : "text-neutral-400"
+                                )}>
+                                  {m.downloaded
+                                    ? "Ready to use"
+                                    : m.incomplete
+                                      ? `Incomplete (${formatBytes(m.download_current_bytes)} / ${formatBytes(m.download_total_bytes)})`
+                                      : "Not Downloaded"}
                                 </span>
                                 {isActive && (
-                                  <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-500/20">
+                                  <span className="flex items-center gap-1 px-1.5 py-0.5 border border-white text-[9px] uppercase tracking-wider font-extrabold whitespace-nowrap">
                                     <CheckCircle2 className="w-2.5 h-2.5" />
                                     Active
                                   </span>
                                 )}
                               </div>
-                              <span className={cn(
-                                "text-[10px] uppercase tracking-wider font-bold mt-0.5",
-                                m.downloaded ? "text-emerald-400/70" : m.incomplete ? "text-amber-500 font-extrabold flex items-center gap-1" : "text-neutral-400"
-                              )}>
-                                {m.downloaded
-                                  ? "Ready to use"
-                                  : m.incomplete
-                                    ? `⚠️ Incomplete (${formatBytes(m.download_current_bytes)} / ${formatBytes(m.download_total_bytes)})`
-                                    : "Not Downloaded"}
-                              </span>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-shrink-0">
                               {/* Action Buttons: Activate or Checkmark */}
                               {isActive ? (
                                 <button
@@ -1225,35 +1792,6 @@ function App() {
                 )}
               </div>
 
-              {/* Indexed Folders Management Link */}
-              {models.active_model && (
-                <div className="pt-2">
-                  <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">Folder Index Management</label>
-                  <button
-                    onClick={() => {
-                      setShowSettings(false);
-                      setShowFolderManager(true);
-                    }}
-                    className="w-full group flex items-center justify-between p-4 bg-gray-50 dark:bg-neutral-800/30 border border-gray-200 dark:border-neutral-800 rounded-xl hover:bg-gray-100 dark:hover:bg-neutral-800/50 hover:border-indigo-300 dark:hover:border-indigo-500/30 transition-all duration-300"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded-lg flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-500/20 transition-colors">
-                        <FolderOpen className="w-5 h-5" />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-neutral-800 dark:text-neutral-200">Manage Indexed Folders</p>
-                        <p className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                          {indexedFolders.length} folder{indexedFolders.length !== 1 ? 's' : ''} currently managed
-                        </p>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-neutral-400 dark:text-neutral-600 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors" />
-                  </button>
-                  <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-2 px-1 leading-relaxed">
-                    View, re-sync, or batch remove specific folder indexes without clearing the whole database.
-                  </p>
-                </div>
-              )}
 
               <div className="pt-2">
                 <div className="flex justify-between items-center mb-1">
@@ -1265,7 +1803,7 @@ function App() {
                   min="0.05" max="0.95" step="0.01"
                   value={minScore}
                   onChange={(e) => setMinScore(parseFloat(e.target.value))}
-                  className="w-full accent-indigo-500 cursor-pointer"
+                  className="terminal-range w-full cursor-pointer"
                 />
                 <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Filters out vague or low-confidence network results.</p>
               </div>
@@ -1280,7 +1818,7 @@ function App() {
                   min="0" max="250" step="5"
                   value={maxResults}
                   onChange={(e) => setMaxResults(parseInt(e.target.value))}
-                  className="w-full accent-indigo-500 cursor-pointer"
+                  className="terminal-range w-full cursor-pointer"
                 />
                 <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Higher numbers may consume more system memory.</p>
                 {parseInt(maxResults) === 0 && (
@@ -1348,180 +1886,129 @@ function App() {
             </div>
           </div>
         </div>
+      </div>
       )}
 
-      {/* Folder Manager Modal */}
-      {showFolderManager && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 dark:bg-black/70 backdrop-blur-md p-4 animate-in fade-in duration-300">
-          <div className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl w-[640px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between bg-gray-50/50 dark:bg-neutral-900/50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20">
-                  <FolderOpen className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-neutral-900 dark:text-white">Folder Index Manager</h2>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-500">Manage {indexedFolders.length} indexed directories</p>
+      {/* Folder Contents Modal */}
+      {showFolderContents && browsingFolder && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+          onClick={handleCloseFolderContents}
+        >
+          <div
+            className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl w-[820px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between bg-gray-50/50 dark:bg-neutral-900/50">
+              <div className="min-w-0 pr-6">
+                <div className="flex items-center gap-3">
+                  <div className="icon-tile w-10 h-10 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-xl flex items-center justify-center ring-1 ring-cyan-200 dark:ring-cyan-500/20 flex-shrink-0">
+                    <FolderOpen className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold text-neutral-900 dark:text-white">Folder Contents</h2>
+                    <p className="text-xs text-neutral-500 font-mono truncate mt-1" title={browsingFolder.path}>
+                      {browsingFolder.path}
+                    </p>
+                  </div>
                 </div>
               </div>
               <button
-                onClick={() => {
-                  setShowFolderManager(false);
-                  setSelectedFolders([]);
-                }}
-                className="p-2 text-neutral-400 dark:text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all"
+                onClick={handleCloseFolderContents}
+                className="p-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Toolbar */}
-            {indexedFolders.length > 0 && (
-              <div className="px-6 py-3 bg-gray-50/50 dark:bg-neutral-800/20 border-b border-gray-100 dark:border-neutral-800 flex items-center justify-between">
-                <button
-                  onClick={toggleSelectAll}
-                  className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                >
-                  {selectedFolders.length === indexedFolders.length ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                  {selectedFolders.length === indexedFolders.length ? 'Deselect All' : 'Select All'}
-                </button>
-
-                <div className="flex items-center gap-2">
-                  {selectedFolders.length > 0 ? (
-                    <div className="flex items-center gap-2 animate-in slide-in-from-right-2 duration-300">
-                      <span className="text-[10px] text-neutral-500 font-bold mr-2">{selectedFolders.length} SELECTED</span>
-                      <button
-                        onClick={handleBatchReindex}
-                        disabled={isBatchProcessing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
-                      >
-                        <RefreshCw className={cn("w-3.5 h-3.5", isBatchProcessing && "animate-spin")} />
-                        Reindex
-                      </button>
-                      <button
-                        onClick={handleBatchDelete}
-                        disabled={isBatchProcessing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-neutral-500 italic">Select folders for batch actions</p>
-                  )}
-                </div>
+            {folderContents && (
+              <div className="px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2 bg-gray-50/40 dark:bg-neutral-800/20">
+                <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold">
+                  {folderContents.image_count} images
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-xs font-bold">
+                  {folderContents.video_count} videos
+                </span>
+                <span className="text-xs text-neutral-500 ml-auto">
+                  {folderContents.total_count} supported media files
+                </span>
               </div>
             )}
 
-            {/* List */}
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-              {isFetchingFolders ? (
-                <div className="flex flex-col items-center justify-center py-20 gap-4">
-                  <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
-                  <p className="text-sm text-neutral-500">Fetching folders...</p>
+              {isFetchingFolderContents ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-4">
+                  <Loader2 className="w-10 h-10 text-cyan-500 animate-spin" />
+                  <p className="text-sm text-neutral-500">Scanning folder contents...</p>
                 </div>
-              ) : indexedFolders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center px-10">
-                  <div className="w-16 h-16 bg-gray-100 dark:bg-neutral-800 rounded-full flex items-center justify-center mb-4">
-                    <FolderOpen className="w-8 h-8 text-neutral-400 dark:text-neutral-600" />
-                  </div>
-                  <h3 className="text-lg font-bold text-neutral-800 dark:text-neutral-300">No Folders Indexed</h3>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-500 mt-2 max-w-xs">
-                    You haven't indexed any folders yet for this model. Use the "Index Folder" button in the header to get started.
-                  </p>
+              ) : !folderContents || folderContents.items.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <FolderOpen className="w-12 h-12 text-neutral-300 dark:text-neutral-700 mb-4" />
+                  <h3 className="text-base font-bold text-neutral-700 dark:text-neutral-300">No supported media found</h3>
+                  <p className="text-sm text-neutral-500 mt-2">This folder does not contain supported image or video files.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {indexedFolders.map((folder) => {
-                    const isSelected = selectedFolders.includes(folder.path);
-                    const folderName = folder.path.split('\\').pop().split('/').pop() || folder.path;
-                    return (
-                      <div
-                        key={folder.path}
-                        className={cn(
-                          "group flex items-center gap-4 p-3 rounded-2xl border transition-all duration-200",
-                          isSelected
-                            ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 ring-1 ring-indigo-500/10"
-                            : "bg-gray-50 dark:bg-neutral-800/20 border-gray-100 dark:border-neutral-800/50 hover:bg-gray-100 dark:hover:bg-neutral-800/40 hover:border-gray-300 dark:hover:border-neutral-700",
-                          !folder.exists && "opacity-80 border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/5"
-                        )}
-                      >
-                        <button
-                          onClick={() => toggleFolderSelection(folder)}
-                          className={cn(
-                            "flex items-center justify-center w-6 h-6 rounded-lg border transition-all",
-                            isSelected
-                              ? "bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white"
-                              : "bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent group-hover:border-gray-300 dark:group-hover:border-neutral-600"
-                          )}
-                        >
-                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                          </svg>
-                        </button>
+                  {folderContents.truncated && (
+                    <div className="p-3 mb-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
+                      Showing the first {folderContents.limit} files. The folder contains more supported media.
+                    </div>
+                  )}
 
-                        <div className="flex-1 min-w-0 pr-4">
-                          <div className="flex items-center gap-2">
-                            <p className={cn("text-sm font-bold truncate", !folder.exists ? "text-rose-600 dark:text-rose-400" : "text-neutral-800 dark:text-neutral-200")} title={folder.path}>
-                              {folderName}
-                            </p>
-                            {!folder.exists && (
-                              <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 whitespace-nowrap">
-                                <AlertTriangle className="w-2.5 h-2.5" />
-                                Folder missing
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-neutral-500 truncate font-mono mt-0.5" title={folder.path}>
-                            {folder.path}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleReindexFolder(folder.path)}
-                            className="p-2 text-neutral-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-xl transition-all"
-                            title="Re-sync folder (Sync disk changes)"
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteFolderIndex(folder.path)}
-                            className="p-2 text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all"
-                            title="Delete index for this folder"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                  {folderContents.items.map((item) => (
+                    <div
+                      key={item.path}
+                      className="flex items-center gap-4 p-3 rounded-2xl border border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20"
+                    >
+                      <div className={cn(
+                        "icon-tile w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0",
+                        item.media_type === 'video'
+                          ? "bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
+                          : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                      )}>
+                        {item.media_type === 'video'
+                          ? <Video className="w-5 h-5" />
+                          : <ImageIcon className="w-5 h-5" />}
                       </div>
-                    );
-                  })}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-neutral-800 dark:text-neutral-200 truncate" title={item.name}>
+                          {item.name}
+                        </p>
+                        <p className="text-[10px] text-neutral-500 font-mono truncate mt-1" title={item.relative_path}>
+                          {item.relative_path}
+                        </p>
+                      </div>
+
+                      <div className="text-right flex-shrink-0">
+                        <span className={cn(
+                          "inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider",
+                          item.media_type === 'video'
+                            ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
+                            : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                        )}>
+                          {item.media_type}
+                        </span>
+                        <p className="text-[10px] text-neutral-500 mt-1">{formatBytes(item.size)}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-6 bg-gray-50 dark:bg-neutral-900 border-t border-gray-100 dark:border-neutral-800">
-              <p className="text-center text-[11px] text-neutral-500 dark:text-neutral-500 leading-relaxed font-medium">
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold uppercase mr-1">Pro Tip:</span>
-                Re-syncing a folder will add files you've recently moved in and remove entries for files you've deleted from your computer.
-              </p>
+              </div>
             </div>
           </div>
-        </div>
       )}
 
       {/* Header */}
-      <header className="w-full max-w-7xl px-6 py-8 flex gap-6 items-center flex-col md:flex-row justify-between relative mt-4">
+      <header data-ascii-protected="true" className="w-full max-w-7xl px-6 py-8 flex gap-6 items-center flex-col md:flex-row justify-between relative mt-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
+          <div className="icon-tile w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
             <ImageIcon className="w-5 h-5" />
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 dark:from-indigo-400 dark:to-cyan-400 bg-clip-text text-transparent">VBLIS</h1>
+              <h1 className="text-xl font-bold text-indigo-600 dark:text-indigo-400">VBLIS</h1>
             </div>
             {models.active_model ? (
               <div className="mt-0.5">
@@ -1530,7 +2017,7 @@ function App() {
                   className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-indigo-600 dark:text-indigo-300 cursor-pointer shadow-sm"
                   title={`Active Vision Engine: ${models.active_model} (Click to manage models)`}
                 >
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                  <div className="model-status-dot model-status-dot-online w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0" aria-hidden="true" />
                   <span className="font-mono text-[10px] truncate max-w-[200px]">{models.active_model.split('/').pop()}</span>
                 </button>
               </div>
@@ -1541,7 +2028,7 @@ function App() {
                   className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-50/80 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 border border-amber-200/80 dark:border-amber-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-amber-600 dark:text-amber-400 cursor-pointer shadow-sm"
                   title="No model currently loaded into memory. Click to select and activate a model in Settings."
                 >
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                  <div className="model-status-dot model-status-dot-offline w-1.5 h-1.5 rounded-full flex-shrink-0" aria-hidden="true" />
                   <span className="font-mono text-[10px] tracking-wider uppercase">No Model Loaded</span>
                 </button>
               </div>
@@ -1555,12 +2042,28 @@ function App() {
               {isSearching ? <Loader2 className="w-5 h-5 text-neutral-400 dark:text-neutral-500 animate-spin" /> : <Search className="w-5 h-5 text-neutral-400 dark:text-neutral-500 group-focus-within:text-indigo-600 dark:group-focus-within:text-indigo-400 transition-colors" />}
             </div>
             <input
+              ref={searchInputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search images (e.g. 'a golden retriever in the snow')..."
-              className="w-full bg-white dark:bg-neutral-900/50 border border-gray-200 dark:border-neutral-800 rounded-2xl py-4 pl-12 pr-4 text-base outline-none transition-all duration-300 focus:bg-white dark:focus:bg-neutral-900 focus:border-indigo-400 dark:focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 shadow-xl shadow-black/5 dark:shadow-black/20 text-neutral-900 dark:text-white"
+              placeholder="Search images and video frames (e.g. 'a golden retriever in the snow')..."
+              className="w-full bg-white dark:bg-neutral-900/50 border border-gray-200 dark:border-neutral-800 rounded-2xl py-4 pl-12 pr-12 text-base outline-none transition-all duration-300 focus:bg-white dark:focus:bg-neutral-900 focus:border-indigo-400 dark:focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 shadow-xl shadow-black/5 dark:shadow-black/20 text-neutral-900 dark:text-white"
             />
+            {query.length > 0 && (
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute inset-y-0 right-3 flex items-center justify-center px-2"
+                aria-label="Clear search text"
+                title="Clear search text"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <button
             type="submit"
@@ -1571,14 +2074,6 @@ function App() {
         </form>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleOpenFolder}
-            className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-neutral-900/80 hover:bg-gray-50 dark:hover:bg-neutral-800 border border-gray-200 dark:border-neutral-800 rounded-xl transition-all hover:scale-105 active:scale-95 text-sm font-semibold text-neutral-700 dark:text-neutral-200 hover:border-gray-300 dark:hover:border-neutral-700 shadow-sm dark:shadow-none"
-          >
-            <FolderOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            Index Folder(s)
-          </button>
-
           <button
             onClick={() => setShowSettings(true)}
             className="p-3 bg-white dark:bg-neutral-900/80 hover:bg-gray-50 dark:hover:bg-neutral-800 border border-gray-200 dark:border-neutral-800 rounded-xl transition-all hover:rotate-45 active:scale-95 text-neutral-500 hover:text-neutral-900 dark:hover:text-white shadow-sm dark:shadow-none"
@@ -1591,7 +2086,7 @@ function App() {
       {/* Global Status Bar */}
       {status.is_indexing && (
         <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
-          <div className="bg-gradient-to-r from-indigo-500/5 to-transparent dark:from-indigo-500/10 dark:to-transparent border border-indigo-200 dark:border-indigo-500/20 rounded-xl p-4 flex flex-col gap-2 relative text-indigo-700 dark:text-indigo-300">
+          <div className="bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-xl p-4 flex flex-col gap-2 relative text-indigo-700 dark:text-indigo-300">
             <div className="flex justify-between items-center text-sm font-bold">
               <span className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1612,7 +2107,7 @@ function App() {
             </div>
             <div className="w-full h-1.5 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-cyan-500 dark:from-indigo-500 dark:to-cyan-400 transition-all duration-500 ease-out"
+                className="terminal-progress-fill h-full bg-indigo-500 transition-all duration-500 ease-out"
                 style={{ width: `${status.percent}%` }}
               />
             </div>
@@ -1634,7 +2129,7 @@ function App() {
               <X className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-3 text-amber-700 dark:text-amber-400">
-              <div className="w-10 h-10 bg-amber-100 dark:bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0 border border-amber-200 dark:border-amber-500/20 text-amber-600 dark:text-amber-500">
+              <div className="icon-tile w-10 h-10 bg-amber-100 dark:bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0 border border-amber-200 dark:border-amber-500/20 text-amber-600 dark:text-amber-500">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div className="min-w-0">
@@ -1658,7 +2153,7 @@ function App() {
           <div className="bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border border-rose-500/30 dark:border-rose-500/20 rounded-2xl p-4 flex flex-col gap-3 relative text-rose-800 dark:text-rose-200 shadow-sm">
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-rose-100 dark:bg-rose-500/20 rounded-xl flex items-center justify-center flex-shrink-0 text-rose-600 dark:text-rose-400">
+                <div className="icon-tile w-9 h-9 bg-rose-100 dark:bg-rose-500/20 rounded-xl flex items-center justify-center flex-shrink-0 text-rose-600 dark:text-rose-400">
                   <AlertTriangle className="w-5 h-5" />
                 </div>
                 <div>
@@ -1738,7 +2233,7 @@ function App() {
 
             <div className="w-full h-1.5 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 ease-out"
+                className="terminal-progress-fill h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 ease-out"
                 style={{
                   width: status.is_loading_model
                     ? '99.5%'
@@ -1782,6 +2277,98 @@ function App() {
 
 
 
+      {/* Returned video frames grouped by their source video */}
+      {selectedVideoGroup && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-6 animate-in fade-in duration-200"
+          onClick={() => setSelectedVideoGroup(null)}
+        >
+          <div
+            className="flex max-h-[86vh] w-full max-w-6xl flex-col border border-white bg-black"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start gap-4 border-b border-white p-5">
+              <div className="icon-tile flex h-12 w-12 flex-shrink-0 items-center justify-center border border-white">
+                <FolderOpen className="w-6 h-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-bold break-all">{selectedVideoGroup.name}</h2>
+                <p className="mt-1 text-sm break-all">{selectedVideoGroup.path}</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                  <span className="border border-white px-2 py-1">
+                    {selectedVideoGroup.frames.length} RETURNED FRAME{selectedVideoGroup.frames.length === 1 ? '' : 'S'}
+                  </span>
+                  <span className="border border-white px-2 py-1">
+                    BEST MATCH {Math.round(selectedVideoGroup.bestScore * 100)}%
+                  </span>
+                </div>
+              </div>
+              {window.electronAPI && (
+                <button
+                  onClick={async () => {
+                    const response = await window.electronAPI.openInExplorer(selectedVideoGroup.path);
+                    if (response && !response.success) {
+                      setToast({ message: 'This video has been moved or deleted and is no longer available.', type: 'error' });
+                    }
+                  }}
+                  className="flex flex-shrink-0 items-center gap-2 border border-white px-4 py-3 font-bold"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Show in Explorer
+                </button>
+              )}
+              <button
+                onClick={() => setSelectedVideoGroup(null)}
+                className="icon-tile flex h-12 w-12 flex-shrink-0 items-center justify-center border border-white"
+                aria-label="Close video results"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="custom-scrollbar overflow-y-auto p-5">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {selectedVideoGroup.frames.map((frame, index) => (
+                  <div
+                    key={frame.id || `${frame.path}:${frame.timestamp_seconds || 0}:${index}`}
+                    role="button"
+                    tabIndex={0}
+                    className="group cursor-pointer border border-white bg-black focus:outline-none focus:ring-2 focus:ring-white"
+                    onClick={() => {
+                      setSelectedVideoGroup(null);
+                      setSelectedImage(frame);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedVideoGroup(null);
+                        setSelectedImage(frame);
+                      }
+                    }}
+                  >
+                    <div className="relative h-44 overflow-hidden border-b border-white">
+                      <img
+                        src={getMediaPreviewUrl(API_BASE, frame)}
+                        alt={`Video frame at ${formatVideoTimestamp(frame.timestamp_seconds)}`}
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                      <span className="absolute bottom-2 left-2 border border-white bg-black px-2 py-1 text-xs font-bold">
+                        {formatVideoTimestamp(frame.timestamp_seconds)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 p-3 text-sm font-bold">
+                      <span>FRAME {index + 1}</span>
+                      <span>{Math.round((frame.score || 0) * 100)}% MATCH</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lightbox Modal */}
       {selectedImage && (
         <div
@@ -1816,8 +2403,8 @@ function App() {
           </div>
 
           <img
-            src={`${API_BASE}/image?path=${encodeURIComponent(selectedImage.path)}`}
-            alt="Full size result"
+            src={getMediaPreviewUrl(API_BASE, selectedImage, 'full')}
+            alt={selectedImage.media_type === 'video' ? `Video frame at ${formatVideoTimestamp(selectedImage.timestamp_seconds)}` : 'Full size result'}
             className={cn(
               "max-w-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300",
               selectedImage.isDuplicate ? "max-h-[70vh]" : "max-h-[80vh]"
@@ -1829,15 +2416,14 @@ function App() {
             <p className="text-xl font-medium text-white mb-1">
               Match Score: {Math.round(selectedImage.score * 100)}%
             </p>
+            {selectedImage.media_type === 'video' && (
+              <p className="mb-3 inline-flex items-center gap-2 px-3 py-1 bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 text-sm font-bold">
+                <Video className="w-4 h-4" />
+                Video frame at {formatVideoTimestamp(selectedImage.timestamp_seconds)}
+              </p>
+            )}
             {selectedImage.isDuplicate && (
-              <div 
-                className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold animate-in zoom-in-95 duration-300 shadow-lg border"
-                style={{ 
-                  backgroundColor: `${selectedImage.dupeColor || '#6366f1'}25`,
-                  borderColor: `${selectedImage.dupeColor || '#6366f1'}60`,
-                  color: selectedImage.dupeColor || '#a5b4fc'
-                }}
-              >
+              <div className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 bg-black border border-white text-white rounded-xl text-xs font-bold animate-in zoom-in-95 duration-300 shadow-lg">
                 {selectedImage.duplicateType === 'exact' ? <Copy className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
                 <span>
                   {selectedImage.duplicateType === 'exact' ? 'Exact File Copy' : 'Visual Duplicate (98.5%+ Similarity)'} detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}
@@ -1883,6 +2469,178 @@ function App() {
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
           </button>
         </div>
+      )}
+
+      {/* Inline Folder Manager */}
+      {models.active_model && (
+        <section data-ascii-protected="true" className="w-full max-w-7xl px-6 mb-3">
+          <div className="bg-white dark:bg-neutral-900/70 border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-xl shadow-black/5 dark:shadow-black/20 overflow-hidden">
+            <div className="px-6 py-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 dark:border-neutral-800 bg-indigo-500/5 dark:bg-indigo-500/10">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="icon-tile w-11 h-11 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
+                  <FolderOpen className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Indexed Folders</h2>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold">
+                      {indexedFolders.length}
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-500 mt-1">Browse, re-sync, or remove folders from the active model index.</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenFolder}
+                disabled={status.is_indexing}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-sm font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Add Folder(s)
+              </button>
+            </div>
+
+            {indexedFolders.length > 0 && (
+              <div className="px-6 py-3 bg-gray-50/70 dark:bg-neutral-800/20 border-b border-gray-100 dark:border-neutral-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                >
+                  {selectedFolders.length === indexedFolders.length
+                    ? <CheckSquare className="w-4 h-4" />
+                    : <Square className="w-4 h-4" />}
+                  {selectedFolders.length === indexedFolders.length ? 'Deselect All' : 'Select All'}
+                </button>
+
+                <div className="flex items-center gap-2 min-h-8">
+                  {selectedFolders.length > 0 ? (
+                    <>
+                      <span className="text-[10px] text-neutral-500 font-bold mr-1">{selectedFolders.length} SELECTED</span>
+                      <button
+                        type="button"
+                        onClick={handleBatchReindex}
+                        disabled={isBatchProcessing || status.is_indexing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn("w-3.5 h-3.5", isBatchProcessing && "animate-spin")} />
+                        Reindex
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBatchDelete}
+                        disabled={isBatchProcessing || status.is_indexing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-neutral-500 italic">Select folders for batch actions</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="p-4 max-h-[360px] overflow-y-auto custom-scrollbar">
+              {isFetchingFolders ? (
+                <div className="flex items-center justify-center gap-3 py-12 text-neutral-500">
+                  <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+                  <span className="text-sm font-medium">Fetching folders...</span>
+                </div>
+              ) : indexedFolders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-6">
+                  <div className="icon-tile w-14 h-14 bg-gray-100 dark:bg-neutral-800 rounded-2xl flex items-center justify-center mb-4">
+                    <FolderOpen className="w-7 h-7 text-neutral-400 dark:text-neutral-600" />
+                  </div>
+                  <h3 className="text-base font-bold text-neutral-800 dark:text-neutral-300">No folders selected</h3>
+                  <p className="text-sm text-neutral-500 mt-2 max-w-md">Add a folder to index images and sample videos at two-second intervals.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {indexedFolders.map((folder) => {
+                    const isSelected = selectedFolders.includes(folder.path);
+                    const folderName = folder.path.split('\\').pop().split('/').pop() || folder.path;
+
+                    return (
+                      <div
+                        key={folder.path}
+                        className={cn(
+                          "flex items-center gap-3 p-4 rounded-2xl border transition-all",
+                          isSelected
+                            ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 ring-1 ring-indigo-500/10"
+                            : "bg-gray-50/80 dark:bg-neutral-800/20 border-gray-100 dark:border-neutral-800/60",
+                          !folder.exists && "border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/5"
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleFolderSelection(folder)}
+                          className={cn(
+                            "flex items-center justify-center w-6 h-6 rounded-lg border transition-all flex-shrink-0",
+                            isSelected
+                              ? "bg-indigo-600 border-indigo-600 text-white"
+                              : "bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent"
+                          )}
+                          title={isSelected ? 'Deselect folder' : 'Select folder'}
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                          </svg>
+                        </button>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className={cn("text-sm font-bold truncate", folder.exists ? "text-neutral-800 dark:text-neutral-200" : "text-rose-600 dark:text-rose-400")} title={folder.path}>
+                              {folderName}
+                            </p>
+                            {!folder.exists && (
+                              <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">Missing</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-neutral-500 truncate font-mono mt-1" title={folder.path}>{folder.path}</p>
+                        </div>
+
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleBrowseFolderContents(folder)}
+                            disabled={!folder.exists}
+                            className="p-2 text-neutral-400 hover:text-cyan-500 hover:bg-cyan-500/10 rounded-xl transition-all disabled:opacity-30"
+                            title="Browse images and videos"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleReindexFolder(folder.path)}
+                            disabled={!folder.exists || status.is_indexing}
+                            className="p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all disabled:opacity-30"
+                            title="Re-sync folder"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFolderIndex(folder.path)}
+                            disabled={status.is_indexing}
+                            className="p-2 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all disabled:opacity-30"
+                            title="Delete folder index"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
       )}
 
       {/* Main Content Area */}
@@ -1988,21 +2746,22 @@ function App() {
           );
         })()}
 
-        {models.active_model && results.length === 0 && !isSearching && query.length === 0 && !isSwitchingModel && (
-          <div className="flex flex-col items-center justify-center mt-32 gap-6 animate-in fade-in duration-1000">
-            <div className="w-24 h-24 rounded-full bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center relative">
-              <div className="absolute inset-0 rounded-full border border-indigo-200 dark:border-indigo-500/20 animate-ping opacity-20" style={{ animationDuration: '3s' }} />
-              <ImageIcon className="w-10 h-10 text-indigo-500 dark:text-indigo-400 opacity-80" />
-            </div>
-            <div className="text-center space-y-3 flex flex-col items-center">
+        {models.active_model && !isSearching && !isSwitchingModel && (
+          <div className="flex flex-col items-center justify-center mt-3 gap-2 animate-in fade-in duration-1000">
+            <RotatingAsciiLogo />
+            <div data-ascii-protected="true" className="text-center space-y-2 flex flex-col items-center">
               <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">Ready to Search</h2>
-              <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">Select a folder to extract intelligence, then search your memories using natural language.</p>
-              <div className="flex items-center gap-2 mt-2">
+              <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
+                {indexedFolders.length > 0
+                  ? `${indexedFolders.length} folder${indexedFolders.length > 1 ? 's are' : ' is'} ready. Search your media using natural language.`
+                  : 'Select a folder to extract intelligence, then search your memories using natural language.'}
+              </p>
+              <div className="flex items-center gap-2 mt-1">
                 <button
                   onClick={() => setShowSettings(true)}
                   className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
                 >
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <div className="model-status-dot model-status-dot-online w-2 h-2 rounded-full animate-pulse" aria-hidden="true" />
                   <span>Active Model: <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
                 </button>
                 <button
@@ -2019,17 +2778,84 @@ function App() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {results.map((res, idx) => (
-            <SearchResult
-              key={res.path}
-              res={res}
-              idx={idx}
-              API_BASE={API_BASE}
-              onSelect={setSelectedImage}
-            />
-          ))}
-        </div>
+        {showSearchResults && results.length > 0 && (
+          <div
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 p-6 animate-in fade-in duration-200"
+            onClick={() => setShowSearchResults(false)}
+          >
+            <div
+              className="flex max-h-[86vh] w-full max-w-7xl flex-col border border-white bg-black"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center gap-4 border-b border-white p-5">
+                <Search className="w-6 h-6 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-xl font-bold">Search Results</h2>
+                  <p className="mt-1 truncate text-sm">
+                    {imageSearchContext ? `IMAGE: ${imageSearchContext}` : `QUERY: ${query}`}
+                  </p>
+                </div>
+                <span className="border border-white px-3 py-2 text-sm font-bold">
+                  {results.length} MATCH{results.length === 1 ? '' : 'ES'}
+                </span>
+                <button
+                  onClick={() => setShowSearchResults(false)}
+                  className="icon-tile flex h-12 w-12 flex-shrink-0 items-center justify-center border border-white"
+                  aria-label="Close search results"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="custom-scrollbar overflow-y-auto p-6">
+                {videoGroups.length > 0 && (
+                  <section className={imageResults.length > 0 ? 'mb-10' : ''}>
+                    <div className="mb-4 flex items-center gap-3 border-b border-white pb-3">
+                      <FolderOpen className="w-5 h-5" />
+                      <h3 className="text-lg font-bold">Video Results</h3>
+                      <span className="border border-white px-2 py-0.5 text-xs font-bold">{videoGroups.length}</span>
+                      <span className="ml-auto text-xs">SORTED BY BEST MATCH</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {videoGroups.map((group, idx) => (
+                        <VideoResultFolder
+                          key={group.path}
+                          group={group}
+                          idx={idx}
+                          API_BASE={API_BASE}
+                          onSelect={setSelectedVideoGroup}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {imageResults.length > 0 && (
+                  <section>
+                    {videoGroups.length > 0 && (
+                      <div className="mb-4 flex items-center gap-3 border-b border-white pb-3">
+                        <ImageIcon className="w-5 h-5" />
+                        <h3 className="text-lg font-bold">Image Results</h3>
+                        <span className="border border-white px-2 py-0.5 text-xs font-bold">{imageResults.length}</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                      {imageResults.map((res, idx) => (
+                        <SearchResult
+                          key={res.id || res.path}
+                          res={res}
+                          idx={idx}
+                          API_BASE={API_BASE}
+                          onSelect={setSelectedImage}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

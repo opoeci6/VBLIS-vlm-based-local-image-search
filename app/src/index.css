@@ -8,9 +8,14 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background-color: #0d1117;
-  color: #fff;
+  background-color: #ffffff;
+  color: #000000;
   -webkit-user-drag: none;
+}
+
+.dark body {
+  background-color: #000000;
+  color: #ffffff;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -50,4 +55,233 @@ body {
   background: rgba(255, 255, 255, 0.2);
   border: 2px solid transparent;
   background-clip: content-box;
+}
+
+.vblis-ascii-stage {
+  width: min(100%, 44rem);
+  height: 10.5rem;
+  flex: 0 0 10.5rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: rgb(79 70 229);
+}
+
+.vblis-ascii-output {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 86ch;
+  height: 20.24em;
+  margin: 0;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: clamp(0.27rem, 0.72vw, 0.5rem);
+  font-weight: 700;
+  line-height: 0.92;
+  letter-spacing: 0;
+  white-space: pre;
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+  user-select: none;
+  text-shadow: 0 0 18px rgb(99 102 241 / 0.28);
+}
+
+.ascii-particle-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dark .vblis-ascii-stage {
+  color: rgb(165 180 252);
+}
+
+.dark .vblis-ascii-output {
+  text-shadow: 0 0 18px rgb(99 102 241 / 0.5);
+}
+
+/* Keep the interface geometry sharp while preserving intentional circles. */
+.rounded-sm,
+.rounded,
+.rounded-md,
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl {
+  border-radius: 0 !important;
+}
+
+.icon-tile {
+  border-radius: 0.75rem !important;
+}
+
+button.p-2.rounded-xl,
+button.p-3.rounded-xl,
+button.p-3.rounded-2xl {
+  border-radius: 0.75rem !important;
+}
+
+.terminal-theme {
+  --terminal-background: #ffffff;
+  --terminal-foreground: #000000;
+  background: var(--terminal-background) !important;
+  color: var(--terminal-foreground) !important;
+  color-scheme: light;
+}
+
+.dark .terminal-theme {
+  --terminal-background: #000000;
+  --terminal-foreground: #ffff00;
+  color-scheme: dark;
+}
+
+#root {
+  background: inherit;
+  color: inherit;
+}
+
+.terminal-theme,
+.terminal-theme * {
+  font-family: "Lucida Console", "Courier New", monospace !important;
+  border-color: var(--terminal-foreground) !important;
+  --tw-ring-color: var(--terminal-foreground) !important;
+  --tw-shadow-color: transparent !important;
+}
+
+.terminal-theme [class*="text-"]:not(.text-transparent),
+.terminal-theme .text-transparent {
+  color: var(--terminal-foreground) !important;
+  -webkit-text-fill-color: var(--terminal-foreground) !important;
+}
+
+.terminal-theme [class*="bg-black"],
+.terminal-theme [class*="bg-white"],
+.terminal-theme [class*="bg-gray-"],
+.terminal-theme [class*="bg-neutral-"],
+.terminal-theme [class*="bg-indigo-"],
+.terminal-theme [class*="bg-cyan-"],
+.terminal-theme [class*="bg-blue-"],
+.terminal-theme [class*="bg-emerald-"],
+.terminal-theme [class*="bg-teal-"],
+.terminal-theme [class*="bg-amber-"],
+.terminal-theme [class*="bg-rose-"] {
+  background-color: var(--terminal-background) !important;
+}
+
+.terminal-theme [class*="bg-gradient-"] {
+  background-image: none !important;
+}
+
+.terminal-theme button,
+.terminal-theme input,
+.terminal-theme select {
+  color: var(--terminal-foreground) !important;
+  background: var(--terminal-background) !important;
+  border: 1px solid var(--terminal-foreground) !important;
+  box-shadow: none !important;
+}
+
+.terminal-theme button:not(:disabled):hover {
+  color: var(--terminal-background) !important;
+  background: var(--terminal-foreground) !important;
+}
+
+.terminal-theme button:not(:disabled):hover * {
+  color: var(--terminal-background) !important;
+  -webkit-text-fill-color: var(--terminal-background) !important;
+}
+
+.terminal-theme input::placeholder {
+  color: var(--terminal-foreground) !important;
+  opacity: 1 !important;
+}
+
+.terminal-theme input:focus,
+.terminal-theme select:focus,
+.terminal-theme button:focus-visible {
+  outline: 2px solid var(--terminal-foreground) !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+.terminal-theme .terminal-progress-fill {
+  background: var(--terminal-foreground) !important;
+}
+
+.terminal-theme .model-status-dot {
+  display: inline-block;
+  border: 0 !important;
+  border-radius: 9999px !important;
+}
+
+.terminal-theme .model-status-dot-online {
+  background: #22c55e !important;
+}
+
+.terminal-theme .model-status-dot-offline {
+  background: #ef4444 !important;
+}
+
+.terminal-theme input[type="range"].terminal-range {
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  padding: 0;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+}
+
+.terminal-theme input[type="range"].terminal-range::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 3px;
+  background: var(--terminal-foreground);
+  border: 0;
+}
+
+.terminal-theme input[type="range"].terminal-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6.5px;
+  background: var(--terminal-foreground);
+  border: 1px solid var(--terminal-foreground);
+  border-radius: 0;
+}
+
+.terminal-theme input[type="range"].terminal-range:focus::-webkit-slider-thumb {
+  outline: 2px solid var(--terminal-foreground);
+  outline-offset: 2px;
+}
+
+.terminal-theme .vblis-ascii-stage,
+.terminal-theme .vblis-ascii-output {
+  color: var(--terminal-foreground) !important;
+  background: transparent !important;
+  text-shadow: none !important;
+}
+
+.dark .terminal-theme .vblis-ascii-stage,
+.dark .terminal-theme .vblis-ascii-output {
+  color: #ffffff !important;
+}
+
+.terminal-theme [class*="shadow-"] {
+  box-shadow: none !important;
+}
+
+.terminal-theme .custom-scrollbar::-webkit-scrollbar-track,
+.terminal-theme.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--terminal-background) !important;
+}
+
+.terminal-theme .custom-scrollbar::-webkit-scrollbar-thumb,
+.terminal-theme.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--terminal-foreground) !important;
+  border-color: var(--terminal-background) !important;
 }

@@ -1,7 +1,21 @@
 import React from 'react';
-import { Minus, Square, X, Moon, Sun } from 'lucide-react';
+import { Minus, Square, X, Moon, Sun, Shirt, Check } from 'lucide-react';
 
 const TitleBar = ({ theme, setTheme }) => {
+  const [showThemeMenu, setShowThemeMenu] = React.useState(false);
+  const themeMenuRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (!themeMenuRef.current?.contains(event.target)) {
+        setShowThemeMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
+
   const handleMinimize = () => {
     window.electronAPI?.minimize();
   };
@@ -24,6 +38,30 @@ const TitleBar = ({ theme, setTheme }) => {
         <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 tracking-tight">VBLIS</span>
       </div>
       <div className="flex h-full items-center" style={{ WebkitAppRegion: 'no-drag' }}>
+        <div ref={themeMenuRef} className="relative h-full">
+          <button
+            onClick={() => setShowThemeMenu(current => !current)}
+            className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors"
+            title="Select Theme"
+            aria-label="Select Theme"
+            aria-expanded={showThemeMenu}
+          >
+            <Shirt className="w-4 h-4" />
+          </button>
+
+          {showThemeMenu && (
+            <div className="absolute right-0 top-full z-[220] mt-px w-44 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-black p-1 shadow-xl">
+              <button
+                onClick={() => setShowThemeMenu(false)}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-bold"
+              >
+                <span>Theme1</span>
+                <Check className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="w-[1px] h-4 bg-gray-200 dark:bg-neutral-800 mx-1" />
         <button
           onClick={toggleTheme}
           className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-amber-400 transition-colors"

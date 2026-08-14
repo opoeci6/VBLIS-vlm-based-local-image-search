@@ -115,7 +115,7 @@ def persist_active_model(model_name: str):
         print(f"Failed to persist active model: {e}")
 
 from model_manager import ModelManager
-from indexer import Indexer
+from indexer import Indexer, VIDEO_EXTENSIONS, extract_video_frame
 
 from contextlib import asynccontextmanager
 
@@ -311,6 +311,18 @@ def get_indexed_folders():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/index/folder/contents")
+def get_indexed_folder_contents(
+    folder_path: str = Query(...),
+    limit: int = Query(5000, ge=1, le=20000)
+):
+    try:
+        return indexer.get_folder_contents(folder_path, limit)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/index/folder/delete")
 def delete_folder_index(req: FolderDeleteRequest):
     try:
@@ -471,7 +483,11 @@ def clear_image_cache():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/image")
-def serve_image(path: str = Query(...), size: str = "full"):
+def serve_image(
+    path: str = Query(...),
+    size: str = "full",
+    timestamp: float = Query(0.0, ge=0.0)
+):
     """Serve a local image file by absolute path. Transcodes HEIC to JPEG.
     Supports size='thumbnail' for faster loading in the UI grid.
     Thumbnails are cached on disk in the 'cache' directory.
@@ -481,6 +497,33 @@ def serve_image(path: str = Query(...), size: str = "full"):
     
     ext = os.path.splitext(path)[1].lower()
     is_heic = ext in (".heic", ".heif")
+    is_video = ext in VIDEO_EXTENSIONS
+
+    if is_video:
+        try:
+            stat = os.stat(path)
+            cache_key = hashlib.sha256(
+                f"{os.path.abspath(path)}:{stat.st_mtime_ns}:{stat.st_size}:{timestamp:.3f}".encode("utf-8")
+            ).hexdigest()
+            cache_path = CACHE_DIR / f"{cache_key}_video_frame.jpg"
+
+            if size == "thumbnail" and cache_path.exists():
+                return FileResponse(cache_path)
+
+            frame = extract_video_frame(path, timestamp)
+            if size == "thumbnail":
+                frame.thumbnail((480, 480))
+                frame.convert("RGB").save(cache_path, format="JPEG", quality=78, optimize=True)
+                frame.close()
+                return FileResponse(cache_path)
+
+            buffer = io.BytesIO()
+            frame.convert("RGB").save(buffer, format="JPEG", quality=90)
+            frame.close()
+            buffer.seek(0)
+            return StreamingResponse(buffer, media_type="image/jpeg")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to decode video frame: {str(e)}")
     
     # If thumbnail is requested, check cache first
     if size == "thumbnail":
