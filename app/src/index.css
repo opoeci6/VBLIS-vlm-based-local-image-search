@@ -256,7 +256,9 @@ body {
 .terminal-theme .model-status-dot {
   display: inline-block;
   border: 0 !important;
-  border-radius: 9999px !important;
+  border-radius: 0 !important;
+  animation: none !important;
+  -webkit-animation: none !important;
 }
 
 .terminal-theme .model-status-dot-online {

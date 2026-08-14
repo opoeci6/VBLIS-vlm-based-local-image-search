@@ -17,7 +17,8 @@ ESSENTIAL_EXACT_FILES = {
     "vocab.txt",
     "merges.txt",
     "special_tokens_map.json",
-    "spiece.model"
+    "spiece.model",
+    "tokenizer.model"
 }
 
 WEIGHT_EXTENSIONS = {".safetensors", ".bin"}

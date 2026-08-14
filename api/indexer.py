@@ -64,7 +64,11 @@ def extract_video_frame(filepath, timestamp_seconds):
         capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, timestamp_seconds) * 1000.0)
         success, frame = capture.read()
         if not success or frame is None:
-            raise ValueError(f"Video frame could not be decoded at {timestamp_seconds:.2f}s.")
+            # Fallback to start of video if requested timestamp is past the end of a short clip
+            capture.set(cv2.CAP_PROP_POS_MSEC, 0.0)
+            success, frame = capture.read()
+            if not success or frame is None:
+                raise ValueError(f"Video frame could not be decoded at {timestamp_seconds:.2f}s.")
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         return Image.fromarray(frame)
     finally:

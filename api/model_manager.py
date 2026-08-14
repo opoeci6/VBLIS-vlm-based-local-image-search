@@ -1,12 +1,18 @@
 import os
+from pathlib import Path
+
+# Ensure HF_HOME is configured to local models directory before importing transformers
+_api_dir = Path(__file__).parent.resolve()
+if "HF_HOME" not in os.environ:
+    os.environ["HF_HOME"] = str(_api_dir / "models")
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import torch
 from PIL import Image
 from transformers import AutoProcessor, AutoModel
 import gc
 import time
 import threading
-from pathlib import Path
 from model_downloader import ModelDownloader
 
 
@@ -126,18 +132,47 @@ class ModelManager:
     def cancel_download(self, val: bool):
         self.downloader.cancel_requested = val
 
+    def get_model_snapshot_path(self, model_id: str) -> Path | None:
+        """Resolve the local snapshot directory containing model files if available."""
+        model_path = self.downloader.get_model_path(model_id)
+        if not model_path.exists():
+            return None
+
+        # 1. Check refs/main commit SHA
+        refs_main = model_path / "refs" / "main"
+        if refs_main.exists():
+            try:
+                commit_sha = refs_main.read_text(encoding="utf-8").strip()
+                target_dir = model_path / "snapshots" / commit_sha
+                if target_dir.exists() and (target_dir / "config.json").exists():
+                    return target_dir
+            except Exception:
+                pass
+
+        # 2. Check any valid snapshot directory
+        snapshots_dir = model_path / "snapshots"
+        if snapshots_dir.exists():
+            for d in snapshots_dir.iterdir():
+                if d.is_dir() and (d / "config.json").exists():
+                    return d
+
+        return None
+
     def load_model(self, model_id: str, local_files_only: bool = False):
         if self.current_model_id == model_id and self.model is not None:
             return
 
         if not local_files_only:
-            print(f"Ensuring {model_id} is downloaded via ModelDownloader...")
-            self.downloader.download_model(model_id)
+            status_info = self.downloader.inspect_model_status(model_id)
+            snapshot_dir = self.get_model_snapshot_path(model_id)
+            if not (status_info["downloaded"] and snapshot_dir is not None):
+                print(f"Ensuring {model_id} is downloaded via ModelDownloader...")
+                self.downloader.download_model(model_id)
 
         # Swap phase - LOCKED to ensure atomic switch
         with self._lock:
             # Check again if already loaded
-            if self.current_model_id == model_id:
+            if self.current_model_id == model_id and self.model is not None:
                 return
 
             print(f"Loading model {model_id} on {self.device}...")
@@ -145,11 +180,6 @@ class ModelManager:
             # Unload old model
             old_model = self.model
             old_processor = self.processor
-            
-            # We don't set self.model = None here yet to keep it available as long as possible
-            # but we must ensure we don't have two models on GPU at the same time if memory is tight.
-            # However, AutoModel.from_pretrained...to(device) will allocate NEW memory.
-            # So we SHOULD probably unload first if we are on GPU.
             
             if old_model is not None:
                 print(f"Unloading previous model {self.current_model_id}...")
@@ -164,11 +194,20 @@ class ModelManager:
 
             self.is_loading_model = True
             try:
-                self.processor = AutoProcessor.from_pretrained(model_id, use_fast=False, local_files_only=local_files_only)
-                self.model = AutoModel.from_pretrained(model_id, local_files_only=local_files_only).to(self.device)
+                snapshot_path = self.get_model_snapshot_path(model_id)
+                if snapshot_path is not None:
+                    load_target = str(snapshot_path)
+                elif local_files_only:
+                    raise FileNotFoundError(f"Model '{model_id}' is not downloaded locally.")
+                else:
+                    load_target = model_id
+
+                print(f"Loading processor and model weights from: {load_target}")
+                self.processor = AutoProcessor.from_pretrained(load_target, use_fast=False, local_files_only=True)
+                self.model = AutoModel.from_pretrained(load_target, local_files_only=True).to(self.device)
                 self.model.eval()
                 self.current_model_id = model_id
-                print(f"Model {model_id} loaded successfully.")
+                print(f"Model {model_id} loaded successfully from {load_target}.")
             except Exception as e:
                 # Clean up any partial load
                 self.model = None

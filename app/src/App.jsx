@@ -41,10 +41,75 @@ const formatVideoTimestamp = (seconds = 0) => {
 const getMediaPreviewUrl = (API_BASE, item, size = 'thumbnail') => {
   const params = new URLSearchParams({ path: item.path, size });
   if (item.media_type === 'video') {
-    params.set('timestamp', String(item.timestamp_seconds || 0));
+    params.set('timestamp', String(item.timestamp_seconds ?? 1.0));
   }
   return `${API_BASE}/image?${params.toString()}`;
 };
+
+const FolderItemThumbnail = memo(({ item, API_BASE, uiTheme = 'modern', onSelect }) => {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const isModern = uiTheme === 'modern';
+  const isVideo = item.media_type === 'video';
+
+  return (
+    <div
+      className={cn(
+        "relative w-12 h-12 flex-shrink-0 flex items-center justify-center overflow-hidden cursor-pointer group/thumb transition-all select-none",
+        isModern
+          ? "rounded-xl ring-1 ring-black/5 dark:ring-white/10 hover:ring-indigo-500/50 bg-gray-100 dark:bg-neutral-800"
+          : "border border-white bg-black hover:border-indigo-400"
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect({
+          path: item.path,
+          name: item.name,
+          media_type: item.media_type,
+          size: item.size,
+          isBrowsing: true,
+          timestamp_seconds: isVideo ? 1.0 : 0
+        });
+      }}
+      title={`Click to preview ${item.name}`}
+    >
+      {/* Placeholder skeleton / icon while loading or if error */}
+      {(!loaded || error) && (
+        <div className={cn(
+          "absolute inset-0 flex items-center justify-center transition-opacity",
+          isVideo
+            ? "text-cyan-500 bg-cyan-500/10"
+            : "text-indigo-500 bg-indigo-500/10",
+          !loaded && !error && "animate-pulse"
+        )}>
+          {isVideo ? <Video className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
+        </div>
+      )}
+
+      {!error && (
+        <img
+          src={getMediaPreviewUrl(API_BASE, item, 'thumbnail')}
+          alt={item.name}
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => setError(true)}
+          className={cn(
+            "w-full h-full object-cover transition-all duration-300 group-hover/thumb:scale-110",
+            loaded ? "opacity-100" : "opacity-0"
+          )}
+        />
+      )}
+
+      {/* Video indicator badge */}
+      {isVideo && (
+        <div className="absolute bottom-0.5 right-0.5 px-1 py-0.2 bg-black/80 backdrop-blur-sm rounded text-[8px] font-bold text-cyan-300 flex items-center gap-0.5 pointer-events-none">
+          <Video className="w-2.5 h-2.5" />
+        </div>
+      )}
+    </div>
+  );
+});
 
 const SearchResult = memo(({ res, idx, API_BASE, onSelect, uiTheme = 'modern' }) => {
   const isModern = uiTheme === 'modern';
@@ -761,6 +826,7 @@ function App() {
   const [browsingFolder, setBrowsingFolder] = useState(null);
   const [folderContents, setFolderContents] = useState(null);
   const [isFetchingFolderContents, setIsFetchingFolderContents] = useState(false);
+  const [folderVisibleLimit, setFolderVisibleLimit] = useState(60);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [gpuSettings, setGpuSettings] = useState({ 
     use_gpu: false, 
@@ -783,7 +849,7 @@ function App() {
   const foldersRef = useRef(null);
 
   useEffect(() => {
-    if (!isFoldersExpanded || uiTheme !== 'modern') return;
+    if (!isFoldersExpanded) return;
     const handleClickOutside = (e) => {
       if (foldersRef.current && !foldersRef.current.contains(e.target)) {
         setIsFoldersExpanded(false);
@@ -791,7 +857,7 @@ function App() {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isFoldersExpanded, uiTheme]);
+  }, [isFoldersExpanded]);
 
   const imageResults = useMemo(
     () => results.filter(result => result.media_type !== 'video'),
@@ -1459,6 +1525,7 @@ function App() {
   const handleBrowseFolderContents = async (folder) => {
     setBrowsingFolder(folder);
     setFolderContents(null);
+    setFolderVisibleLimit(60);
     setShowFolderContents(true);
     setIsFetchingFolderContents(true);
 
@@ -1487,6 +1554,7 @@ function App() {
     setShowFolderContents(false);
     setBrowsingFolder(null);
     setFolderContents(null);
+    setFolderVisibleLimit(60);
   };
 
   const handleReindexFolder = async (folder_path) => {
@@ -2208,7 +2276,15 @@ function App() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            <div
+              className="flex-1 overflow-y-auto p-4 custom-scrollbar"
+              onScroll={(e) => {
+                const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+                if (scrollHeight - scrollTop - clientHeight < 300) {
+                  setFolderVisibleLimit(prev => Math.min(prev + 40, folderContents?.items?.length || prev));
+                }
+              }}
+            >
               {isFetchingFolderContents ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-4">
                   <Loader2 className="w-10 h-10 text-cyan-500 animate-spin" />
@@ -2228,24 +2304,39 @@ function App() {
                     </div>
                   )}
 
-                  {folderContents.items.map((item) => (
+                  {folderContents.items.slice(0, folderVisibleLimit).map((item) => (
                     <div
                       key={item.path}
-                      className="flex items-center gap-4 p-3 rounded-2xl border border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20"
+                      className={cn(
+                        "flex items-center gap-4 p-3 rounded-2xl border transition-all",
+                        uiTheme === 'modern'
+                          ? "border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20 hover:bg-gray-100/80 dark:hover:bg-neutral-800/40"
+                          : "border-white bg-black hover:border-indigo-400"
+                      )}
                     >
-                      <div className={cn(
-                        "icon-tile w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0",
-                        item.media_type === 'video'
-                          ? "bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
-                          : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-                      )}>
-                        {item.media_type === 'video'
-                          ? <Video className="w-5 h-5" />
-                          : <ImageIcon className="w-5 h-5" />}
-                      </div>
+                      <FolderItemThumbnail
+                        item={item}
+                        API_BASE={API_BASE}
+                        uiTheme={uiTheme}
+                        onSelect={setSelectedImage}
+                      />
 
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-neutral-800 dark:text-neutral-200 truncate" title={item.name}>
+                      <div
+                        className="min-w-0 flex-1 cursor-pointer"
+                        onClick={() => setSelectedImage({
+                          path: item.path,
+                          name: item.name,
+                          media_type: item.media_type,
+                          size: item.size,
+                          isBrowsing: true,
+                          timestamp_seconds: item.media_type === 'video' ? 1.0 : 0
+                        })}
+                        title="Click to preview file"
+                      >
+                        <p className={cn(
+                          "text-sm font-bold truncate",
+                          uiTheme === 'modern' ? "text-neutral-800 dark:text-neutral-200 hover:text-indigo-600 dark:hover:text-indigo-400" : "text-white"
+                        )}>
                           {item.name}
                         </p>
                         <p className="text-[10px] text-neutral-500 font-mono truncate mt-1" title={item.relative_path}>
@@ -2253,22 +2344,60 @@ function App() {
                         </p>
                       </div>
 
-                      <div className="text-right flex-shrink-0">
-                        <span className={cn(
-                          "inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider",
-                          item.media_type === 'video'
-                            ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
-                            : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-                        )}>
-                          {item.media_type}
-                        </span>
-                        <p className="text-[10px] text-neutral-500 mt-1">{formatBytes(item.size)}</p>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="text-right">
+                          <span className={cn(
+                            "inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider",
+                            item.media_type === 'video'
+                              ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
+                              : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                          )}>
+                            {item.media_type}
+                          </span>
+                          <p className="text-[10px] text-neutral-500 mt-1">{formatBytes(item.size)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (window.electronAPI?.openInExplorer) {
+                              const res = await window.electronAPI.openInExplorer(item.path);
+                              if (!res?.success) {
+                                setToast({ type: 'error', message: res?.error || 'Failed to open file in explorer.' });
+                              }
+                            }
+                          }}
+                          className={cn(
+                            "p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all cursor-pointer",
+                            uiTheme !== 'modern' && "border border-white text-white"
+                          )}
+                          title="Show in Explorer"
+                        >
+                          <FolderOpen className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
+
+                  {folderVisibleLimit < folderContents.items.length && (
+                    <div className="py-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setFolderVisibleLimit(prev => Math.min(prev + 100, folderContents.items.length))}
+                        className={cn(
+                          "text-xs font-bold px-4 py-1.5 rounded-xl border transition-all",
+                          uiTheme === 'modern'
+                            ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100"
+                            : "border border-white text-white"
+                        )}
+                      >
+                        Load more ({folderContents.items.length - folderVisibleLimit} remaining)
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-              </div>
+            </div>
             </div>
           </div>
       )}
@@ -2685,10 +2814,10 @@ function App() {
       {/* Lightbox Modal */}
       {selectedImage && (
         <div
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 py-8 overflow-y-auto animate-in fade-in duration-200 custom-scrollbar"
+          className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 py-8 overflow-y-auto animate-in fade-in duration-200 custom-scrollbar"
           onClick={() => setSelectedImage(null)}
         >
-          <div className="fixed top-12 right-6 flex gap-4 z-[60]">
+          <div className="fixed top-12 right-6 flex gap-4 z-[90]">
             {window.electronAPI && (
               <button
                 onClick={async (e) => {
@@ -2726,9 +2855,21 @@ function App() {
           />
 
           <div className="mt-6 text-center" onClick={(e) => e.stopPropagation()}>
-            <p className="text-xl font-medium text-white mb-2">
-              Match Score: {Math.round(selectedImage.score * 100)}%
-            </p>
+            {!selectedImage.isBrowsing && selectedImage.score !== undefined && (
+              <p className="text-xl font-medium text-white mb-2">
+                Match Score: {Math.round(selectedImage.score * 100)}%
+              </p>
+            )}
+            {selectedImage.isBrowsing && (
+              <div className="mb-2">
+                <p className="text-xl font-medium text-white truncate max-w-3xl px-4 mx-auto" title={selectedImage.name || selectedImage.path}>
+                  {selectedImage.name || selectedImage.path?.split('\\').pop().split('/').pop()}
+                </p>
+                {selectedImage.size ? (
+                  <p className="text-xs text-neutral-400 font-mono mt-0.5">{formatBytes(selectedImage.size)}</p>
+                ) : null}
+              </div>
+            )}
             {selectedImage.media_type === 'video' && (
               <p className={cn(
                 "mb-3 inline-flex items-center gap-2 px-3.5 py-1 text-xs font-bold",
@@ -2772,14 +2913,39 @@ function App() {
               {selectedImage.path}
             </p>
             {selectedImage.isDuplicate && (
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 space-y-1.5">
                 {selectedImage.otherPaths.map(p => (
-                  <p key={p} className={cn(
-                    "text-[11px] break-all max-w-2xl mx-auto",
-                    uiTheme === 'modern' ? "text-neutral-400 font-sans" : "text-neutral-500 font-mono"
-                  )}>
-                    Also found at: {p}
-                  </p>
+                  <div
+                    key={p}
+                    className={cn(
+                      "text-[11px] break-all max-w-2xl mx-auto flex items-center justify-center gap-1.5 flex-wrap",
+                      uiTheme === 'modern' ? "text-neutral-400 font-sans" : "text-neutral-400 font-mono"
+                    )}
+                  >
+                    <span className="opacity-75">Also found at:</span>
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (window.electronAPI?.openInExplorer) {
+                          const res = await window.electronAPI.openInExplorer(p);
+                          if (!res?.success) {
+                            setToast({ type: 'error', message: res?.error || 'Failed to open file in explorer.' });
+                          }
+                        }
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1 cursor-pointer transition-all break-all text-left group",
+                        uiTheme === 'modern'
+                          ? "text-indigo-300 hover:text-indigo-200 underline underline-offset-2 hover:opacity-100 opacity-90"
+                          : "text-white hover:underline underline-offset-2"
+                      )}
+                      title={`Show ${p} in Explorer`}
+                    >
+                      <FolderOpen className="w-3 h-3 flex-shrink-0 inline group-hover:scale-110 transition-transform" />
+                      <span>{p}</span>
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -2814,19 +2980,13 @@ function App() {
 
       {/* Inline / Floating Folder Manager */}
       {models.active_model && (
-        <section data-ascii-protected="true" className={cn("w-full max-w-7xl px-6 mb-3", uiTheme === 'modern' ? "relative z-30" : "")}>
+        <section data-ascii-protected="true" className="w-full max-w-7xl px-6 mb-3 relative z-30">
           <div
             ref={foldersRef}
-            className={cn(
-              "bg-white dark:bg-neutral-900/70 border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-xl shadow-black/5 dark:shadow-black/20 transition-all duration-200",
-              uiTheme !== 'modern' && "overflow-hidden"
-            )}
+            className="bg-white dark:bg-neutral-900/70 border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-xl shadow-black/5 dark:shadow-black/20 transition-all duration-200"
           >
             <div
-              className={cn(
-                "px-6 py-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-indigo-500/5 dark:bg-indigo-500/10 cursor-pointer select-none transition-colors hover:bg-indigo-500/10 dark:hover:bg-indigo-500/15 rounded-3xl",
-                uiTheme !== 'modern' && isFoldersExpanded && "rounded-b-none border-b border-gray-100 dark:border-neutral-800"
-              )}
+              className="px-6 py-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-indigo-500/5 dark:bg-indigo-500/10 cursor-pointer select-none transition-colors hover:bg-indigo-500/10 dark:hover:bg-indigo-500/15 rounded-3xl"
               onClick={() => setIsFoldersExpanded(prev => !prev)}
             >
               <div className="flex items-center gap-3 min-w-0">
@@ -2871,10 +3031,10 @@ function App() {
             {isFoldersExpanded && (
               <div
                 className={cn(
-                  "animate-in slide-in-from-top-2 fade-in duration-200",
+                  "animate-in slide-in-from-top-2 fade-in duration-200 absolute top-[calc(100%+8px)] left-6 right-6 z-40 overflow-hidden",
                   uiTheme === 'modern'
-                    ? "absolute top-[calc(100%+8px)] left-6 right-6 z-40 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-2xl border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10"
-                    : "border-t border-gray-100 dark:border-neutral-800"
+                    ? "bg-white/95 dark:bg-neutral-900/95 backdrop-blur-2xl border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+                    : "bg-white dark:bg-black border border-black dark:border-white shadow-2xl"
                 )}
               >
                 {indexedFolders.length > 0 && (
@@ -3139,7 +3299,7 @@ function App() {
                     onClick={() => setShowSettings(true)}
                     className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
                   >
-                    <div className="model-status-dot model-status-dot-online w-2 h-2 rounded-full animate-pulse" aria-hidden="true" />
+                    <div className="model-status-dot model-status-dot-online w-2 h-2 flex-shrink-0" aria-hidden="true" />
                     <span>Active Model: <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
                   </button>
                   <button
