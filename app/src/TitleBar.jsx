@@ -1,7 +1,7 @@
 import React from 'react';
-import { Minus, Square, X, Moon, Sun, Shirt, Check } from 'lucide-react';
+import { Minus, Square, X, Moon, Sun, Shirt, Check, Sparkles, Terminal } from 'lucide-react';
 
-const TitleBar = ({ theme, setTheme }) => {
+const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
   const [showThemeMenu, setShowThemeMenu] = React.useState(false);
   const themeMenuRef = React.useRef(null);
 
@@ -32,6 +32,11 @@ const TitleBar = ({ theme, setTheme }) => {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
+  const themeOptions = [
+    { id: 'modern', label: 'Modern Rounded', icon: Sparkles, desc: 'Soft curves, gradients & glassmorphism' },
+    { id: 'terminal', label: 'Retro Terminal', icon: Terminal, desc: 'Monospace, sharp borders & ASCII art' }
+  ];
+
   return (
     <div className="h-8 w-full bg-white dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 flex items-center justify-between select-none fixed top-0 left-0 z-[200]">
       <div className="flex-1 h-full flex items-center px-3" style={{ WebkitAppRegion: 'drag' }}>
@@ -41,23 +46,48 @@ const TitleBar = ({ theme, setTheme }) => {
         <div ref={themeMenuRef} className="relative h-full">
           <button
             onClick={() => setShowThemeMenu(current => !current)}
-            className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors"
-            title="Select Theme"
-            aria-label="Select Theme"
+            className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-indigo-400 transition-colors"
+            title="Switch UI Theme Style"
+            aria-label="Switch UI Theme Style"
             aria-expanded={showThemeMenu}
           >
             <Shirt className="w-4 h-4" />
           </button>
 
           {showThemeMenu && (
-            <div className="absolute right-0 top-full z-[220] mt-px w-44 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-black p-1 shadow-xl">
-              <button
-                onClick={() => setShowThemeMenu(false)}
-                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-bold"
-              >
-                <span>Theme1</span>
-                <Check className="w-4 h-4" />
-              </button>
+            <div className="absolute right-0 top-full z-[220] mt-1 w-64 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 rounded-xl p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                UI Theme Style
+              </div>
+              <div className="space-y-1">
+                {themeOptions.map((opt) => {
+                  const Icon = opt.icon;
+                  const isSelected = uiTheme === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => {
+                        setUiTheme?.(opt.id);
+                        setShowThemeMenu(false);
+                      }}
+                      className={`flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left rounded-lg transition-all ${
+                        isSelected
+                          ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-semibold'
+                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Icon className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'}`} />
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold leading-tight">{opt.label}</div>
+                          <div className="text-[10px] text-neutral-400 dark:text-neutral-500 truncate leading-normal">{opt.desc}</div>
+                        </div>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 flex-shrink-0 text-indigo-600 dark:text-indigo-400" />}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -97,3 +127,4 @@ const TitleBar = ({ theme, setTheme }) => {
 };
 
 export default TitleBar;
+

@@ -9,12 +9,12 @@ body {
   height: 100vh;
   overflow: hidden;
   background-color: #ffffff;
-  color: #000000;
+  color: #0f172a;
   -webkit-user-drag: none;
 }
 
 .dark body {
-  background-color: #000000;
+  background-color: #0d1117;
   color: #ffffff;
 }
 
@@ -57,6 +57,7 @@ body {
   background-clip: content-box;
 }
 
+/* ASCII Animation Layer */
 .vblis-ascii-stage {
   width: min(100%, 44rem);
   height: 10.5rem;
@@ -105,26 +106,23 @@ body {
   text-shadow: 0 0 18px rgb(99 102 241 / 0.5);
 }
 
-/* Keep the interface geometry sharp while preserving intentional circles. */
-.rounded-sm,
-.rounded,
-.rounded-md,
-.rounded-lg,
-.rounded-xl,
-.rounded-2xl,
-.rounded-3xl {
-  border-radius: 0 !important;
+.model-status-dot {
+  display: inline-block;
+  border-radius: 9999px;
 }
 
-.icon-tile {
-  border-radius: 0.75rem !important;
+.model-status-dot-online {
+  background-color: #10b981;
 }
 
-button.p-2.rounded-xl,
-button.p-3.rounded-xl,
-button.p-3.rounded-2xl {
-  border-radius: 0.75rem !important;
+.model-status-dot-offline {
+  background-color: #f59e0b;
 }
+
+/* ==========================================================================
+   TERMINAL RETRO THEME
+   Scoped strictly under .terminal-theme
+   ========================================================================== */
 
 .terminal-theme {
   --terminal-background: #ffffff;
@@ -143,6 +141,21 @@ button.p-3.rounded-2xl {
 #root {
   background: inherit;
   color: inherit;
+}
+
+/* Sharp geometry in Terminal Theme */
+.terminal-theme .rounded-sm,
+.terminal-theme .rounded,
+.terminal-theme .rounded-md,
+.terminal-theme .rounded-lg,
+.terminal-theme .rounded-xl,
+.terminal-theme .rounded-2xl,
+.terminal-theme .rounded-3xl {
+  border-radius: 0 !important;
+}
+
+.terminal-theme .icon-tile {
+  border-radius: 0 !important;
 }
 
 .terminal-theme,
@@ -181,19 +194,46 @@ button.p-3.rounded-2xl {
 .terminal-theme input,
 .terminal-theme select {
   color: var(--terminal-foreground) !important;
+  -webkit-text-fill-color: var(--terminal-foreground) !important;
+  background-color: var(--terminal-background) !important;
   background: var(--terminal-background) !important;
   border: 1px solid var(--terminal-foreground) !important;
   box-shadow: none !important;
 }
 
-.terminal-theme button:not(:disabled):hover {
+.terminal-theme button svg {
+  stroke: var(--terminal-foreground) !important;
+}
+
+/* Terminal Button Hover & Active States: Pure high-contrast color inversion */
+.terminal-theme button:not(:disabled):hover,
+.terminal-theme button:not(:disabled):hover *,
+.terminal-theme button:not(:disabled):hover [class*="text-"],
+.terminal-theme button:not(:disabled):active,
+.terminal-theme button:not(:disabled):active *,
+.terminal-theme button:not(:disabled):active [class*="text-"] {
   color: var(--terminal-background) !important;
+  -webkit-text-fill-color: var(--terminal-background) !important;
+  border-color: var(--terminal-foreground) !important;
+}
+
+.terminal-theme button:not(:disabled):hover,
+.terminal-theme button:not(:disabled):active {
+  background-color: var(--terminal-foreground) !important;
   background: var(--terminal-foreground) !important;
 }
 
-.terminal-theme button:not(:disabled):hover * {
-  color: var(--terminal-background) !important;
-  -webkit-text-fill-color: var(--terminal-background) !important;
+.terminal-theme button:not(:disabled):hover *,
+.terminal-theme button:not(:disabled):hover [class*="bg-"],
+.terminal-theme button:not(:disabled):active *,
+.terminal-theme button:not(:disabled):active [class*="bg-"] {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+.terminal-theme button:not(:disabled):hover svg,
+.terminal-theme button:not(:disabled):active svg {
+  stroke: var(--terminal-background) !important;
 }
 
 .terminal-theme input::placeholder {
@@ -278,10 +318,12 @@ button.p-3.rounded-2xl {
 .terminal-theme .custom-scrollbar::-webkit-scrollbar-track,
 .terminal-theme.custom-scrollbar::-webkit-scrollbar-track {
   background: var(--terminal-background) !important;
+  border-radius: 0 !important;
 }
 
 .terminal-theme .custom-scrollbar::-webkit-scrollbar-thumb,
 .terminal-theme.custom-scrollbar::-webkit-scrollbar-thumb {
   background: var(--terminal-foreground) !important;
   border-color: var(--terminal-background) !important;
+  border-radius: 0 !important;
 }

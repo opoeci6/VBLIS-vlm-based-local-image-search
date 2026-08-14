@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, Info, Sparkles, LogOut, XCircle, Copy, Video } from 'lucide-react';
+import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, ChevronDown, ChevronUp, Info, Sparkles, LogOut, XCircle, Copy, Video, Terminal } from 'lucide-react';
 import TitleBar from './TitleBar';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -46,23 +46,33 @@ const getMediaPreviewUrl = (API_BASE, item, size = 'thumbnail') => {
   return `${API_BASE}/image?${params.toString()}`;
 };
 
-const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
+const SearchResult = memo(({ res, idx, API_BASE, onSelect, uiTheme = 'modern' }) => {
+  const isModern = uiTheme === 'modern';
+
   return (
     <div
       className={cn(
-        "relative group rounded-3xl overflow-hidden shadow-xl ring-1 ring-black/5 dark:ring-white/5 cursor-pointer h-[250px]",
-        "animate-in fade-in zoom-in-95 fill-mode-both",
-        res.isDuplicate && "ring-2"
+        "relative group cursor-pointer h-[250px] overflow-hidden animate-in fade-in zoom-in-95 fill-mode-both",
+        isModern
+          ? "rounded-3xl shadow-xl ring-1 ring-black/5 dark:ring-white/5 transition-all duration-300 hover:shadow-2xl hover:-translate-y-1"
+          : "border border-white bg-black",
+        res.isDuplicate && (isModern ? "ring-2" : "border-2")
       )}
       style={{
         animationDelay: `${idx * 50}ms`,
         animationDuration: '400ms',
-        boxShadow: res.isDuplicate ? `0 0 20px -5px ${res.dupeColor}66, 0 0 0 2px ${res.dupeColor}` : undefined
+        boxShadow: isModern && res.isDuplicate ? `0 0 20px -5px ${res.dupeColor}66, 0 0 0 2px ${res.dupeColor}` : undefined
       }}
       onClick={() => onSelect(res)}
     >
       {res.isDuplicate && (
-        <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full text-[10px] font-bold text-white bg-black border border-white shadow-lg flex items-center gap-1.5">
+        <div
+          className={cn(
+            "absolute top-3 left-3 z-10 px-2.5 py-1 text-[10px] font-bold text-white shadow-lg flex items-center gap-1.5",
+            isModern ? "rounded-full backdrop-blur-md" : "bg-black border border-white"
+          )}
+          style={{ backgroundColor: isModern ? `${res.dupeColor || '#6366f1'}ee` : undefined }}
+        >
           {res.duplicateType === 'exact' ? <Copy className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
           <span>
             {res.duplicateType === 'exact' ? 'Exact Copy' : 'Visual Duplicate'} ({res.otherPaths ? res.otherPaths.length + 1 : 2})
@@ -71,8 +81,15 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
       )}
 
       {res.media_type === 'video' && (
-        <div className="absolute top-3 right-3 z-10 px-2.5 py-1 bg-black/70 text-cyan-300 text-[10px] font-bold shadow-lg backdrop-blur-md flex items-center gap-1.5">
-          <Video className="w-3 h-3" />
+        <div
+          className={cn(
+            "absolute top-3 right-3 z-10 px-2.5 py-1 text-[10px] font-bold shadow-lg flex items-center gap-1.5",
+            isModern
+              ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10"
+              : "bg-black text-cyan-300 border border-white"
+          )}
+        >
+          <Video className="w-3 h-3 text-cyan-400" />
           <span>{formatVideoTimestamp(res.timestamp_seconds)}</span>
         </div>
       )}
@@ -84,7 +101,14 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
         loading="lazy"
       />
 
-      <div className="media-result-overlay absolute inset-x-0 bottom-0 bg-black border-t border-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-4">
+      <div
+        className={cn(
+          "absolute inset-x-0 bottom-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+          isModern
+            ? "bg-gradient-to-t from-black/80 via-black/40 to-transparent"
+            : "media-result-overlay bg-black border-t border-white"
+        )}
+      >
         <div className="translate-y-2 group-hover:translate-y-0 transition-transform duration-300 ease-out">
           <p className="text-xs font-semibold text-emerald-400 mb-1 flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
@@ -99,12 +123,19 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect }) => {
   );
 });
 
-const VideoResultFolder = memo(({ group, idx, API_BASE, onSelect }) => {
+const VideoResultFolder = memo(({ group, idx, API_BASE, onSelect, uiTheme = 'modern' }) => {
+  const isModern = uiTheme === 'modern';
+
   return (
     <div
       role="button"
       tabIndex={0}
-      className="group border border-white bg-black cursor-pointer overflow-hidden animate-in fade-in zoom-in-95 fill-mode-both focus:outline-none focus:ring-2 focus:ring-white"
+      className={cn(
+        "group cursor-pointer overflow-hidden animate-in fade-in zoom-in-95 fill-mode-both focus:outline-none transition-all duration-300",
+        isModern
+          ? "rounded-3xl shadow-xl ring-1 ring-black/5 dark:ring-white/5 bg-white dark:bg-neutral-900 hover:shadow-2xl hover:-translate-y-1"
+          : "border border-white bg-black focus:ring-2 focus:ring-white"
+      )}
       style={{
         animationDelay: `${idx * 50}ms`,
         animationDuration: '400ms'
@@ -117,35 +148,118 @@ const VideoResultFolder = memo(({ group, idx, API_BASE, onSelect }) => {
         }
       }}
     >
-      <div className="relative h-48 border-b border-white overflow-hidden">
+      <div className={cn(
+        "relative h-48 overflow-hidden bg-neutral-100 dark:bg-neutral-800",
+        !isModern && "border-b border-white"
+      )}>
         <img
           src={getMediaPreviewUrl(API_BASE, group.bestFrame)}
           alt={`Best matching frame from ${group.name}`}
-          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
           loading="lazy"
         />
-        <div className="absolute top-3 left-3 flex items-center gap-2 px-2.5 py-1 bg-black border border-white text-xs font-bold">
-          <FolderOpen className="w-4 h-4" />
+        <div className={cn(
+          "absolute top-3 left-3 flex items-center gap-1.5 px-3 py-1 text-xs font-bold shadow-lg",
+          isModern ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10" : "bg-black border border-white text-white"
+        )}>
+          <FolderOpen className="w-4 h-4 text-indigo-400" />
           VIDEO
         </div>
-        <div className="absolute bottom-3 right-3 px-2.5 py-1 bg-black border border-white text-xs font-bold">
+        <div className={cn(
+          "absolute bottom-3 right-3 px-3 py-1 text-xs font-bold shadow-lg",
+          isModern ? "bg-black/70 backdrop-blur-md text-emerald-400 rounded-full ring-1 ring-white/10" : "bg-black border border-white text-emerald-400"
+        )}>
           BEST {Math.round(group.bestScore * 100)}%
         </div>
       </div>
 
-      <div className="p-4 flex items-center gap-3">
-        <div className="icon-tile flex h-11 w-11 flex-shrink-0 items-center justify-center border border-white">
+      <div className={cn(
+        "p-4 flex items-center gap-3",
+        isModern ? "bg-white dark:bg-neutral-900 border-t border-gray-100 dark:border-white/5" : "bg-black"
+      )}>
+        <div className={cn(
+          "flex h-11 w-11 flex-shrink-0 items-center justify-center",
+          isModern ? "rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-200 dark:ring-indigo-500/20" : "icon-tile border border-white text-white"
+        )}>
           <Video className="w-5 h-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="font-bold truncate" title={group.path}>{group.name}</p>
-          <p className="text-xs mt-1">{group.frames.length} returned frame{group.frames.length === 1 ? '' : 's'}</p>
+          <p className={cn("font-bold truncate text-sm", isModern ? "text-neutral-800 dark:text-neutral-100" : "text-white")} title={group.path}>
+            {group.name}
+          </p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">
+            {group.frames.length} returned frame{group.frames.length === 1 ? '' : 's'}
+          </p>
         </div>
-        <ChevronRight className="w-5 h-5 flex-shrink-0 transition-transform group-hover:translate-x-1" />
+        <ChevronRight className={cn(
+          "w-5 h-5 flex-shrink-0 transition-transform group-hover:translate-x-1",
+          isModern ? "text-neutral-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" : "text-white"
+        )} />
       </div>
     </div>
   );
 });
+
+const SettingsSelect = ({ value, onChange, options, disabled, placeholder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find(o => String(o.value) === String(value)) || options[0];
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(prev => !prev)}
+        className={cn(
+          "w-full flex items-center justify-between text-xs px-3 py-2 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+          isOpen && "border-indigo-500 ring-2 ring-indigo-500/20"
+        )}
+      >
+        <span className="font-semibold truncate">{selectedOption?.label || placeholder}</span>
+        <ChevronDown className={cn("w-3.5 h-3.5 text-neutral-400 transition-transform duration-200 flex-shrink-0 ml-1.5", isOpen && "rotate-180 text-indigo-500")} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1.5 w-full bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-150">
+          {options.map((opt) => {
+            const isSelected = String(opt.value) === String(value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                className={cn(
+                  "w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer",
+                  isSelected
+                    ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-bold"
+                    : "text-neutral-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                )}
+              >
+                <span className="truncate">{opt.label}</span>
+                {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0 ml-1" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ASCII_GLYPHS = {
   V: ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
@@ -569,6 +683,23 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  const [uiTheme, setUiTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ui_theme_style');
+      if (saved) return saved;
+    }
+    return 'modern';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ui_theme_style', uiTheme);
+    if (uiTheme === 'terminal') {
+      document.documentElement.setAttribute('data-theme-style', 'terminal');
+    } else {
+      document.documentElement.setAttribute('data-theme-style', 'modern');
+    }
+  }, [uiTheme]);
+
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -577,6 +708,7 @@ function App() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedVideoGroup, setSelectedVideoGroup] = useState(null);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
 
   const [minScore, setMinScore] = useState(0.20);
   const [maxResults, setMaxResults] = useState(50);
@@ -648,6 +780,18 @@ function App() {
   const prevIsDownloading = useRef(false);
   const prevIsIndexing = useRef(false);
   const prevLastTaskId = useRef(0);
+  const foldersRef = useRef(null);
+
+  useEffect(() => {
+    if (!isFoldersExpanded || uiTheme !== 'modern') return;
+    const handleClickOutside = (e) => {
+      if (foldersRef.current && !foldersRef.current.contains(e.target)) {
+        setIsFoldersExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isFoldersExpanded, uiTheme]);
 
   const imageResults = useMemo(
     () => results.filter(result => result.media_type !== 'video'),
@@ -1464,12 +1608,15 @@ function App() {
 
   return (
     <div
-      className="terminal-theme isolate h-screen w-full overflow-y-auto overflow-x-hidden bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans flex flex-col items-center relative pt-8 custom-scrollbar"
+      className={cn(
+        "isolate h-screen w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative pt-8 custom-scrollbar",
+        uiTheme === 'terminal' ? "terminal-theme theme-terminal" : "theme-modern bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100"
+      )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <TitleBar theme={theme} setTheme={setTheme} />
+      <TitleBar theme={theme} setTheme={setTheme} uiTheme={uiTheme} setUiTheme={setUiTheme} />
 
       {/* Drag Overlay */}
       {isDragging && (
@@ -1503,6 +1650,45 @@ function App() {
                 <Settings className="w-5 h-5 text-indigo-500 dark:text-indigo-400" /> Settings
               </h2>
               <div className="space-y-6">
+              {/* Theme Style Selection */}
+              <div className="pt-2">
+                <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">UI Theme Style</label>
+                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme('modern')}
+                    className={cn(
+                      "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
+                      uiTheme === 'modern'
+                        ? "bg-indigo-50 dark:bg-indigo-500/15 border-indigo-300 dark:border-indigo-500/40 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20"
+                        : "bg-gray-50 dark:bg-neutral-800/30 border-gray-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    )}
+                  >
+                    <Sparkles className={cn("w-5 h-5 flex-shrink-0", uiTheme === 'modern' ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-400")} />
+                    <div>
+                      <div className="text-xs font-bold">Modern Rounded</div>
+                      <div className="text-[10px] text-neutral-400 dark:text-neutral-500">Soft curves & glass</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme('terminal')}
+                    className={cn(
+                      "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
+                      uiTheme === 'terminal'
+                        ? "bg-indigo-50 dark:bg-indigo-500/15 border-indigo-300 dark:border-indigo-500/40 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20"
+                        : "bg-gray-50 dark:bg-neutral-800/30 border-gray-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    )}
+                  >
+                    <Terminal className={cn("w-5 h-5 flex-shrink-0", uiTheme === 'terminal' ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-400")} />
+                    <div>
+                      <div className="text-xs font-bold">Retro Terminal</div>
+                      <div className="text-[10px] text-neutral-400 dark:text-neutral-500">Monospace & ASCII</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               <div className="pt-2">
                 <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">Hardware Acceleration & Batching</label>
                 <div 
@@ -1523,16 +1709,42 @@ function App() {
                         : "No NVIDIA GPU detected"}
                     </span>
                   </div>
-                  <button
-                    onClick={handleToggleGpu}
-                    disabled={!gpuSettings.cuda_available || isSwitchingGpu}
-                    className="relative inline-flex h-7 w-7 items-center justify-center bg-black border border-white focus:outline-none disabled:cursor-not-allowed"
-                    aria-label={gpuSettings.use_gpu ? "Disable NVIDIA GPU support" : "Enable NVIDIA GPU support"}
-                  >
-                    {isSwitchingGpu
-                      ? <Loader2 className="w-4 h-4 text-white animate-spin" />
-                      : gpuSettings.use_gpu && <Check className="w-5 h-5 text-white" strokeWidth={3} />}
-                  </button>
+                  {uiTheme === 'modern' ? (
+                    <button
+                      type="button"
+                      onClick={handleToggleGpu}
+                      disabled={!gpuSettings.cuda_available || isSwitchingGpu}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-40 cursor-pointer flex-shrink-0",
+                        gpuSettings.use_gpu ? "bg-indigo-600" : "bg-gray-200 dark:bg-neutral-700"
+                      )}
+                      aria-label={gpuSettings.use_gpu ? "Disable NVIDIA GPU support" : "Enable NVIDIA GPU support"}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-200",
+                          gpuSettings.use_gpu ? "translate-x-6" : "translate-x-1"
+                        )}
+                      />
+                      {isSwitchingGpu && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/10 rounded-full">
+                          <Loader2 className="w-3 h-3 text-white animate-spin" />
+                        </div>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleToggleGpu}
+                      disabled={!gpuSettings.cuda_available || isSwitchingGpu}
+                      className="relative inline-flex h-7 w-7 items-center justify-center bg-black border border-white focus:outline-none disabled:cursor-not-allowed flex-shrink-0"
+                      aria-label={gpuSettings.use_gpu ? "Disable NVIDIA GPU support" : "Enable NVIDIA GPU support"}
+                    >
+                      {isSwitchingGpu
+                        ? <Loader2 className="w-4 h-4 text-white animate-spin" />
+                        : gpuSettings.use_gpu && <Check className="w-5 h-5 text-white" strokeWidth={3} />}
+                    </button>
+                  )}
                 </div>
 
                 {!gpuSettings.cuda_available && (
@@ -1544,24 +1756,41 @@ function App() {
                 {/* Batch Size & Precision Mode Grid */}
                 <div className="grid grid-cols-2 gap-3 mt-2">
                   <div className="p-3 border border-gray-100 dark:border-neutral-800 rounded-xl bg-gray-50/50 dark:bg-neutral-800/20">
-                    <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
                       Batch Size
                     </label>
-                    <select
-                      value={gpuSettings.batch_size ?? 0}
-                      onChange={(e) => handleUpdatePerformanceSettings({ batch_size: e.target.value })}
-                      disabled={isSwitchingGpu}
-                      className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="0">Auto</option>
-                      <option value="1">1</option>
-                      <option value="4">4</option>
-                      <option value="8">8</option>
-                      <option value="16">16</option>
-                      <option value="32">32</option>
-                      <option value="64">64</option>
-                    </select>
-                    <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1">
+                    {uiTheme === 'modern' ? (
+                      <SettingsSelect
+                        value={String(gpuSettings.batch_size ?? 0)}
+                        onChange={(val) => handleUpdatePerformanceSettings({ batch_size: val })}
+                        options={[
+                          { value: "0", label: "Auto" },
+                          { value: "1", label: "1" },
+                          { value: "4", label: "4" },
+                          { value: "8", label: "8" },
+                          { value: "16", label: "16" },
+                          { value: "32", label: "32" },
+                          { value: "64", label: "64" },
+                        ]}
+                        disabled={isSwitchingGpu}
+                      />
+                    ) : (
+                      <select
+                        value={gpuSettings.batch_size ?? 0}
+                        onChange={(e) => handleUpdatePerformanceSettings({ batch_size: e.target.value })}
+                        disabled={isSwitchingGpu}
+                        className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="0">Auto</option>
+                        <option value="1">1</option>
+                        <option value="4">4</option>
+                        <option value="8">8</option>
+                        <option value="16">16</option>
+                        <option value="32">32</option>
+                        <option value="64">64</option>
+                      </select>
+                    )}
+                    <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1.5">
                       {gpuSettings.batch_size === 0 
                         ? `Auto mode active (Effective batch size: ${gpuSettings.effective_batch_size || 16})` 
                         : "Higher batch size increases GPU utilization."}
@@ -1569,20 +1798,33 @@ function App() {
                   </div>
 
                   <div className="p-3 border border-gray-100 dark:border-neutral-800 rounded-xl bg-gray-50/50 dark:bg-neutral-800/20">
-                    <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
                       Precision Mode
                     </label>
-                    <select
-                      value={gpuSettings.precision_mode || 'auto'}
-                      onChange={(e) => handleUpdatePerformanceSettings({ precision_mode: e.target.value })}
-                      disabled={isSwitchingGpu}
-                      className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    >
-                      <option value="auto">Auto ({gpuSettings.active_precision ? gpuSettings.active_precision.toUpperCase() : 'FP32'})</option>
-                      <option value="fp16">FP16 (Half Precision)</option>
-                      <option value="fp32">FP32 (Full Precision)</option>
-                    </select>
-                    <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1">
+                    {uiTheme === 'modern' ? (
+                      <SettingsSelect
+                        value={gpuSettings.precision_mode || 'auto'}
+                        onChange={(val) => handleUpdatePerformanceSettings({ precision_mode: val })}
+                        options={[
+                          { value: "auto", label: `Auto (${gpuSettings.active_precision ? gpuSettings.active_precision.toUpperCase() : 'FP32'})` },
+                          { value: "fp16", label: "FP16 (Half Precision)" },
+                          { value: "fp32", label: "FP32 (Full Precision)" },
+                        ]}
+                        disabled={isSwitchingGpu}
+                      />
+                    ) : (
+                      <select
+                        value={gpuSettings.precision_mode || 'auto'}
+                        onChange={(e) => handleUpdatePerformanceSettings({ precision_mode: e.target.value })}
+                        disabled={isSwitchingGpu}
+                        className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="auto">Auto ({gpuSettings.active_precision ? gpuSettings.active_precision.toUpperCase() : 'FP32'})</option>
+                        <option value="fp16">FP16 (Half Precision)</option>
+                        <option value="fp32">FP32 (Full Precision)</option>
+                      </select>
+                    )}
+                    <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1.5">
                       {gpuSettings.fp16_supported ? "FP16 Tensor Cores supported" : "Auto fallback to FP32 for legacy GPUs"}
                     </span>
                   </div>
@@ -1621,7 +1863,9 @@ function App() {
                           className={cn(
                             "group flex flex-col p-4 border rounded-xl transition-all duration-200",
                             isActive
-                              ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/50 ring-1 ring-indigo-500/10 dark:ring-indigo-500/20"
+                              ? (uiTheme === 'modern'
+                                  ? "bg-indigo-50/80 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/40 ring-1 ring-indigo-500/20 shadow-sm"
+                                  : "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/50 ring-1 ring-indigo-500/10 dark:ring-indigo-500/20")
                               : "bg-gray-50 dark:bg-neutral-800/30 border-gray-100 dark:border-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-800/50"
                           )}
                         >
@@ -1635,20 +1879,39 @@ function App() {
                               </span>
                               <div className="flex items-center gap-2 mt-1.5">
                                 <span className={cn(
-                                  "text-[10px] uppercase tracking-wider font-bold whitespace-nowrap",
-                                  m.downloaded ? "text-emerald-400/70" : m.incomplete ? "text-amber-500 font-extrabold flex items-center gap-1" : "text-neutral-400"
+                                  "text-[10px] uppercase tracking-wider font-bold whitespace-nowrap flex items-center gap-1",
+                                  m.downloaded ? "text-emerald-500/90 dark:text-emerald-400" : (isDownloading || m.incomplete) ? "text-amber-500 font-extrabold" : "text-neutral-400"
                                 )}>
                                   {m.downloaded
                                     ? "Ready to use"
-                                    : m.incomplete
-                                      ? `Incomplete (${formatBytes(m.download_current_bytes)} / ${formatBytes(m.download_total_bytes)})`
-                                      : "Not Downloaded"}
+                                    : isDownloading
+                                      ? (
+                                        <span className="flex items-center gap-1">
+                                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                          Downloading ({formatBytes(status.download_current_bytes)} / {formatBytes(status.download_total_bytes || m.download_total_bytes)})
+                                        </span>
+                                      )
+                                      : m.incomplete
+                                        ? (
+                                          <span className="flex items-center gap-1">
+                                            <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                                            Incomplete ({formatBytes(m.download_current_bytes)} / {formatBytes(m.download_total_bytes)})
+                                          </span>
+                                        )
+                                        : "Not Downloaded"}
                                 </span>
                                 {isActive && (
-                                  <span className="flex items-center gap-1 px-1.5 py-0.5 border border-white text-[9px] uppercase tracking-wider font-extrabold whitespace-nowrap">
-                                    <CheckCircle2 className="w-2.5 h-2.5" />
-                                    Active
-                                  </span>
+                                  uiTheme === 'modern' ? (
+                                    <span className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/15 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-500/30">
+                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                      Active
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-1 px-1.5 py-0.5 border border-white text-[9px] uppercase tracking-wider font-extrabold whitespace-nowrap">
+                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                      Active
+                                    </span>
+                                  )
                                 )}
                               </div>
                             </div>
@@ -1659,17 +1922,27 @@ function App() {
                                 <button
                                   onClick={handleUnloadModel}
                                   disabled={isUnloadingModel || status.is_indexing}
-                                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 rounded-lg font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                                  className={cn(
+                                    "flex items-center gap-1.5 text-xs px-3 py-1.5 font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50",
+                                    uiTheme === 'modern'
+                                      ? "bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 rounded-xl hover:scale-105 active:scale-95"
+                                      : "border border-rose-500 bg-rose-500/10 text-rose-500 hover:bg-rose-500/20"
+                                  )}
                                   title={status.is_indexing ? "Cannot eject model while indexing is in progress" : "Unload model to free GPU VRAM"}
                                 >
                                   <LogOut className="w-3.5 h-3.5" />
                                   {isUnloadingModel ? "Unloading..." : "Eject"}
                                 </button>
                               ) : m.downloaded ? (
-                                  <button
-                                    onClick={() => handleModelSwitch(m.id)}
-                                    disabled={isSwitchingModel || status.is_downloading || status.is_indexing}
-                                  className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 dark:hover:bg-indigo-600 text-neutral-900 dark:text-white rounded-lg font-bold transition-all disabled:opacity-50 border border-gray-200 dark:border-transparent shadow-sm dark:shadow-none"
+                                <button
+                                  onClick={() => handleModelSwitch(m.id)}
+                                  disabled={isSwitchingModel || status.is_downloading || status.is_indexing}
+                                  className={cn(
+                                    "text-xs px-3.5 py-1.5 font-bold transition-all disabled:opacity-50 shadow-sm cursor-pointer",
+                                    uiTheme === 'modern'
+                                      ? "bg-gray-100 dark:bg-neutral-800 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-600 text-neutral-800 dark:text-neutral-200 rounded-xl border border-gray-200 dark:border-neutral-700 hover:border-indigo-600 hover:scale-105 active:scale-95"
+                                      : "border border-white bg-black text-white"
+                                  )}
                                   title={status.is_indexing ? "Cannot switch model while indexing is in progress" : "Activate model"}
                                 >
                                   {isSwitchingModel && pendingModel === m.id ? "..." : "Activate"}
@@ -2017,7 +2290,7 @@ function App() {
                   className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-indigo-600 dark:text-indigo-300 cursor-pointer shadow-sm"
                   title={`Active Vision Engine: ${models.active_model} (Click to manage models)`}
                 >
-                  <div className="model-status-dot model-status-dot-online w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0" aria-hidden="true" />
+                  <div className="model-status-dot model-status-dot-online w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" aria-hidden="true" />
                   <span className="font-mono text-[10px] truncate max-w-[200px]">{models.active_model.split('/').pop()}</span>
                 </button>
               </div>
@@ -2028,7 +2301,7 @@ function App() {
                   className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-50/80 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 border border-amber-200/80 dark:border-amber-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-amber-600 dark:text-amber-400 cursor-pointer shadow-sm"
                   title="No model currently loaded into memory. Click to select and activate a model in Settings."
                 >
-                  <div className="model-status-dot model-status-dot-offline w-1.5 h-1.5 rounded-full flex-shrink-0" aria-hidden="true" />
+                  <div className="model-status-dot model-status-dot-offline w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" aria-hidden="true" />
                   <span className="font-mono text-[10px] tracking-wider uppercase">No Model Loaded</span>
                 </button>
               </div>
@@ -2046,7 +2319,7 @@ function App() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search images and video frames (e.g. 'a golden retriever in the snow')..."
+              placeholder="Search images (e.g. 'golden retriever')..."
               className="w-full bg-white dark:bg-neutral-900/50 border border-gray-200 dark:border-neutral-800 rounded-2xl py-4 pl-12 pr-12 text-base outline-none transition-all duration-300 focus:bg-white dark:focus:bg-neutral-900 focus:border-indigo-400 dark:focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 shadow-xl shadow-black/5 dark:shadow-black/20 text-neutral-900 dark:text-white"
             />
             {query.length > 0 && (
@@ -2280,25 +2553,42 @@ function App() {
       {/* Returned video frames grouped by their source video */}
       {selectedVideoGroup && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-6 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 dark:bg-black/85 backdrop-blur-md p-6 animate-in fade-in duration-200"
           onClick={() => setSelectedVideoGroup(null)}
         >
           <div
-            className="flex max-h-[86vh] w-full max-w-6xl flex-col border border-white bg-black"
+            className={cn(
+              "flex max-h-[86vh] w-full max-w-6xl flex-col shadow-2xl",
+              uiTheme === 'modern'
+                ? "bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl overflow-hidden"
+                : "border border-white bg-black"
+            )}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start gap-4 border-b border-white p-5">
-              <div className="icon-tile flex h-12 w-12 flex-shrink-0 items-center justify-center border border-white">
+            <div className={cn(
+              "flex items-start gap-4 p-5",
+              uiTheme === 'modern' ? "border-b border-gray-100 dark:border-neutral-800 bg-gray-50/50 dark:bg-neutral-900/50" : "border-b border-white"
+            )}>
+              <div className={cn(
+                "flex h-12 w-12 flex-shrink-0 items-center justify-center",
+                uiTheme === 'modern' ? "rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-200 dark:ring-indigo-500/20" : "icon-tile border border-white text-white"
+              )}>
                 <FolderOpen className="w-6 h-6" />
               </div>
               <div className="min-w-0 flex-1">
-                <h2 className="text-xl font-bold break-all">{selectedVideoGroup.name}</h2>
-                <p className="mt-1 text-sm break-all">{selectedVideoGroup.path}</p>
+                <h2 className={cn("text-xl font-bold break-all", uiTheme === 'modern' ? "text-neutral-900 dark:text-white" : "text-white")}>{selectedVideoGroup.name}</h2>
+                <p className={cn("mt-1 text-xs break-all font-mono", uiTheme === 'modern' ? "text-neutral-500 dark:text-neutral-400" : "text-white/80")}>{selectedVideoGroup.path}</p>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
-                  <span className="border border-white px-2 py-1">
+                  <span className={cn(
+                    "px-2.5 py-1",
+                    uiTheme === 'modern' ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-100 dark:border-indigo-500/20" : "border border-white text-white"
+                  )}>
                     {selectedVideoGroup.frames.length} RETURNED FRAME{selectedVideoGroup.frames.length === 1 ? '' : 'S'}
                   </span>
-                  <span className="border border-white px-2 py-1">
+                  <span className={cn(
+                    "px-2.5 py-1",
+                    uiTheme === 'modern' ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg border border-emerald-100 dark:border-emerald-500/20" : "border border-white text-emerald-400"
+                  )}>
                     BEST MATCH {Math.round(selectedVideoGroup.bestScore * 100)}%
                   </span>
                 </div>
@@ -2311,7 +2601,12 @@ function App() {
                       setToast({ message: 'This video has been moved or deleted and is no longer available.', type: 'error' });
                     }
                   }}
-                  className="flex flex-shrink-0 items-center gap-2 border border-white px-4 py-3 font-bold"
+                  className={cn(
+                    "flex flex-shrink-0 items-center gap-2 px-4 py-2.5 font-bold text-xs transition-all",
+                    uiTheme === 'modern'
+                      ? "bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl border border-gray-200 dark:border-neutral-700"
+                      : "border border-white text-white"
+                  )}
                 >
                   <FolderOpen className="w-4 h-4" />
                   Show in Explorer
@@ -2319,7 +2614,12 @@ function App() {
               )}
               <button
                 onClick={() => setSelectedVideoGroup(null)}
-                className="icon-tile flex h-12 w-12 flex-shrink-0 items-center justify-center border border-white"
+                className={cn(
+                  "flex h-10 w-10 flex-shrink-0 items-center justify-center transition-all",
+                  uiTheme === 'modern'
+                    ? "rounded-xl text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800"
+                    : "icon-tile border border-white text-white"
+                )}
                 aria-label="Close video results"
               >
                 <X className="w-5 h-5" />
@@ -2333,7 +2633,12 @@ function App() {
                     key={frame.id || `${frame.path}:${frame.timestamp_seconds || 0}:${index}`}
                     role="button"
                     tabIndex={0}
-                    className="group cursor-pointer border border-white bg-black focus:outline-none focus:ring-2 focus:ring-white"
+                    className={cn(
+                      "group cursor-pointer overflow-hidden focus:outline-none transition-all duration-200",
+                      uiTheme === 'modern'
+                        ? "rounded-2xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800/40 hover:shadow-lg hover:border-indigo-300 dark:hover:border-indigo-500/40"
+                        : "border border-white bg-black focus:ring-2 focus:ring-white"
+                    )}
                     onClick={() => {
                       setSelectedVideoGroup(null);
                       setSelectedImage(frame);
@@ -2346,20 +2651,28 @@ function App() {
                       }
                     }}
                   >
-                    <div className="relative h-44 overflow-hidden border-b border-white">
+                    <div className={cn(
+                      "relative h-44 overflow-hidden",
+                      uiTheme === 'modern' ? "border-b border-gray-100 dark:border-neutral-700/50" : "border-b border-white"
+                    )}>
                       <img
                         src={getMediaPreviewUrl(API_BASE, frame)}
                         alt={`Video frame at ${formatVideoTimestamp(frame.timestamp_seconds)}`}
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                         loading="lazy"
                       />
-                      <span className="absolute bottom-2 left-2 border border-white bg-black px-2 py-1 text-xs font-bold">
+                      <span className={cn(
+                        "absolute bottom-2 left-2 px-2.5 py-1 text-xs font-bold shadow-lg",
+                        uiTheme === 'modern'
+                          ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10"
+                          : "border border-white bg-black text-white"
+                      )}>
                         {formatVideoTimestamp(frame.timestamp_seconds)}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 p-3 text-sm font-bold">
+                    <div className="flex items-center justify-between gap-3 p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
                       <span>FRAME {index + 1}</span>
-                      <span>{Math.round((frame.score || 0) * 100)}% MATCH</span>
+                      <span className="text-emerald-500 font-semibold">{Math.round((frame.score || 0) * 100)}% MATCH</span>
                     </div>
                   </div>
                 ))}
@@ -2413,30 +2726,58 @@ function App() {
           />
 
           <div className="mt-6 text-center" onClick={(e) => e.stopPropagation()}>
-            <p className="text-xl font-medium text-white mb-1">
+            <p className="text-xl font-medium text-white mb-2">
               Match Score: {Math.round(selectedImage.score * 100)}%
             </p>
             {selectedImage.media_type === 'video' && (
-              <p className="mb-3 inline-flex items-center gap-2 px-3 py-1 bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 text-sm font-bold">
+              <p className={cn(
+                "mb-3 inline-flex items-center gap-2 px-3.5 py-1 text-xs font-bold",
+                uiTheme === 'modern'
+                  ? "bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 rounded-full backdrop-blur-md shadow-lg"
+                  : "bg-cyan-500/15 border border-cyan-400/30 text-cyan-300"
+              )}>
                 <Video className="w-4 h-4" />
                 Video frame at {formatVideoTimestamp(selectedImage.timestamp_seconds)}
               </p>
             )}
             {selectedImage.isDuplicate && (
-              <div className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 bg-black border border-white text-white rounded-xl text-xs font-bold animate-in zoom-in-95 duration-300 shadow-lg">
-                {selectedImage.duplicateType === 'exact' ? <Copy className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
-                <span>
-                  {selectedImage.duplicateType === 'exact' ? 'Exact File Copy' : 'Visual Duplicate (98.5%+ Similarity)'} detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}
-                </span>
-              </div>
+              uiTheme === 'modern' ? (
+                <div 
+                  className="mb-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold animate-in zoom-in-95 duration-300 shadow-xl border backdrop-blur-md"
+                  style={{ 
+                    backgroundColor: `${selectedImage.dupeColor || '#6366f1'}25`,
+                    borderColor: `${selectedImage.dupeColor || '#6366f1'}60`,
+                    color: selectedImage.dupeColor || '#a5b4fc',
+                    boxShadow: `0 0 20px -5px ${selectedImage.dupeColor || '#6366f1'}40`
+                  }}
+                >
+                  {selectedImage.duplicateType === 'exact' ? <Copy className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  <span>
+                    {selectedImage.duplicateType === 'exact' ? 'Exact File Copy' : 'Visual Duplicate (98.5%+ Similarity)'} detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+              ) : (
+                <div className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 bg-black border border-white text-white rounded-none text-xs font-bold animate-in zoom-in-95 duration-300 shadow-lg">
+                  {selectedImage.duplicateType === 'exact' ? <Copy className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  <span>
+                    {selectedImage.duplicateType === 'exact' ? 'Exact File Copy' : 'Visual Duplicate (98.5%+ Similarity)'} detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+              )
             )}
-            <p className="text-sm text-neutral-400 font-mono break-all max-w-3xl">
+            <p className={cn(
+              "text-xs break-all max-w-3xl mx-auto",
+              uiTheme === 'modern' ? "text-neutral-300 font-sans" : "text-neutral-400 font-mono"
+            )}>
               {selectedImage.path}
             </p>
             {selectedImage.isDuplicate && (
-              <div className="mt-3 space-y-1">
+              <div className="mt-2 space-y-1">
                 {selectedImage.otherPaths.map(p => (
-                  <p key={p} className="text-[10px] text-neutral-500 font-mono break-all max-w-2xl mx-auto">
+                  <p key={p} className={cn(
+                    "text-[11px] break-all max-w-2xl mx-auto",
+                    uiTheme === 'modern' ? "text-neutral-400 font-sans" : "text-neutral-500 font-mono"
+                  )}>
                     Also found at: {p}
                   </p>
                 ))}
@@ -2471,174 +2812,210 @@ function App() {
         </div>
       )}
 
-      {/* Inline Folder Manager */}
+      {/* Inline / Floating Folder Manager */}
       {models.active_model && (
-        <section data-ascii-protected="true" className="w-full max-w-7xl px-6 mb-3">
-          <div className="bg-white dark:bg-neutral-900/70 border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-xl shadow-black/5 dark:shadow-black/20 overflow-hidden">
-            <div className="px-6 py-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 dark:border-neutral-800 bg-indigo-500/5 dark:bg-indigo-500/10">
+        <section data-ascii-protected="true" className={cn("w-full max-w-7xl px-6 mb-3", uiTheme === 'modern' ? "relative z-30" : "")}>
+          <div
+            ref={foldersRef}
+            className={cn(
+              "bg-white dark:bg-neutral-900/70 border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-xl shadow-black/5 dark:shadow-black/20 transition-all duration-200",
+              uiTheme !== 'modern' && "overflow-hidden"
+            )}
+          >
+            <div
+              className={cn(
+                "px-6 py-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-indigo-500/5 dark:bg-indigo-500/10 cursor-pointer select-none transition-colors hover:bg-indigo-500/10 dark:hover:bg-indigo-500/15 rounded-3xl",
+                uiTheme !== 'modern' && isFoldersExpanded && "rounded-b-none border-b border-gray-100 dark:border-neutral-800"
+              )}
+              onClick={() => setIsFoldersExpanded(prev => !prev)}
+            >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="icon-tile w-11 h-11 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
+                <div className="icon-tile w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
                   <FolderOpen className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Indexed Folders</h2>
+                    <h2 className="text-base font-bold text-neutral-900 dark:text-white">Indexed Folders</h2>
                     <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold">
                       {indexedFolders.length}
                     </span>
                   </div>
-                  <p className="text-xs text-neutral-500 mt-1">Browse, re-sync, or remove folders from the active model index.</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {isFoldersExpanded ? "Browse, re-sync, or remove folders from the active model index." : "Click to view and manage indexed folders"}
+                  </p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleOpenFolder}
-                disabled={status.is_indexing}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-sm font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <FolderOpen className="w-4 h-4" />
-                Add Folder(s)
-              </button>
-            </div>
-
-            {indexedFolders.length > 0 && (
-              <div className="px-6 py-3 bg-gray-50/70 dark:bg-neutral-800/20 border-b border-gray-100 dark:border-neutral-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                 <button
                   type="button"
-                  onClick={toggleSelectAll}
-                  className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  onClick={handleOpenFolder}
+                  disabled={status.is_indexing}
+                  className="flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-xs font-bold shadow-md shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  {selectedFolders.length === indexedFolders.length
-                    ? <CheckSquare className="w-4 h-4" />
-                    : <Square className="w-4 h-4" />}
-                  {selectedFolders.length === indexedFolders.length ? 'Deselect All' : 'Select All'}
+                  <FolderOpen className="w-4 h-4" />
+                  Add Folder(s)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFoldersExpanded(prev => !prev)}
+                  className="p-2 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-all cursor-pointer"
+                  title={isFoldersExpanded ? "Collapse folders" : "Expand folders"}
+                  aria-expanded={isFoldersExpanded}
+                >
+                  {isFoldersExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
 
-                <div className="flex items-center gap-2 min-h-8">
-                  {selectedFolders.length > 0 ? (
-                    <>
-                      <span className="text-[10px] text-neutral-500 font-bold mr-1">{selectedFolders.length} SELECTED</span>
-                      <button
-                        type="button"
-                        onClick={handleBatchReindex}
-                        disabled={isBatchProcessing || status.is_indexing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
-                      >
-                        <RefreshCw className={cn("w-3.5 h-3.5", isBatchProcessing && "animate-spin")} />
-                        Reindex
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleBatchDelete}
-                        disabled={isBatchProcessing || status.is_indexing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete
-                      </button>
-                    </>
+            {isFoldersExpanded && (
+              <div
+                className={cn(
+                  "animate-in slide-in-from-top-2 fade-in duration-200",
+                  uiTheme === 'modern'
+                    ? "absolute top-[calc(100%+8px)] left-6 right-6 z-40 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-2xl border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10"
+                    : "border-t border-gray-100 dark:border-neutral-800"
+                )}
+              >
+                {indexedFolders.length > 0 && (
+                  <div className="px-6 py-3 bg-gray-50/70 dark:bg-neutral-800/20 border-b border-gray-100 dark:border-neutral-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                    >
+                      {selectedFolders.length === indexedFolders.length
+                        ? <CheckSquare className="w-4 h-4" />
+                        : <Square className="w-4 h-4" />}
+                      {selectedFolders.length === indexedFolders.length ? 'Deselect All' : 'Select All'}
+                    </button>
+
+                    <div className="flex items-center gap-2 min-h-8">
+                      {selectedFolders.length > 0 ? (
+                        <>
+                          <span className="text-[10px] text-neutral-500 font-bold mr-1">{selectedFolders.length} SELECTED</span>
+                          <button
+                            type="button"
+                            onClick={handleBatchReindex}
+                            disabled={isBatchProcessing || status.is_indexing}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                          >
+                            <RefreshCw className={cn("w-3.5 h-3.5", isBatchProcessing && "animate-spin")} />
+                            Reindex
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleBatchDelete}
+                            disabled={isBatchProcessing || status.is_indexing}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-neutral-500 italic">Select folders for batch actions</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-4 max-h-[360px] overflow-y-auto custom-scrollbar">
+                  {isFetchingFolders ? (
+                    <div className="flex items-center justify-center gap-3 py-12 text-neutral-500">
+                      <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+                      <span className="text-sm font-medium">Fetching folders...</span>
+                    </div>
+                  ) : indexedFolders.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center px-6">
+                      <div className="icon-tile w-14 h-14 bg-gray-100 dark:bg-neutral-800 rounded-2xl flex items-center justify-center mb-4">
+                        <FolderOpen className="w-7 h-7 text-neutral-400 dark:text-neutral-600" />
+                      </div>
+                      <h3 className="text-base font-bold text-neutral-800 dark:text-neutral-300">No folders selected</h3>
+                      <p className="text-sm text-neutral-500 mt-2 max-w-md">Add a folder to index images and sample videos at two-second intervals.</p>
+                    </div>
                   ) : (
-                    <span className="text-[11px] text-neutral-500 italic">Select folders for batch actions</span>
+                    <div className="grid grid-cols-1 gap-3">
+                      {indexedFolders.map((folder) => {
+                        const isSelected = selectedFolders.includes(folder.path);
+                        const folderName = folder.path.split('\\').pop().split('/').pop() || folder.path;
+
+                        return (
+                          <div
+                            key={folder.path}
+                            className={cn(
+                              "flex items-center gap-3 p-4 rounded-2xl border transition-all",
+                              isSelected
+                                ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 ring-1 ring-indigo-500/10"
+                                : "bg-gray-50/80 dark:bg-neutral-800/20 border-gray-100 dark:border-neutral-800/60",
+                              !folder.exists && "border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/5"
+                            )}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleFolderSelection(folder)}
+                              className={cn(
+                                "flex items-center justify-center w-6 h-6 rounded-lg border transition-all flex-shrink-0",
+                                isSelected
+                                  ? "bg-indigo-600 border-indigo-600 text-white"
+                                  : "bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent"
+                              )}
+                              title={isSelected ? 'Deselect folder' : 'Select folder'}
+                            >
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            </button>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className={cn("text-sm font-bold truncate", folder.exists ? "text-neutral-800 dark:text-neutral-200" : "text-rose-600 dark:text-rose-400")} title={folder.path}>
+                                  {folderName}
+                                </p>
+                                {!folder.exists && (
+                                  <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">Missing</span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-neutral-500 truncate font-mono mt-1" title={folder.path}>{folder.path}</p>
+                            </div>
+
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleBrowseFolderContents(folder)}
+                                disabled={!folder.exists}
+                                className="p-2 text-neutral-400 hover:text-cyan-500 hover:bg-cyan-500/10 rounded-xl transition-all disabled:opacity-30"
+                                title="Browse images and videos"
+                              >
+                                <ChevronRight className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleReindexFolder(folder.path)}
+                                disabled={!folder.exists || status.is_indexing}
+                                className="p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all disabled:opacity-30"
+                                title="Re-sync folder"
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFolderIndex(folder.path)}
+                                disabled={status.is_indexing}
+                                className="p-2 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all disabled:opacity-30"
+                                title="Delete folder index"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
             )}
-
-            <div className="p-4 max-h-[360px] overflow-y-auto custom-scrollbar">
-              {isFetchingFolders ? (
-                <div className="flex items-center justify-center gap-3 py-12 text-neutral-500">
-                  <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
-                  <span className="text-sm font-medium">Fetching folders...</span>
-                </div>
-              ) : indexedFolders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center px-6">
-                  <div className="icon-tile w-14 h-14 bg-gray-100 dark:bg-neutral-800 rounded-2xl flex items-center justify-center mb-4">
-                    <FolderOpen className="w-7 h-7 text-neutral-400 dark:text-neutral-600" />
-                  </div>
-                  <h3 className="text-base font-bold text-neutral-800 dark:text-neutral-300">No folders selected</h3>
-                  <p className="text-sm text-neutral-500 mt-2 max-w-md">Add a folder to index images and sample videos at two-second intervals.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3">
-                  {indexedFolders.map((folder) => {
-                    const isSelected = selectedFolders.includes(folder.path);
-                    const folderName = folder.path.split('\\').pop().split('/').pop() || folder.path;
-
-                    return (
-                      <div
-                        key={folder.path}
-                        className={cn(
-                          "flex items-center gap-3 p-4 rounded-2xl border transition-all",
-                          isSelected
-                            ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 ring-1 ring-indigo-500/10"
-                            : "bg-gray-50/80 dark:bg-neutral-800/20 border-gray-100 dark:border-neutral-800/60",
-                          !folder.exists && "border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/5"
-                        )}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleFolderSelection(folder)}
-                          className={cn(
-                            "flex items-center justify-center w-6 h-6 rounded-lg border transition-all flex-shrink-0",
-                            isSelected
-                              ? "bg-indigo-600 border-indigo-600 text-white"
-                              : "bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent"
-                          )}
-                          title={isSelected ? 'Deselect folder' : 'Select folder'}
-                        >
-                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                          </svg>
-                        </button>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className={cn("text-sm font-bold truncate", folder.exists ? "text-neutral-800 dark:text-neutral-200" : "text-rose-600 dark:text-rose-400")} title={folder.path}>
-                              {folderName}
-                            </p>
-                            {!folder.exists && (
-                              <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">Missing</span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-neutral-500 truncate font-mono mt-1" title={folder.path}>{folder.path}</p>
-                        </div>
-
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleBrowseFolderContents(folder)}
-                            disabled={!folder.exists}
-                            className="p-2 text-neutral-400 hover:text-cyan-500 hover:bg-cyan-500/10 rounded-xl transition-all disabled:opacity-30"
-                            title="Browse images and videos"
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleReindexFolder(folder.path)}
-                            disabled={!folder.exists || status.is_indexing}
-                            className="p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all disabled:opacity-30"
-                            title="Re-sync folder"
-                          >
-                            <RefreshCw className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteFolderIndex(folder.path)}
-                            disabled={status.is_indexing}
-                            className="p-2 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all disabled:opacity-30"
-                            title="Delete folder index"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </div>
         </section>
       )}
@@ -2746,39 +3123,133 @@ function App() {
           );
         })()}
 
-        {models.active_model && !isSearching && !isSwitchingModel && (
-          <div className="flex flex-col items-center justify-center mt-3 gap-2 animate-in fade-in duration-1000">
-            <RotatingAsciiLogo />
-            <div data-ascii-protected="true" className="text-center space-y-2 flex flex-col items-center">
-              <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">Ready to Search</h2>
-              <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
-                {indexedFolders.length > 0
-                  ? `${indexedFolders.length} folder${indexedFolders.length > 1 ? 's are' : ' is'} ready. Search your media using natural language.`
-                  : 'Select a folder to extract intelligence, then search your memories using natural language.'}
-              </p>
-              <div className="flex items-center gap-2 mt-1">
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
-                >
-                  <div className="model-status-dot model-status-dot-online w-2 h-2 rounded-full animate-pulse" aria-hidden="true" />
-                  <span>Active Model: <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
-                </button>
-                <button
-                  onClick={handleUnloadModel}
-                  disabled={isUnloadingModel || status.is_indexing}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-                  title={status.is_indexing ? "Cannot eject model while indexing is in progress" : "Unload model to free GPU VRAM"}
-                >
-                  <LogOut className="w-3.5 h-3.5 text-rose-500" />
-                  {isUnloadingModel ? "Unloading..." : "Eject"}
-                </button>
+        {models.active_model && !isSearching && query.length === 0 && results.length === 0 && !isSwitchingModel && (
+          uiTheme === 'terminal' ? (
+            <div className="flex flex-col items-center justify-center mt-3 gap-2 animate-in fade-in duration-1000">
+              <RotatingAsciiLogo />
+              <div data-ascii-protected="true" className="text-center space-y-2 flex flex-col items-center">
+                <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">Ready to Search</h2>
+                <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
+                  {indexedFolders.length > 0
+                    ? `${indexedFolders.length} folder${indexedFolders.length > 1 ? 's are' : ' is'} ready. Search your media using natural language.`
+                    : 'Select a folder to extract intelligence, then search your memories using natural language.'}
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
+                  >
+                    <div className="model-status-dot model-status-dot-online w-2 h-2 rounded-full animate-pulse" aria-hidden="true" />
+                    <span>Active Model: <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
+                  </button>
+                  <button
+                    onClick={handleUnloadModel}
+                    disabled={isUnloadingModel || status.is_indexing}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                    title={status.is_indexing ? "Cannot eject model while indexing is in progress" : "Unload model to free GPU VRAM"}
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                    {isUnloadingModel ? "Unloading..." : "Eject"}
+                  </button>
+                </div>
               </div>
             </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center mt-32 gap-6 animate-in fade-in duration-1000">
+              <div className="w-24 h-24 rounded-full bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center relative">
+                <div className="absolute inset-0 rounded-full border border-indigo-200 dark:border-indigo-500/20 animate-ping opacity-20" style={{ animationDuration: '3s' }} />
+                <ImageIcon className="w-10 h-10 text-indigo-500 dark:text-indigo-400 opacity-80" />
+              </div>
+              <div className="text-center space-y-3 flex flex-col items-center">
+                <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">Ready to Search</h2>
+                <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
+                  {indexedFolders.length > 0
+                    ? `${indexedFolders.length} folder${indexedFolders.length > 1 ? 's are' : ' is'} ready. Search your media using natural language.`
+                    : 'Select a folder to extract intelligence, then search your memories using natural language.'}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
+                  >
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Active Model: <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
+                  </button>
+                  <button
+                    onClick={handleUnloadModel}
+                    disabled={isUnloadingModel || status.is_indexing}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                    title={status.is_indexing ? "Cannot eject model while indexing is in progress" : "Unload model to free GPU VRAM"}
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                    {isUnloadingModel ? "Unloading..." : "Eject"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* In-page results grid for Modern theme */}
+        {results.length > 0 && uiTheme === 'modern' && (
+          <div className="w-full max-w-7xl animate-in fade-in duration-300 mt-2">
+            {/* Video Matches */}
+            {videoGroups.length > 0 && (
+              <section className={imageResults.length > 0 ? 'mb-10' : ''}>
+                <div className="mb-4 flex items-center gap-2.5 text-neutral-800 dark:text-neutral-200 border-b border-gray-100 dark:border-neutral-800 pb-3">
+                  <FolderOpen className="w-5 h-5 text-indigo-500" />
+                  <h3 className="text-lg font-bold">Video Results</h3>
+                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-full text-xs font-bold border border-indigo-100 dark:border-indigo-500/20">
+                    {videoGroups.length}
+                  </span>
+                  <span className="ml-auto text-xs text-neutral-400 dark:text-neutral-500 font-medium">Sorted by best match</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {videoGroups.map((group, idx) => (
+                    <VideoResultFolder
+                      key={group.path}
+                      group={group}
+                      idx={idx}
+                      API_BASE={API_BASE}
+                      onSelect={setSelectedVideoGroup}
+                      uiTheme={uiTheme}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Image Matches */}
+            {imageResults.length > 0 && (
+              <section>
+                {videoGroups.length > 0 && (
+                  <div className="mb-4 flex items-center gap-2.5 text-neutral-800 dark:text-neutral-200 border-b border-gray-100 dark:border-neutral-800 pb-3">
+                    <ImageIcon className="w-5 h-5 text-indigo-500" />
+                    <h3 className="text-lg font-bold">Image Results</h3>
+                    <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-full text-xs font-bold border border-indigo-100 dark:border-indigo-500/20">
+                      {imageResults.length}
+                    </span>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {imageResults.map((res, idx) => (
+                    <SearchResult
+                      key={res.id || res.path}
+                      res={res}
+                      idx={idx}
+                      API_BASE={API_BASE}
+                      onSelect={setSelectedImage}
+                      uiTheme={uiTheme}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
-        {showSearchResults && results.length > 0 && (
+        {/* Terminal Modal Console for Terminal theme */}
+        {showSearchResults && results.length > 0 && uiTheme === 'terminal' && (
           <div
             className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 p-6 animate-in fade-in duration-200"
             onClick={() => setShowSearchResults(false)}
@@ -2824,6 +3295,7 @@ function App() {
                           idx={idx}
                           API_BASE={API_BASE}
                           onSelect={setSelectedVideoGroup}
+                          uiTheme={uiTheme}
                         />
                       ))}
                     </div>
@@ -2847,6 +3319,7 @@ function App() {
                           idx={idx}
                           API_BASE={API_BASE}
                           onSelect={setSelectedImage}
+                          uiTheme={uiTheme}
                         />
                       ))}
                     </div>
