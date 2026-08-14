@@ -188,6 +188,95 @@ const SearchResult = memo(({ res, idx, API_BASE, onSelect, uiTheme = 'modern' })
   );
 });
 
+const prewarmedVideoPaths = new Set();
+const prewarmVideoGroup = async (API_BASE, group) => {
+  if (!group || !group.path || !group.frames || group.frames.length === 0) return;
+  if (prewarmedVideoPaths.has(group.path)) return;
+  prewarmedVideoPaths.add(group.path);
+  try {
+    const timestamps = group.frames.map(f => f.timestamp_seconds ?? 0);
+    await fetch(`${API_BASE}/video/frames/batch-extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: group.path, timestamps })
+    });
+  } catch (err) {
+    console.debug('Batch prewarm skipped or failed:', err);
+  }
+};
+
+const VideoFrameCard = memo(({ frame, index, API_BASE, onSelect, uiTheme = 'modern' }) => {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const isModern = uiTheme === 'modern';
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={cn(
+        "group cursor-pointer overflow-hidden focus:outline-none transition-all duration-200",
+        isModern
+          ? "rounded-2xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800/40 hover:shadow-lg hover:border-indigo-300 dark:hover:border-indigo-500/40"
+          : "border border-white bg-black focus:ring-2 focus:ring-white"
+      )}
+      onClick={() => onSelect(frame)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(frame);
+        }
+      }}
+    >
+      <div className={cn(
+        "relative h-44 overflow-hidden bg-neutral-200 dark:bg-neutral-800",
+        isModern ? "border-b border-gray-100 dark:border-neutral-700/50" : "border-b border-white"
+      )}>
+        {/* Placeholder skeleton while loading */}
+        {(!loaded || error) && (
+          <div className={cn(
+            "absolute inset-0 flex flex-col items-center justify-center text-cyan-500 bg-cyan-500/10 transition-opacity",
+            !loaded && !error && "animate-pulse"
+          )}>
+            <Video className="w-7 h-7 opacity-70 mb-1" />
+            <span className="text-[10px] font-mono text-cyan-400 font-bold">
+              {formatVideoTimestamp(frame.timestamp_seconds)}
+            </span>
+          </div>
+        )}
+
+        {!error && (
+          <img
+            src={getMediaPreviewUrl(API_BASE, frame, 'thumbnail')}
+            alt={`Video frame at ${formatVideoTimestamp(frame.timestamp_seconds)}`}
+            className={cn(
+              "h-full w-full object-cover transition-all duration-500 group-hover:scale-105",
+              loaded ? "opacity-100" : "opacity-0"
+            )}
+            loading="lazy"
+            decoding="async"
+            onLoad={() => setLoaded(true)}
+            onError={() => setError(true)}
+          />
+        )}
+
+        <span className={cn(
+          "absolute bottom-2 left-2 px-2.5 py-1 text-xs font-bold shadow-lg",
+          isModern
+            ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10"
+            : "border border-white bg-black text-white"
+        )}>
+          {formatVideoTimestamp(frame.timestamp_seconds)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-3 p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
+        <span>FRAME {index + 1}</span>
+        <span className="text-emerald-500 font-semibold">{Math.round((frame.score || 0) * 100)}% MATCH</span>
+      </div>
+    </div>
+  );
+});
+
 const VideoResultFolder = memo(({ group, idx, API_BASE, onSelect, uiTheme = 'modern' }) => {
   const isModern = uiTheme === 'modern';
 
@@ -205,10 +294,15 @@ const VideoResultFolder = memo(({ group, idx, API_BASE, onSelect, uiTheme = 'mod
         animationDelay: `${idx * 50}ms`,
         animationDuration: '400ms'
       }}
-      onClick={() => onSelect(group)}
+      onMouseEnter={() => prewarmVideoGroup(API_BASE, group)}
+      onClick={() => {
+        prewarmVideoGroup(API_BASE, group);
+        onSelect(group);
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
+          prewarmVideoGroup(API_BASE, group);
           onSelect(group);
         }
       }}
@@ -777,6 +871,7 @@ function App() {
 
   const [minScore, setMinScore] = useState(0.20);
   const [maxResults, setMaxResults] = useState(50);
+  const [visibleResultsCount, setVisibleResultsCount] = useState(80);
 
   const [status, setStatus] = useState({
     is_indexing: false,
@@ -797,7 +892,10 @@ function App() {
     cancel_download: false,
     is_loading_model: false,
     discovered_video_count: 0,
-    indexed_video_frames: 0
+    indexed_video_frames: 0,
+    is_rebuilding_video_thumbnails: false,
+    rebuilt_video_frames: 0,
+    total_video_frames_to_rebuild: 0
   });
   const [modelLoadError, setModelLoadError] = useState(null);
 
@@ -813,7 +911,13 @@ function App() {
   const [deleteIndexWithModel, setDeleteIndexWithModel] = useState(false);
   const [showConfirmDeleteModel, setShowConfirmDeleteModel] = useState(null);
   const [isClearingThumbnails, setIsClearingThumbnails] = useState(false);
-  const [showConfirmClearThumbnails, setShowConfirmClearThumbnails] = useState(false);
+  const [showConfirmClearThumbnails, setShowConfirmClearThumbnails] = useState(null); // null | 'all' | 'images' | 'videos'
+  const [cacheStats, setCacheStats] = useState({
+    images: { count: 0, bytes: 0, formatted: '0 B' },
+    videos: { count: 0, bytes: 0, formatted: '0 B' },
+    total: { count: 0, bytes: 0, formatted: '0 B' }
+  });
+  const [isTriggeringRebuildThumbnails, setIsTriggeringRebuildThumbnails] = useState(false);
   const [toast, setToast] = useState(null);
   const [imageSearchContext, setImageSearchContext] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -863,6 +967,49 @@ function App() {
     () => results.filter(result => result.media_type !== 'video'),
     [results]
   );
+
+  const visibleImageResults = useMemo(
+    () => imageResults.slice(0, visibleResultsCount),
+    [imageResults, visibleResultsCount]
+  );
+
+  const sentinelRef = useRef(null);
+  const sentinelTerminalRef = useRef(null);
+
+  // Background Prefetcher: Quietly prefetch the next 80 image thumbnails in browser idle time
+  useEffect(() => {
+    if (imageResults.length <= visibleResultsCount) return;
+    const nextBatch = imageResults.slice(visibleResultsCount, visibleResultsCount + 80);
+    const prefetchTimer = setTimeout(() => {
+      nextBatch.forEach(item => {
+        const url = getMediaPreviewUrl(API_BASE, item, 'thumbnail');
+        const img = new window.Image();
+        img.src = url;
+      });
+    }, 150);
+
+    return () => clearTimeout(prefetchTimer);
+  }, [imageResults, visibleResultsCount, API_BASE]);
+
+  // Seamless Infinite Scroll: Auto-expands visibleResultsCount when scrolling near bottom
+  useEffect(() => {
+    if (imageResults.length <= visibleResultsCount) return;
+    const observer = new IntersectionObserver((entries) => {
+      const isVisible = entries.some(e => e.isIntersecting);
+      if (isVisible) {
+        setVisibleResultsCount(prev => Math.min(prev + 80, imageResults.length));
+      }
+    }, {
+      root: null,
+      rootMargin: '500px', // Pre-trigger 500px before reaching bottom
+      threshold: 0.01
+    });
+
+    if (sentinelRef.current) observer.observe(sentinelRef.current);
+    if (sentinelTerminalRef.current) observer.observe(sentinelTerminalRef.current);
+
+    return () => observer.disconnect();
+  }, [imageResults.length, visibleResultsCount]);
 
   const videoGroups = useMemo(() => {
     const groupsByPath = new Map();
@@ -1029,6 +1176,13 @@ function App() {
     return () => { mounted = false; };
   }, [status.is_downloading, backendReady]);
 
+  // Refresh cache stats whenever settings modal opens or rebuild completes
+  useEffect(() => {
+    if (showSettings) {
+      fetchCacheStats();
+    }
+  }, [showSettings, status.is_rebuilding_video_thumbnails]);
+
   // Toast for download completion
   useEffect(() => {
     // 1. Success case: download finished with no error
@@ -1109,30 +1263,31 @@ function App() {
     );
 
     // 2. Pairwise Cosine Similarity for Visual Duplicates (Threshold >= 0.985)
+    // Run full pairwise on top candidate results (up to 800) to keep JS thread non-blocking for 4k+ sets
     const VISUAL_THRESHOLD = 0.985;
     const visualGroups = []; // Array of Sets of indices
+    const maxVisualLimit = Math.min(results.length, 800);
 
-    for (let i = 0; i < results.length; i++) {
-      for (let j = i + 1; j < results.length; j++) {
-        const itemA = results[i];
+    for (let i = 0; i < maxVisualLimit; i++) {
+      const itemA = results[i];
+      if (itemA.media_type === 'video' || !itemA.embedding) continue;
+
+      for (let j = i + 1; j < maxVisualLimit; j++) {
         const itemB = results[j];
-
-        if (itemA.media_type === 'video' || itemB.media_type === 'video') continue;
+        if (itemB.media_type === 'video' || !itemB.embedding) continue;
 
         // Skip if already exact hash match
         if (itemA.hash && itemB.hash && itemA.hash === itemB.hash) continue;
 
-        if (itemA.embedding && itemB.embedding) {
-          const sim = vectorDot(itemA.embedding, itemB.embedding);
-          if (sim >= VISUAL_THRESHOLD) {
-            let targetGroup = visualGroups.find(g => g.has(i) || g.has(j));
-            if (!targetGroup) {
-              targetGroup = new Set();
-              visualGroups.push(targetGroup);
-            }
-            targetGroup.add(i);
-            targetGroup.add(j);
+        const sim = vectorDot(itemA.embedding, itemB.embedding);
+        if (sim >= VISUAL_THRESHOLD) {
+          let targetGroup = visualGroups.find(g => g.has(i) || g.has(j));
+          if (!targetGroup) {
+            targetGroup = new Set();
+            visualGroups.push(targetGroup);
           }
+          targetGroup.add(i);
+          targetGroup.add(j);
         }
       }
     }
@@ -1160,7 +1315,7 @@ function App() {
       });
     });
 
-    // 3. Map final enhanced result objects
+    // 3. Map final enhanced result objects (strip heavy raw embeddings to save memory)
     return results.map((res, idx) => {
       const isExact = !!(res.hash && exactDupeHashes.has(res.hash));
       const isVisual = !isExact && visualColorMap.has(idx);
@@ -1179,8 +1334,10 @@ function App() {
         otherPaths = visualPathsMap.get(idx) || [];
       }
 
+      const { embedding, ...cleanRes } = res;
+
       return {
-        ...res,
+        ...cleanRes,
         isDuplicate: isExact || isVisual,
         duplicateType: duplicateType, // 'exact' | 'visual' | null
         dupeColor: dupeColor,
@@ -1203,6 +1360,7 @@ function App() {
     setIsSearching(true);
     setHasSearched(true);
     setImageSearchContext(null);
+    setVisibleResultsCount(80);
     try {
       const res = await fetch(`${API_BASE}/search`, {
         method: 'POST',
@@ -1228,6 +1386,7 @@ function App() {
     setIsSearching(true);
     setHasSearched(true);
     setImageSearchContext(file.name);
+    setVisibleResultsCount(80);
     setQuery('');
 
     try {
@@ -1475,6 +1634,7 @@ function App() {
       setQuery('');
       setImageSearchContext(null);
       setSelectedImage(null);
+      setSelectedVideoGroup(null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -1484,19 +1644,58 @@ function App() {
     }
   };
 
-  const handleClearThumbnailCache = async () => {
+  const fetchCacheStats = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/image/cache/stats`);
+      if (res.ok) {
+        const data = await res.json();
+        setCacheStats(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch cache stats:", e);
+    }
+  };
+
+  const handleClearThumbnailCache = async (target = 'all') => {
     setIsClearingThumbnails(true);
     try {
-      await fetch(`${API_BASE}/image/cache/clear`, {
+      const res = await fetch(`${API_BASE}/image/cache/clear?target=${target}`, {
         method: 'POST'
       });
-      setToast({ message: 'Thumbnail cache cleared successfully.', type: 'success' });
+      const data = await res.json();
+      if (res.ok) {
+        const label = target === 'all' ? 'All' : target === 'images' ? 'Image' : 'Video';
+        setToast({ message: `${label} thumbnail cache cleared successfully.`, type: 'success' });
+        fetchCacheStats();
+      } else {
+        setToast({ message: data.detail || 'Failed to clear thumbnail cache.', type: 'error' });
+      }
     } catch (err) {
       console.error(err);
       setToast({ message: 'Failed to clear thumbnail cache.', type: 'error' });
     } finally {
       setIsClearingThumbnails(false);
-      setShowConfirmClearThumbnails(false);
+      setShowConfirmClearThumbnails(null);
+    }
+  };
+
+  const handleRebuildVideoThumbnails = async () => {
+    if (status.is_rebuilding_video_thumbnails || status.is_indexing || isTriggeringRebuildThumbnails) return;
+    setIsTriggeringRebuildThumbnails(true);
+    try {
+      const res = await fetch(`${API_BASE}/video/thumbnails/regenerate`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setToast({ message: 'Video thumbnail rebuilding started in background.', type: 'info' });
+        fetchCacheStats();
+      } else {
+        setToast({ message: data.detail || 'Failed to start video thumbnail rebuilding.', type: 'error' });
+      }
+    } catch (err) {
+      console.error(err);
+      setToast({ message: 'Failed to connect to backend.', type: 'error' });
+    } finally {
+      setIsTriggeringRebuildThumbnails(false);
     }
   };
 
@@ -2026,9 +2225,9 @@ function App() {
                                     </div>
                                     {status.download_total_bytes > 0 && (
                                       <div className="flex flex-col w-full gap-1.5 mt-1.5">
-                                        <div className="w-full h-1 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                                        <div className="terminal-progress-track w-full h-1.5 bg-gray-100 dark:bg-neutral-800 rounded-full overflow-hidden">
                                           <div
-                                            className="h-full bg-amber-500 transition-all duration-300"
+                                            className="terminal-progress-fill h-full bg-amber-500 transition-all duration-300"
                                             style={{ width: `${(status.download_current_bytes / status.download_total_bytes) * 100}%` }}
                                           />
                                         </div>
@@ -2197,31 +2396,148 @@ function App() {
                 )}
               </div>
 
-              <div className="pt-4 mt-2 border-t border-gray-100 dark:border-neutral-800">
-                {showConfirmClearThumbnails ? (
-                  <div className="p-4 bg-gray-50 dark:bg-neutral-950/50 border border-indigo-200 dark:border-indigo-500/30 rounded-xl space-y-3 animate-in zoom-in-95 duration-200">
-                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-300">Are you sure? Thumbnails will be regenerated as needed.</p>
-                    <div className="flex gap-2">
-                      <button onClick={handleClearThumbnailCache} disabled={isClearingThumbnails} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-2 text-sm font-bold flex justify-center items-center gap-2 transition-colors">
-                        {isClearingThumbnails ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                        {isClearingThumbnails ? 'Clearing...' : 'Yes, Clear'}
-                      </button>
-                      <button onClick={() => setShowConfirmClearThumbnails(false)} disabled={isClearingThumbnails} className="flex-1 bg-gray-200 dark:bg-neutral-800 hover:bg-gray-300 dark:hover:bg-neutral-700 text-neutral-700 dark:text-white rounded-lg py-2 text-sm font-bold transition-colors">Cancel</button>
+              <div className="pt-4 mt-2 border-t border-gray-100 dark:border-neutral-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Thumbnail Cache Management</h4>
+                  <span className="text-[11px] font-mono font-medium text-neutral-400 dark:text-neutral-500">Total: {cacheStats.total.formatted}</span>
+                </div>
+
+                {/* Image Thumbnails Card */}
+                <div className="p-3.5 bg-gray-50/80 dark:bg-neutral-950/40 border border-gray-200/80 dark:border-neutral-800 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-indigo-500" />
+                      <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">Image Thumbnails</span>
                     </div>
+                    <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md text-[11px] font-mono font-semibold border border-indigo-100 dark:border-indigo-500/20">
+                      {cacheStats.images.formatted} · {cacheStats.images.count} items
+                    </span>
                   </div>
-                ) : (
-                  <>
+
+                  {showConfirmClearThumbnails === 'images' ? (
+                    <div className="p-3 bg-white dark:bg-neutral-900 border border-indigo-200 dark:border-indigo-500/30 rounded-xl space-y-2 animate-in zoom-in-95 duration-150">
+                      <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">Clear all image thumbnails? (Images regenerate quickly on demand)</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleClearThumbnailCache('images')}
+                          disabled={isClearingThumbnails}
+                          className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-1.5 text-xs font-bold flex justify-center items-center gap-1.5 transition-colors"
+                        >
+                          {isClearingThumbnails ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                          <span>Yes, Clear Images</span>
+                        </button>
+                        <button
+                          onClick={() => setShowConfirmClearThumbnails(null)}
+                          disabled={isClearingThumbnails}
+                          className="flex-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-white rounded-lg py-1.5 text-xs font-bold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                     <button
-                      onClick={() => setShowConfirmClearThumbnails(true)}
-                      disabled={isClearingThumbnails}
-                      className="w-full px-4 py-3 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-bold text-sm border border-indigo-200 dark:border-indigo-500/20"
+                      onClick={() => setShowConfirmClearThumbnails('images')}
+                      disabled={isClearingThumbnails || cacheStats.images.count === 0}
+                      className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-indigo-200/70 dark:border-indigo-500/20"
                     >
-                      {isClearingThumbnails ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      {isClearingThumbnails ? 'Clearing Cache...' : 'Clear Thumbnail Cache'}
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear Image Cache</span>
                     </button>
-                    <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center mt-2 font-medium">Removes all generated thumbnails from disk to free up space.</p>
-                  </>
-                )}
+                  )}
+                </div>
+
+                {/* Video Keyframes Card */}
+                <div className="p-3.5 bg-gray-50/80 dark:bg-neutral-950/40 border border-gray-200/80 dark:border-neutral-800 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Video className="w-4 h-4 text-cyan-500" />
+                      <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">Video Keyframes</span>
+                    </div>
+                    <span className="px-2 py-0.5 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-md text-[11px] font-mono font-semibold border border-cyan-100 dark:border-cyan-500/20">
+                      {cacheStats.videos.formatted} · {cacheStats.videos.count} frames
+                    </span>
+                  </div>
+
+                  {status.is_rebuilding_video_thumbnails ? (
+                    <div className="p-3.5 bg-cyan-50/70 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-500/30 rounded-xl space-y-2.5 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between text-xs font-bold text-cyan-700 dark:text-cyan-300">
+                        <span className="flex items-center gap-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-500" />
+                          Rebuilding Video Thumbnails...
+                        </span>
+                        <span>
+                          {status.total_video_frames_to_rebuild > 0
+                            ? `${Math.round((status.rebuilt_video_frames / status.total_video_frames_to_rebuild) * 100)}%`
+                            : 'Starting...'}
+                        </span>
+                      </div>
+
+                      <div className="terminal-progress-track w-full bg-cyan-200/50 dark:bg-cyan-900/40 rounded-full h-2.5 overflow-hidden">
+                        <div
+                          className="terminal-progress-fill bg-gradient-to-r from-cyan-500 to-indigo-500 h-full rounded-full transition-all duration-300 ease-out"
+                          style={{
+                            width: `${status.total_video_frames_to_rebuild > 0 ? Math.min(100, Math.round((status.rebuilt_video_frames / status.total_video_frames_to_rebuild) * 100)) : 8}%`
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex justify-between items-center text-[10px] text-cyan-600/80 dark:text-cyan-400/80 font-mono">
+                        <span>{status.rebuilt_video_frames} of {status.total_video_frames_to_rebuild || '?'} frames cached</span>
+                        <span className="animate-pulse">Active</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      {showConfirmClearThumbnails === 'videos' ? (
+                        <div className="w-full p-3 bg-white dark:bg-neutral-900 border border-cyan-200 dark:border-cyan-500/30 rounded-xl space-y-2 animate-in zoom-in-95 duration-150">
+                          <p className="text-xs font-semibold text-cyan-700 dark:text-cyan-300">Clear video thumbnails? (Requires video decoding to recreate)</p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleClearThumbnailCache('videos')}
+                              disabled={isClearingThumbnails}
+                              className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg py-1.5 text-xs font-bold flex justify-center items-center gap-1.5 transition-colors"
+                            >
+                              {isClearingThumbnails ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                              <span>Yes, Clear Videos</span>
+                            </button>
+                            <button
+                              onClick={() => setShowConfirmClearThumbnails(null)}
+                              disabled={isClearingThumbnails}
+                              className="flex-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-white rounded-lg py-1.5 text-xs font-bold transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={handleRebuildVideoThumbnails}
+                            disabled={status.is_indexing || isTriggeringRebuildThumbnails}
+                            className="flex-1 px-3 py-2 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-cyan-200/70 dark:border-cyan-500/20"
+                          >
+                            {isTriggeringRebuildThumbnails ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-500" />
+                            ) : (
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            )}
+                            <span>Rebuild Videos</span>
+                          </button>
+                          <button
+                            onClick={() => setShowConfirmClearThumbnails('videos')}
+                            disabled={isClearingThumbnails || cacheStats.videos.count === 0}
+                            className="px-3 py-2 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-600 dark:text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-gray-200/80 dark:border-neutral-700"
+                            title="Clear only video thumbnails"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Clear</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
             </div>
@@ -2507,7 +2823,7 @@ function App() {
                 </button>
               </div>
             </div>
-            <div className="w-full h-1.5 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
+            <div className="terminal-progress-track w-full h-2 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
               <div
                 className="terminal-progress-fill h-full bg-indigo-500 transition-all duration-500 ease-out"
                 style={{ width: `${status.percent}%` }}
@@ -2758,52 +3074,16 @@ function App() {
             <div className="custom-scrollbar overflow-y-auto p-5">
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {selectedVideoGroup.frames.map((frame, index) => (
-                  <div
+                  <VideoFrameCard
                     key={frame.id || `${frame.path}:${frame.timestamp_seconds || 0}:${index}`}
-                    role="button"
-                    tabIndex={0}
-                    className={cn(
-                      "group cursor-pointer overflow-hidden focus:outline-none transition-all duration-200",
-                      uiTheme === 'modern'
-                        ? "rounded-2xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800/40 hover:shadow-lg hover:border-indigo-300 dark:hover:border-indigo-500/40"
-                        : "border border-white bg-black focus:ring-2 focus:ring-white"
-                    )}
-                    onClick={() => {
-                      setSelectedVideoGroup(null);
-                      setSelectedImage(frame);
+                    frame={frame}
+                    index={index}
+                    API_BASE={API_BASE}
+                    onSelect={(f) => {
+                      setSelectedImage(f);
                     }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        setSelectedVideoGroup(null);
-                        setSelectedImage(frame);
-                      }
-                    }}
-                  >
-                    <div className={cn(
-                      "relative h-44 overflow-hidden",
-                      uiTheme === 'modern' ? "border-b border-gray-100 dark:border-neutral-700/50" : "border-b border-white"
-                    )}>
-                      <img
-                        src={getMediaPreviewUrl(API_BASE, frame)}
-                        alt={`Video frame at ${formatVideoTimestamp(frame.timestamp_seconds)}`}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        loading="lazy"
-                      />
-                      <span className={cn(
-                        "absolute bottom-2 left-2 px-2.5 py-1 text-xs font-bold shadow-lg",
-                        uiTheme === 'modern'
-                          ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10"
-                          : "border border-white bg-black text-white"
-                      )}>
-                        {formatVideoTimestamp(frame.timestamp_seconds)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
-                      <span>FRAME {index + 1}</span>
-                      <span className="text-emerald-500 font-semibold">{Math.round((frame.score || 0) * 100)}% MATCH</span>
-                    </div>
-                  </div>
+                    uiTheme={uiTheme}
+                  />
                 ))}
               </div>
             </div>
@@ -3392,7 +3672,7 @@ function App() {
                   </div>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                  {imageResults.map((res, idx) => (
+                  {visibleImageResults.map((res, idx) => (
                     <SearchResult
                       key={res.id || res.path}
                       res={res}
@@ -3403,6 +3683,22 @@ function App() {
                     />
                   ))}
                 </div>
+
+                {imageResults.length > visibleResultsCount && (
+                  <div ref={sentinelRef} className="mt-8 mb-4 flex flex-col items-center justify-center gap-2 py-4">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleResultsCount(prev => Math.min(prev + 80, imageResults.length))}
+                      className="px-6 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-2xl border border-indigo-200 dark:border-indigo-500/30 transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center gap-2"
+                    >
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Loading more results ({visibleResultsCount} of {imageResults.length})</span>
+                    </button>
+                    <span className="text-[11px] text-neutral-400 dark:text-neutral-500 font-mono">
+                      Showing {visibleResultsCount} of {imageResults.length} matches
+                    </span>
+                  </div>
+                )}
               </section>
             )}
           </div>
@@ -3472,7 +3768,7 @@ function App() {
                       </div>
                     )}
                     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                      {imageResults.map((res, idx) => (
+                      {visibleImageResults.map((res, idx) => (
                         <SearchResult
                           key={res.id || res.path}
                           res={res}
@@ -3483,6 +3779,19 @@ function App() {
                         />
                       ))}
                     </div>
+
+                    {imageResults.length > visibleResultsCount && (
+                      <div ref={sentinelTerminalRef} className="mt-8 mb-4 flex flex-col items-center justify-center gap-2 py-4">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleResultsCount(prev => Math.min(prev + 80, imageResults.length))}
+                          className="px-6 py-2.5 bg-black border border-white text-white hover:bg-white hover:text-black font-bold text-xs transition-all cursor-pointer flex items-center gap-2"
+                        >
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>LOAD MORE ({visibleResultsCount} OF {imageResults.length})</span>
+                        </button>
+                      </div>
+                    )}
                   </section>
                 )}
               </div>

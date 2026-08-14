@@ -11,3 +11,4 @@ tqdm
 huggingface_hub
 python-multipart
 opencv-python-headless>=4.10
+av>=14.0.0

@@ -249,8 +249,17 @@ body {
   box-shadow: none !important;
 }
 
+.terminal-theme .terminal-progress-track {
+  background: var(--terminal-background) !important;
+  border: 1px solid var(--terminal-foreground) !important;
+  border-radius: 0 !important;
+}
+
 .terminal-theme .terminal-progress-fill {
   background: var(--terminal-foreground) !important;
+  background-color: var(--terminal-foreground) !important;
+  background-image: none !important;
+  border-radius: 0 !important;
 }
 
 .terminal-theme .model-status-dot {

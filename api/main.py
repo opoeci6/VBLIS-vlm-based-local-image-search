@@ -115,7 +115,11 @@ def persist_active_model(model_name: str):
         print(f"Failed to persist active model: {e}")
 
 from model_manager import ModelManager
-from indexer import Indexer, VIDEO_EXTENSIONS, extract_video_frame
+from indexer import (
+    Indexer, VIDEO_EXTENSIONS, extract_video_frame, extract_video_frames_batch,
+    get_video_frame_cache_path, IMAGE_CACHE_DIR, VIDEO_CACHE_DIR,
+    get_cache_stats, safe_clear_cache
+)
 
 from contextlib import asynccontextmanager
 
@@ -154,6 +158,10 @@ class SearchQuery(BaseModel):
 
 class IndexRequest(BaseModel):
     directory: str
+
+class VideoBatchExtractRequest(BaseModel):
+    path: str
+    timestamps: list[float]
 
 class ModelSwitchRequest(BaseModel):
     model_name: str
@@ -472,15 +480,34 @@ def unload_model():
         raise HTTPException(status_code=500, detail=f"Failed to unload model: {str(e)}")
 
 
+@app.get("/image/cache/stats")
+def get_cache_statistics():
+    return get_cache_stats()
+
 @app.post("/image/cache/clear")
-def clear_image_cache():
+def clear_image_cache(target: str = Query("all", regex="^(all|images|videos)$")):
     try:
-        if CACHE_DIR.exists():
-            shutil.rmtree(CACHE_DIR)
-        CACHE_DIR.mkdir(exist_ok=True)
-        return {"status": "success", "message": "Thumbnail cache cleared successfully."}
+        result = safe_clear_cache(target=target)
+        return {"status": "success", "message": f"Successfully cleared {target} thumbnail cache.", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/video/frames/batch-extract")
+def batch_extract_video_frames(req: VideoBatchExtractRequest):
+    if not os.path.isfile(req.path):
+        raise HTTPException(status_code=404, detail="Video file not found")
+    try:
+        cached_paths = extract_video_frames_batch(req.path, req.timestamps, VIDEO_CACHE_DIR)
+        return {"status": "success", "cached_count": len(cached_paths)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/video/thumbnails/regenerate")
+async def regenerate_video_thumbnails(background_tasks: BackgroundTasks):
+    if indexer.is_indexing or indexer.is_rebuilding_video_thumbnails:
+        raise HTTPException(status_code=400, detail="Another indexing or rebuilding task is currently in progress.")
+    background_tasks.add_task(indexer.regenerate_video_thumbnails)
+    return {"status": "started", "message": "Video thumbnail regeneration started in background."}
 
 @app.get("/image")
 def serve_image(
@@ -490,7 +517,7 @@ def serve_image(
 ):
     """Serve a local image file by absolute path. Transcodes HEIC to JPEG.
     Supports size='thumbnail' for faster loading in the UI grid.
-    Thumbnails are cached on disk in the 'cache' directory.
+    Thumbnails are cached on disk in segregated 'cache/images' and 'cache/videos' directories.
     """
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -502,16 +529,14 @@ def serve_image(
     if is_video:
         try:
             stat = os.stat(path)
-            cache_key = hashlib.sha256(
-                f"{os.path.abspath(path)}:{stat.st_mtime_ns}:{stat.st_size}:{timestamp:.3f}".encode("utf-8")
-            ).hexdigest()
-            cache_path = CACHE_DIR / f"{cache_key}_video_frame.jpg"
+            cache_path = get_video_frame_cache_path(path, timestamp, VIDEO_CACHE_DIR, stat)
 
             if size == "thumbnail" and cache_path.exists():
                 return FileResponse(cache_path)
 
             frame = extract_video_frame(path, timestamp)
             if size == "thumbnail":
+                VIDEO_CACHE_DIR.mkdir(exist_ok=True)
                 frame.thumbnail((480, 480))
                 frame.convert("RGB").save(cache_path, format="JPEG", quality=78, optimize=True)
                 frame.close()
@@ -528,10 +553,18 @@ def serve_image(
     # If thumbnail is requested, check cache first
     if size == "thumbnail":
         file_hash = compute_hash(path)
-        cache_path = CACHE_DIR / f"{file_hash}_thumb.jpg"
+        cache_path = IMAGE_CACHE_DIR / f"{file_hash}_thumb.jpg"
+        legacy_path = CACHE_DIR / f"{file_hash}_thumb.jpg"
         
         if cache_path.exists():
             return FileResponse(cache_path)
+        if legacy_path.exists():
+            try:
+                IMAGE_CACHE_DIR.mkdir(exist_ok=True)
+                legacy_path.replace(cache_path)
+                return FileResponse(cache_path)
+            except Exception:
+                return FileResponse(legacy_path)
             
         # Not in cache, need to generate
         try:
@@ -551,6 +584,7 @@ def serve_image(
                 img = ImageOps.exif_transpose(img)
             
             # Generate thumbnail
+            IMAGE_CACHE_DIR.mkdir(exist_ok=True)
             img.thumbnail((480, 480))
             img.convert("RGB").save(cache_path, format="JPEG", quality=78, optimize=True)
             return FileResponse(cache_path)
