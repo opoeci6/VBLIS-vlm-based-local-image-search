@@ -37,6 +37,7 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
+.pytest_cache/
 nosetests.xml
 coverage.xml
 *,cover
@@ -121,6 +122,8 @@ api/chroma_data/
 api/cache/
 api/models/
 api/data/
+api/tests/
+tests/
 api/api.spec
 
 # VS Code
