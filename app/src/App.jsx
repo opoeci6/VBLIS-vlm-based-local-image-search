@@ -1415,6 +1415,16 @@ function App() {
     }
   };
 
+  const handleCloseSearchResults = () => {
+    setShowSearchResults(false);
+    setResults([]);
+    setQuery('');
+    setHasSearched(false);
+    setImageSearchContext(null);
+    setSelectedImage(null);
+    setSelectedVideoGroup(null);
+  };
+
   const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -3708,7 +3718,7 @@ function App() {
         {showSearchResults && results.length > 0 && uiTheme === 'terminal' && (
           <div
             className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 p-6 animate-in fade-in duration-200"
-            onClick={() => setShowSearchResults(false)}
+            onClick={handleCloseSearchResults}
           >
             <div
               className="flex max-h-[86vh] w-full max-w-7xl flex-col border border-white bg-black"
@@ -3726,7 +3736,7 @@ function App() {
                   {results.length} MATCH{results.length === 1 ? '' : 'ES'}
                 </span>
                 <button
-                  onClick={() => setShowSearchResults(false)}
+                  onClick={handleCloseSearchResults}
                   className="icon-tile flex h-12 w-12 flex-shrink-0 items-center justify-center border border-white"
                   aria-label="Close search results"
                 >
