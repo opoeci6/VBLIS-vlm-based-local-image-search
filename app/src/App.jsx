@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, ChevronDown, ChevronUp, Info, Sparkles, LogOut, XCircle, Copy, Video, Terminal } from 'lucide-react';
+import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, ChevronDown, ChevronUp, Info, Sparkles, LogOut, XCircle, Copy, Video, Terminal, Play, Pause } from 'lucide-react';
 import TitleBar from './TitleBar';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useTaskQueue } from './hooks/useTaskQueue';
+import { QueueStatusBadge } from './components/queue/QueueStatusBadge';
+import { QueueDrawer } from './components/queue/QueueDrawer';
+import { ModelSwitchWarningModal } from './components/modals/ModelSwitchWarningModal';
+import { IndexedFolderTree } from './components/folders/IndexedFolderTree';
 
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -51,6 +56,23 @@ const FolderItemThumbnail = memo(({ item, API_BASE, uiTheme = 'modern', onSelect
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';
   const isVideo = item.media_type === 'video';
+  const isMissing = item.exists_on_disk === false;
+
+  if (isMissing) {
+    return (
+      <div
+        className={cn(
+          "relative w-12 h-12 flex-shrink-0 flex items-center justify-center overflow-hidden select-none cursor-not-allowed",
+          isModern
+            ? "rounded-xl ring-1 ring-rose-500/30 bg-rose-50 dark:bg-rose-950/40 text-rose-500"
+            : "border border-rose-500 bg-black text-rose-400"
+        )}
+        title={`${item.name} is missing from disk`}
+      >
+        <AlertTriangle className="w-5 h-5 text-rose-500" />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -919,6 +941,12 @@ function App() {
   });
   const [isTriggeringRebuildThumbnails, setIsTriggeringRebuildThumbnails] = useState(false);
   const [toast, setToast] = useState(null);
+  const queue = useTaskQueue(API_BASE, setToast);
+  const [modelSwitchWarning, setModelSwitchWarning] = useState({
+    isOpen: false,
+    mode: 'active_task',
+    targetModel: null
+  });
   const [imageSearchContext, setImageSearchContext] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragError, setDragError] = useState(null);
@@ -930,6 +958,7 @@ function App() {
   const [browsingFolder, setBrowsingFolder] = useState(null);
   const [folderContents, setFolderContents] = useState(null);
   const [isFetchingFolderContents, setIsFetchingFolderContents] = useState(false);
+  const [isCleaningGhostRecords, setIsCleaningGhostRecords] = useState(false);
   const [folderVisibleLimit, setFolderVisibleLimit] = useState(60);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [gpuSettings, setGpuSettings] = useState({ 
@@ -955,13 +984,21 @@ function App() {
   useEffect(() => {
     if (!isFoldersExpanded) return;
     const handleClickOutside = (e) => {
+      // If a modal, lightbox, or drawer is active or being clicked, do not collapse indexed folders
+      if (showFolderContents || selectedImage || selectedVideoGroup || showSettings || queue.isDrawerOpen) {
+        return;
+      }
+      // If clicking any header control, button, dialog, modal, drawer, or input, do not collapse
+      if (e.target.closest?.('.fixed, [role="dialog"], header, nav, button, a, input, select, [data-no-collapse]')) {
+        return;
+      }
       if (foldersRef.current && !foldersRef.current.contains(e.target)) {
         setIsFoldersExpanded(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isFoldersExpanded]);
+  }, [isFoldersExpanded, showFolderContents, selectedImage, selectedVideoGroup, showSettings, queue.isDrawerOpen]);
 
   const imageResults = useMemo(
     () => results.filter(result => result.media_type !== 'video'),
@@ -1357,6 +1394,7 @@ function App() {
       return;
     }
 
+    setIsFoldersExpanded(false);
     setIsSearching(true);
     setHasSearched(true);
     setImageSearchContext(null);
@@ -1383,6 +1421,7 @@ function App() {
       return;
     }
 
+    setIsFoldersExpanded(false);
     setIsSearching(true);
     setHasSearched(true);
     setImageSearchContext(file.name);
@@ -1471,22 +1510,7 @@ function App() {
     }
 
     if (folderPaths.length > 0) {
-      try {
-        const res = await fetch(`${API_BASE}/index/folders/batch-index`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folder_paths: folderPaths })
-        });
-        if (res.ok) {
-          setToast({ message: `Started indexing ${folderPaths.length} folder(s).`, type: 'success' });
-        } else {
-          const err = await res.json();
-          setToast({ message: `Error: ${err.detail}`, type: 'error' });
-        }
-      } catch (err) {
-        console.error(err);
-        setToast({ message: "Failed to start indexing.", type: 'error' });
-      }
+      await queue.enqueueFolderIndexing(folderPaths);
     } else if (imageFiles.length > 0) {
       handleImageDrop(imageFiles[0]);
     } else {
@@ -1498,22 +1522,39 @@ function App() {
     if (!window.electronAPI) return;
     const paths = await window.electronAPI.openDirectory();
     if (paths && paths.length > 0) {
-      try {
-        await fetch(`${API_BASE}/index/folders/batch-index`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folder_paths: paths })
-        });
-      } catch (err) {
-        console.error(err);
-      }
+      await queue.enqueueFolderIndexing(paths);
     }
   };
 
   const handleModelSwitch = async (model_name) => {
+    // 1. Guard against active running/paused task
+    if (queue.activeTask && (queue.activeTask.status === 'running' || queue.activeTask.status === 'paused')) {
+      setModelSwitchWarning({
+        isOpen: true,
+        mode: 'active_task',
+        targetModel: model_name
+      });
+      return;
+    }
+
+    // 2. Guard against queued tasks with idle worker
+    if (queue.pendingCount > 0) {
+      setModelSwitchWarning({
+        isOpen: true,
+        mode: 'queued_tasks',
+        targetModel: model_name
+      });
+      return;
+    }
+
+    await executeModelSwitch(model_name, false);
+  };
+
+  const executeModelSwitch = async (model_name, clearQueue = false) => {
     setIsSwitchingModel(true);
     setShowSettings(false);
     setModelLoadError(null);
+    setModelSwitchWarning(prev => ({ ...prev, isOpen: false }));
     // Reset search state immediately when switching models
     setResults([]);
     setHasSearched(false);
@@ -1524,7 +1565,7 @@ function App() {
       const res = await fetch(`${API_BASE}/models/switch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name })
+        body: JSON.stringify({ model_name, clear_queue: clearQueue })
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ detail: res.statusText }));
@@ -1545,6 +1586,7 @@ function App() {
       setPendingModel(model_name);
       setModelLoadError(null);
       setToast({ message: `Successfully activated ${model_name.split('/').pop()}`, type: 'success' });
+      queue.fetchQueue();
     } catch (err) {
       console.error(err);
       setToast({ message: `Network error while loading model: ${err.message}`, type: 'error' });
@@ -1717,9 +1759,9 @@ function App() {
     setHasSearched(false);
   };
 
-  const fetchIndexedFolders = async () => {
+  const fetchIndexedFolders = async (silent = false) => {
     if (!models.active_model) return;
-    setIsFetchingFolders(true);
+    if (!silent) setIsFetchingFolders(true);
     try {
       const res = await fetch(`${API_BASE}/index/folders`);
       const data = await res.json();
@@ -1727,16 +1769,19 @@ function App() {
     } catch (err) {
       console.error(err);
     } finally {
-      setIsFetchingFolders(false);
+      if (!silent) setIsFetchingFolders(false);
     }
   };
 
-  const handleBrowseFolderContents = async (folder) => {
-    setBrowsingFolder(folder);
-    setFolderContents(null);
-    setFolderVisibleLimit(60);
-    setShowFolderContents(true);
-    setIsFetchingFolderContents(true);
+  const handleBrowseFolderContents = async (folder, silent = false) => {
+    if (!folder) return;
+    if (!silent) {
+      setBrowsingFolder(folder);
+      setFolderContents(null);
+      setFolderVisibleLimit(60);
+      setShowFolderContents(true);
+      setIsFetchingFolderContents(true);
+    }
 
     try {
       const url = new URL(`${API_BASE}/index/folder/contents`);
@@ -1751,11 +1796,17 @@ function App() {
       setFolderContents(data);
     } catch (err) {
       console.error(err);
-      setToast({ message: err.message || 'Failed to browse folder contents.', type: 'error' });
-      setShowFolderContents(false);
-      setBrowsingFolder(null);
+      if (!silent) {
+        setToast({ message: err.message || 'Failed to browse folder contents.', type: 'error' });
+        setShowFolderContents(false);
+        setBrowsingFolder(null);
+      }
+      // Immediately refresh indexed folders to update missing status in the tree UI
+      fetchIndexedFolders(true);
     } finally {
-      setIsFetchingFolderContents(false);
+      if (!silent) {
+        setIsFetchingFolderContents(false);
+      }
     }
   };
 
@@ -1776,12 +1827,20 @@ function App() {
       if (res.ok) {
         setToast({ message: 'Re-indexing started in background.', type: 'success' });
       } else {
-        const error = await res.json();
-        setToast({ message: `Error: ${error.detail}`, type: 'error' });
+        const error = await res.json().catch(() => ({ detail: res.statusText }));
+        const isMissing = error.detail?.toLowerCase().includes('invalid directory') || error.detail?.toLowerCase().includes('not exist');
+        setToast({
+          message: isMissing
+            ? 'Folder is still not accessible on disk. Please reconnect the drive and try again.'
+            : `Error: ${error.detail}`,
+          type: 'error'
+        });
+        fetchIndexedFolders(true);
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Failed to start re-indexing.', type: 'error' });
+      setToast({ message: 'Failed to connect to backend for re-indexing.', type: 'error' });
+      fetchIndexedFolders(true);
     }
   };
 
@@ -1857,27 +1916,89 @@ function App() {
     }
   };
 
-  const toggleFolderSelection = (folder) => {
-    setSelectedFolders(prev =>
-      prev.includes(folder.path)
-        ? prev.filter(f => f !== folder.path)
-        : [...prev, folder.path]
-    );
+  const allSelectableFolderPaths = useMemo(() => {
+    return indexedFolders.flatMap(f => [f.path, ...(f.subfolders || []).map(s => s.path)]);
+  }, [indexedFolders]);
+
+  const toggleFolderSelection = (targetPath, isSubfolder = false, parentFolder = null) => {
+    setSelectedFolders(prev => {
+      const childPaths = parentFolder?.descendantPaths || (parentFolder?.subfolders || []).map(s => s.path);
+
+      if (!isSubfolder || (childPaths && childPaths.length > 0)) {
+        const allTreePaths = [targetPath, ...(childPaths || [])];
+        const isSelected = prev.includes(targetPath) || (childPaths.length > 0 && childPaths.every(s => prev.includes(s)));
+
+        if (isSelected) {
+          return prev.filter(p => !allTreePaths.includes(p));
+        } else {
+          const next = new Set([...prev, ...allTreePaths]);
+          return Array.from(next);
+        }
+      }
+
+      return prev.includes(targetPath)
+        ? prev.filter(p => p !== targetPath)
+        : [...prev, targetPath];
+    });
   };
 
   const toggleSelectAll = () => {
-    if (selectedFolders.length === indexedFolders.length) {
+    if (selectedFolders.length === allSelectableFolderPaths.length && allSelectableFolderPaths.length > 0) {
       setSelectedFolders([]);
     } else {
-      setSelectedFolders(indexedFolders.map(f => f.path));
+      setSelectedFolders(allSelectableFolderPaths);
     }
   };
 
+  // 1. Initial load & task completions (auto-updates tree and open modal)
   useEffect(() => {
     if (models.active_model) {
       fetchIndexedFolders();
+      // If Folder Contents modal is currently open, refresh its contents live!
+      if (showFolderContents && browsingFolder) {
+        handleBrowseFolderContents(browsingFolder, true);
+      }
     }
   }, [models.active_model, status.last_task_id]);
+
+  // 2. Refresh folder existence whenever user opens/expands the Indexed Folders panel
+  useEffect(() => {
+    if (isFoldersExpanded && models.active_model) {
+      fetchIndexedFolders(true);
+    }
+  }, [isFoldersExpanded, models.active_model]);
+
+  // 3. Live Sync on Window Focus (updates folder tree AND open Folder Contents modal)
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      if (models.active_model) {
+        fetchIndexedFolders(true);
+        if (showFolderContents && browsingFolder) {
+          handleBrowseFolderContents(browsingFolder, true);
+        }
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
+  }, [models.active_model, showFolderContents, browsingFolder]);
+
+  // 4. Polling while folder list is expanded (every 8 seconds)
+  useEffect(() => {
+    if (!isFoldersExpanded || !models.active_model) return;
+    const interval = setInterval(() => {
+      fetchIndexedFolders(true);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [isFoldersExpanded, models.active_model]);
+
+  // 5. Polling while Folder Contents modal is open (every 10 seconds)
+  useEffect(() => {
+    if (!showFolderContents || !browsingFolder || !models.active_model) return;
+    const interval = setInterval(() => {
+      handleBrowseFolderContents(browsingFolder, true);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [showFolderContents, browsingFolder, models.active_model]);
 
   useEffect(() => {
     setSelectedFolders([]);
@@ -1903,8 +2024,16 @@ function App() {
               <ImageIcon className="w-10 h-10 animate-bounce" />
             </div>
             <div className="text-center">
-              <h3 className="text-2xl font-bold text-white mb-2">Drop to search or index</h3>
-              <p className="text-neutral-400">Drop images to search, or folders to start indexing</p>
+              <h3 className="text-2xl font-bold text-white mb-2">
+                {queue.activeTask || queue.pendingCount > 0
+                  ? `Drop to add to Queue (#${queue.pendingCount + (queue.activeTask ? 1 : 0) + 1})`
+                  : 'Drop to search or index'}
+              </h3>
+              <p className="text-neutral-400">
+                {queue.activeTask || queue.pendingCount > 0
+                  ? 'Folders will be added to the background processing queue'
+                  : 'Drop images to search, or folders to start indexing'}
+              </p>
             </div>
           </div>
         </div>
@@ -2596,8 +2725,42 @@ function App() {
                 <span className="px-2.5 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-xs font-bold">
                   {folderContents.video_count} videos
                 </span>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-200/60 dark:border-emerald-500/30 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  {folderContents.indexed_count || 0} indexed
+                </span>
+                {(folderContents.unindexed_count > 0) && (
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-200/60 dark:border-amber-500/30">
+                    {folderContents.unindexed_count} unindexed
+                  </span>
+                )}
+                {(folderContents.missing_on_disk_count > 0) && (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 text-xs font-bold border border-rose-200/60 dark:border-rose-500/30 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 text-rose-500" />
+                      {folderContents.missing_on_disk_count} missing from disk
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isCleaningGhostRecords}
+                      onClick={async () => {
+                        setIsCleaningGhostRecords(true);
+                        try {
+                          await handleReindexFolder(browsingFolder.path);
+                        } finally {
+                          setIsCleaningGhostRecords(false);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                      title="Clean ghost records by re-syncing this folder"
+                    >
+                      <RefreshCw className={cn("w-3 h-3", isCleaningGhostRecords && "animate-spin")} />
+                      {isCleaningGhostRecords ? "Cleaning..." : "Clean Ghost Records"}
+                    </button>
+                  </div>
+                )}
                 <span className="text-xs text-neutral-500 ml-auto">
-                  {folderContents.total_count} supported media files
+                  {folderContents.total_count} total files
                 </span>
               </div>
             )}
@@ -2630,80 +2793,118 @@ function App() {
                     </div>
                   )}
 
-                  {folderContents.items.slice(0, folderVisibleLimit).map((item) => (
-                    <div
-                      key={item.path}
-                      className={cn(
-                        "flex items-center gap-4 p-3 rounded-2xl border transition-all",
-                        uiTheme === 'modern'
-                          ? "border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20 hover:bg-gray-100/80 dark:hover:bg-neutral-800/40"
-                          : "border-white bg-black hover:border-indigo-400"
-                      )}
-                    >
-                      <FolderItemThumbnail
-                        item={item}
-                        API_BASE={API_BASE}
-                        uiTheme={uiTheme}
-                        onSelect={setSelectedImage}
-                      />
+                  {folderContents.items.slice(0, folderVisibleLimit).map((item) => {
+                    const isMissing = item.exists_on_disk === false;
 
+                    return (
                       <div
-                        className="min-w-0 flex-1 cursor-pointer"
-                        onClick={() => setSelectedImage({
-                          path: item.path,
-                          name: item.name,
-                          media_type: item.media_type,
-                          size: item.size,
-                          isBrowsing: true,
-                          timestamp_seconds: item.media_type === 'video' ? 1.0 : 0
-                        })}
-                        title="Click to preview file"
+                        key={item.path}
+                        className={cn(
+                          "flex items-center gap-4 p-3 rounded-2xl border transition-all",
+                          isMissing
+                            ? "border-rose-200 dark:border-rose-500/30 bg-rose-50/40 dark:bg-rose-950/20"
+                            : uiTheme === 'modern'
+                            ? "border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20 hover:bg-gray-100/80 dark:hover:bg-neutral-800/40"
+                            : "border-white bg-black hover:border-indigo-400"
+                        )}
                       >
-                        <p className={cn(
-                          "text-sm font-bold truncate",
-                          uiTheme === 'modern' ? "text-neutral-800 dark:text-neutral-200 hover:text-indigo-600 dark:hover:text-indigo-400" : "text-white"
-                        )}>
-                          {item.name}
-                        </p>
-                        <p className="text-[10px] text-neutral-500 font-mono truncate mt-1" title={item.relative_path}>
-                          {item.relative_path}
-                        </p>
-                      </div>
+                        <FolderItemThumbnail
+                          item={item}
+                          API_BASE={API_BASE}
+                          uiTheme={uiTheme}
+                          onSelect={setSelectedImage}
+                        />
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <div className="text-right">
-                          <span className={cn(
-                            "inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider",
-                            item.media_type === 'video'
-                              ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
-                              : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-                          )}>
-                            {item.media_type}
-                          </span>
-                          <p className="text-[10px] text-neutral-500 mt-1">{formatBytes(item.size)}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if (window.electronAPI?.openInExplorer) {
-                              const res = await window.electronAPI.openInExplorer(item.path);
-                              if (!res?.success) {
-                                setToast({ type: 'error', message: res?.error || 'Failed to open file in explorer.' });
-                              }
+                        <div
+                          className={cn(
+                            "min-w-0 flex-1",
+                            isMissing ? "cursor-not-allowed" : "cursor-pointer"
+                          )}
+                          onClick={() => {
+                            if (!isMissing) {
+                              setSelectedImage({
+                                path: item.path,
+                                name: item.name,
+                                media_type: item.media_type,
+                                size: item.size,
+                                isBrowsing: true,
+                                timestamp_seconds: item.media_type === 'video' ? 1.0 : 0
+                              });
                             }
                           }}
-                          className={cn(
-                            "p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all cursor-pointer",
-                            uiTheme !== 'modern' && "border border-white text-white"
-                          )}
-                          title="Show in Explorer"
+                          title={isMissing ? `${item.name} is missing on disk` : `Click to preview ${item.name}`}
                         >
-                          <FolderOpen className="w-4 h-4" />
-                        </button>
+                          <p className={cn(
+                            "text-sm font-bold truncate",
+                            isMissing
+                              ? "text-rose-600 dark:text-rose-400"
+                              : uiTheme === 'modern'
+                              ? "text-neutral-800 dark:text-neutral-200 hover:text-indigo-600 dark:hover:text-indigo-400"
+                              : "text-white"
+                          )}>
+                            {item.name}
+                          </p>
+                          <p className="text-[10px] text-neutral-500 font-mono truncate mt-1" title={item.relative_path}>
+                            {item.relative_path}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {/* Indexing Status Badges */}
+                          <div className="flex items-center gap-1.5">
+                            {isMissing ? (
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30">
+                                Missing on Disk
+                              </span>
+                            ) : item.is_indexed ? (
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-500/30">
+                                Indexed
+                              </span>
+                            ) : (
+                              <span className="inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-neutral-700">
+                                Not Indexed
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-right min-w-[50px]">
+                            <span className={cn(
+                              "inline-block px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider",
+                              item.media_type === 'video'
+                                ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
+                                : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                            )}>
+                              {item.media_type}
+                            </span>
+                            {!isMissing && item.size > 0 && (
+                              <p className="text-[10px] text-neutral-500 mt-1">{formatBytes(item.size)}</p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isMissing}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (window.electronAPI?.openInExplorer) {
+                                const res = await window.electronAPI.openInExplorer(item.path);
+                                if (!res?.success) {
+                                  setToast({ type: 'error', message: res?.error || 'Failed to open file in explorer.' });
+                                }
+                              }
+                            }}
+                            className={cn(
+                              "p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
+                              uiTheme !== 'modern' && "border border-white text-white"
+                            )}
+                            title={isMissing ? "File is missing on disk" : "Show in Explorer"}
+                          >
+                            <FolderOpen className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {folderVisibleLimit < folderContents.items.length && (
                     <div className="py-3 text-center">
@@ -2802,6 +3003,7 @@ function App() {
         </form>
 
         <div className="flex items-center gap-2">
+          <QueueStatusBadge queue={queue} uiTheme={uiTheme} />
           <button
             onClick={() => setShowSettings(true)}
             className="p-3 bg-white dark:bg-neutral-900/80 hover:bg-gray-50 dark:hover:bg-neutral-800 border border-gray-200 dark:border-neutral-800 rounded-xl transition-all hover:rotate-45 active:scale-95 text-neutral-500 hover:text-neutral-900 dark:hover:text-white shadow-sm dark:shadow-none"
@@ -2812,36 +3014,117 @@ function App() {
       </header>
 
       {/* Global Status Bar */}
-      {status.is_indexing && (
+      {(status.is_indexing || queue.activeTask) && (
         <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
-          <div className="bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-xl p-4 flex flex-col gap-2 relative text-indigo-700 dark:text-indigo-300">
+          <div
+            className={cn(
+              "border rounded-2xl p-4 flex flex-col gap-2.5 relative transition-all duration-300 shadow-sm",
+              (status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused')
+                ? "bg-amber-50/80 dark:bg-amber-950/30 border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-200"
+                : "bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-500/20 text-indigo-900 dark:text-indigo-200"
+            )}
+          >
             <div className="flex justify-between items-center text-sm font-bold">
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Extracting Embeddings ({status.progress})
-              </span>
-              <div className="flex items-center gap-3">
-                <span className="text-indigo-600 dark:text-indigo-400/80">{Math.round(status.percent)}%</span>
+              <div className="flex items-center gap-2.5 min-w-0">
+                {(status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused') ? (
+                  <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                    <Pause className="w-4 h-4" />
+                  </div>
+                ) : (
+                  <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 shrink-0">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                )}
+                <span className="truncate">
+                  {queue.activeTask?.title || "Indexing Media"}
+                  {" "}
+                  <span className="font-mono text-xs opacity-75 font-normal ml-1">
+                    ({queue.activeTask ? `${queue.activeTask.processed_count}/${queue.activeTask.total_count || 0}` : status.progress})
+                  </span>
+                </span>
+                {(status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused') && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-200/80 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 shrink-0">
+                    PAUSED
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0">
+                <span className="font-mono text-xs font-bold">
+                  {queue.activeTask ? `${queue.activeTask.progress}%` : `${Math.round(status.percent)}%`}
+                </span>
+
+                {/* Pause / Resume Button */}
+                {queue.activeTask && (
+                  (status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused') ? (
+                    <button
+                      onClick={() => {
+                        queue.resumeTask(queue.activeTask.id);
+                        if (queue.workerState === 'paused') queue.controlWorker('start');
+                      }}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                      title="Resume indexing"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Resume</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => queue.pauseTask(queue.activeTask.id)}
+                      className="px-2.5 py-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-bold rounded-lg transition-all border border-gray-200 dark:border-neutral-700 flex items-center gap-1.5 cursor-pointer"
+                      title="Pause indexing"
+                    >
+                      <Pause className="w-3.5 h-3.5" />
+                      <span>Pause</span>
+                    </button>
+                  )
+                )}
+
+                {/* Cancel Button */}
                 <button
-                  onClick={handleCancelIndexing}
+                  onClick={() => {
+                    if (queue.activeTask) {
+                      queue.cancelTask(queue.activeTask.id);
+                    } else {
+                      handleCancelIndexing();
+                    }
+                  }}
                   disabled={isCancellingIndexing || status.cancel_requested}
-                  className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white text-xs font-semibold rounded-lg transition-all shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  title="Stop and cancel current indexing task"
+                  className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 text-xs font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="Stop and cancel current task"
                 >
                   <XCircle className="w-3.5 h-3.5" />
-                  {isCancellingIndexing || status.cancel_requested ? "Cancelling..." : "Cancel"}
+                  <span>{isCancellingIndexing || status.cancel_requested ? "Cancelling..." : "Cancel"}</span>
                 </button>
               </div>
             </div>
-            <div className="terminal-progress-track w-full h-2 bg-gray-100 dark:bg-neutral-900 rounded-full overflow-hidden">
+
+            {/* Progress Track */}
+            <div className="terminal-progress-track w-full h-2 bg-gray-200 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
-                className="terminal-progress-fill h-full bg-indigo-500 transition-all duration-500 ease-out"
-                style={{ width: `${status.percent}%` }}
+                className={cn(
+                  "terminal-progress-fill h-full transition-all duration-300 ease-out",
+                  (status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused')
+                    ? "bg-amber-500"
+                    : "bg-gradient-to-r from-indigo-500 to-cyan-500"
+                )}
+                style={{ width: `${queue.activeTask ? Math.min(100, Math.max(2, queue.activeTask.progress)) : Math.min(100, Math.max(2, status.percent))}%` }}
               />
             </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-500 truncate mt-1 font-medium" title={status.current_file}>
-              Processing: {status.current_file}
-            </p>
+
+            <div className="flex justify-between items-center text-xs text-neutral-500 dark:text-neutral-400 font-medium pt-0.5">
+              <p className="truncate max-w-xl font-mono text-[11px]" title={queue.activeTask?.current_item || status.current_file}>
+                {(status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused')
+                  ? `Paused at: ${queue.activeTask?.current_item || status.current_file || "Current item"}`
+                  : `Processing: ${queue.activeTask?.current_item || status.current_file || "Preparing..."}`}
+              </p>
+              <button
+                onClick={() => queue.setIsDrawerOpen(true)}
+                className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ml-2"
+              >
+                View in Task Queue →
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3300,8 +3583,7 @@ function App() {
                 <button
                   type="button"
                   onClick={handleOpenFolder}
-                  disabled={status.is_indexing}
-                  className="flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-xs font-bold shadow-md shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-xs font-bold shadow-md shadow-indigo-500/20 cursor-pointer"
                 >
                   <FolderOpen className="w-4 h-4" />
                   Add Folder(s)
@@ -3332,12 +3614,12 @@ function App() {
                     <button
                       type="button"
                       onClick={toggleSelectAll}
-                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer"
                     >
-                      {selectedFolders.length === indexedFolders.length
-                        ? <CheckSquare className="w-4 h-4" />
+                      {selectedFolders.length === allSelectableFolderPaths.length && allSelectableFolderPaths.length > 0
+                        ? <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                         : <Square className="w-4 h-4" />}
-                      {selectedFolders.length === indexedFolders.length ? 'Deselect All' : 'Select All'}
+                      {selectedFolders.length === allSelectableFolderPaths.length && allSelectableFolderPaths.length > 0 ? 'Deselect All' : 'Select All'}
                     </button>
 
                     <div className="flex items-center gap-2 min-h-8">
@@ -3348,7 +3630,7 @@ function App() {
                             type="button"
                             onClick={handleBatchReindex}
                             disabled={isBatchProcessing || status.is_indexing}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
                           >
                             <RefreshCw className={cn("w-3.5 h-3.5", isBatchProcessing && "animate-spin")} />
                             Reindex
@@ -3357,7 +3639,7 @@ function App() {
                             type="button"
                             onClick={handleBatchDelete}
                             disabled={isBatchProcessing || status.is_indexing}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Delete
@@ -3370,8 +3652,8 @@ function App() {
                   </div>
                 )}
 
-                <div className="p-4 max-h-[360px] overflow-y-auto custom-scrollbar">
-                  {isFetchingFolders ? (
+                <div className="p-4 max-h-[380px] overflow-y-auto custom-scrollbar">
+                  {isFetchingFolders && indexedFolders.length === 0 ? (
                     <div className="flex items-center justify-center gap-3 py-12 text-neutral-500">
                       <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
                       <span className="text-sm font-medium">Fetching folders...</span>
@@ -3385,83 +3667,16 @@ function App() {
                       <p className="text-sm text-neutral-500 mt-2 max-w-md">Add a folder to index images and sample videos at two-second intervals.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 gap-3">
-                      {indexedFolders.map((folder) => {
-                        const isSelected = selectedFolders.includes(folder.path);
-                        const folderName = folder.path.split('\\').pop().split('/').pop() || folder.path;
-
-                        return (
-                          <div
-                            key={folder.path}
-                            className={cn(
-                              "flex items-center gap-3 p-4 rounded-2xl border transition-all",
-                              isSelected
-                                ? "bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 ring-1 ring-indigo-500/10"
-                                : "bg-gray-50/80 dark:bg-neutral-800/20 border-gray-100 dark:border-neutral-800/60",
-                              !folder.exists && "border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/5"
-                            )}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleFolderSelection(folder)}
-                              className={cn(
-                                "flex items-center justify-center w-6 h-6 rounded-lg border transition-all flex-shrink-0",
-                                isSelected
-                                  ? "bg-indigo-600 border-indigo-600 text-white"
-                                  : "bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent"
-                              )}
-                              title={isSelected ? 'Deselect folder' : 'Select folder'}
-                            >
-                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12"></polyline>
-                              </svg>
-                            </button>
-
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className={cn("text-sm font-bold truncate", folder.exists ? "text-neutral-800 dark:text-neutral-200" : "text-rose-600 dark:text-rose-400")} title={folder.path}>
-                                  {folderName}
-                                </p>
-                                {!folder.exists && (
-                                  <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">Missing</span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-neutral-500 truncate font-mono mt-1" title={folder.path}>{folder.path}</p>
-                            </div>
-
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleBrowseFolderContents(folder)}
-                                disabled={!folder.exists}
-                                className="p-2 text-neutral-400 hover:text-cyan-500 hover:bg-cyan-500/10 rounded-xl transition-all disabled:opacity-30"
-                                title="Browse images and videos"
-                              >
-                                <ChevronRight className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleReindexFolder(folder.path)}
-                                disabled={!folder.exists || status.is_indexing}
-                                className="p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all disabled:opacity-30"
-                                title="Re-sync folder"
-                              >
-                                <RefreshCw className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteFolderIndex(folder.path)}
-                                disabled={status.is_indexing}
-                                className="p-2 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all disabled:opacity-30"
-                                title="Delete folder index"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <IndexedFolderTree
+                      folders={indexedFolders}
+                      selectedPaths={selectedFolders}
+                      onToggleSelection={toggleFolderSelection}
+                      onBrowse={handleBrowseFolderContents}
+                      onReindex={handleReindexFolder}
+                      onDelete={handleDeleteFolderIndex}
+                      isIndexing={status.is_indexing}
+                      uiTheme={uiTheme}
+                    />
                   )}
                 </div>
               </div>
@@ -3809,6 +4024,39 @@ function App() {
           </div>
         )}
       </main>
+
+      {/* Background Task Queue Drawer */}
+      <QueueDrawer
+        isOpen={queue.isDrawerOpen}
+        onClose={() => queue.setIsDrawerOpen(false)}
+        queue={queue}
+        uiTheme={uiTheme}
+      />
+
+      {/* Model Switch Safeguard Warning Modal */}
+      <ModelSwitchWarningModal
+        isOpen={modelSwitchWarning.isOpen}
+        mode={modelSwitchWarning.mode}
+        targetModel={modelSwitchWarning.targetModel}
+        activeTask={queue.activeTask}
+        pendingCount={queue.pendingCount}
+        onConfirmCancelAndSwitch={async () => {
+          if (queue.activeTask) {
+            await queue.cancelTask(queue.activeTask.id);
+          }
+          setTimeout(() => {
+            executeModelSwitch(modelSwitchWarning.targetModel, false);
+          }, 350);
+        }}
+        onConfirmProceedWithQueued={() => {
+          executeModelSwitch(modelSwitchWarning.targetModel, false);
+        }}
+        onConfirmClearQueueAndSwitch={() => {
+          executeModelSwitch(modelSwitchWarning.targetModel, true);
+        }}
+        onClose={() => setModelSwitchWarning(prev => ({ ...prev, isOpen: false }))}
+        uiTheme={uiTheme}
+      />
     </div>
   );
 }

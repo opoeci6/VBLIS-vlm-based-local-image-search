@@ -275,8 +275,11 @@ class ModelManager:
         return self.current_model_id.replace("/", "_").replace("-", "_")
 
     @torch.no_grad()
-    def get_image_embeddings_batch(self, images: list[Image.Image]) -> list[list[float]]:
+    def get_image_embeddings_batch(self, images: list[Image.Image], task_context=None) -> list[list[float]]:
         if not images:
+            return []
+
+        if task_context and not task_context.check_paused_or_cancelled():
             return []
 
         # Atomic capture of model and processor
@@ -313,11 +316,16 @@ class ModelManager:
                         print(f"[VRAM Guard] OS Free VRAM ({free_bytes / 1024**2:.1f} MB) / Usable ({usable_free / 1024**2:.1f} MB) < threshold ({min_free / 1024**2:.1f} MB). Micro-batching batch_size={len(images)} -> ({left_len}, {right_len})...")
                         self.oom_triggered = True
                         self.oom_triggered_count += 1
-                        left_embeds = self.get_image_embeddings_batch(images[:mid])
-                        right_embeds = self.get_image_embeddings_batch(images[mid:])
+                        left_embeds = self.get_image_embeddings_batch(images[:mid], task_context=task_context)
+                        if task_context and not task_context.check_paused_or_cancelled():
+                            return left_embeds
+                        right_embeds = self.get_image_embeddings_batch(images[mid:], task_context=task_context)
                         return left_embeds + right_embeds
             except Exception as e:
                 pass
+
+        if task_context and not task_context.check_paused_or_cancelled():
+            return []
 
         rgb_images = [img.convert("RGB") if img.mode != "RGB" else img for img in images]
 
@@ -355,16 +363,18 @@ class ModelManager:
                 mid = len(images) // 2
                 left_len, right_len = mid, len(images) - mid
                 print(f"[OOM Warning] CUDA Out of memory (batch_size={len(images)}). Flushing cache and micro-batching -> ({left_len}, {right_len})...")
-                left_embeds = self.get_image_embeddings_batch(images[:mid])
-                right_embeds = self.get_image_embeddings_batch(images[mid:])
+                left_embeds = self.get_image_embeddings_batch(images[:mid], task_context=task_context)
+                if task_context and not task_context.check_paused_or_cancelled():
+                    return left_embeds
+                right_embeds = self.get_image_embeddings_batch(images[mid:], task_context=task_context)
                 return left_embeds + right_embeds
             else:
                 print(f"[OOM Error] CUDA Out of memory on single item (batch_size=1).")
                 raise oom
 
     @torch.no_grad()
-    def get_image_embedding(self, image: Image.Image) -> list[float]:
-        res = self.get_image_embeddings_batch([image])
+    def get_image_embedding(self, image: Image.Image, task_context=None) -> list[float]:
+        res = self.get_image_embeddings_batch([image], task_context=task_context)
         return res[0] if res else []
 
     @torch.no_grad()

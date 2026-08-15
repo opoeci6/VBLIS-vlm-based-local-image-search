@@ -1,5 +1,6 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, UploadFile, File
 import torch
+from typing import List, Optional, Dict, Any
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -120,6 +121,7 @@ from indexer import (
     get_video_frame_cache_path, IMAGE_CACHE_DIR, VIDEO_CACHE_DIR,
     get_cache_stats, safe_clear_cache
 )
+from task_queue import TaskQueueManager, TaskType, TaskStatus, WorkerState
 
 from contextlib import asynccontextmanager
 
@@ -134,8 +136,10 @@ async def lifespan(app: FastAPI):
         indexer.switch_collection(model_manager.get_collection_name())
     except Exception as e:
         print(f"[Notice] Active model '{active_model}' not loaded: {e}. Ready for manual download.")
+    task_queue.start()
     yield
     print("Shutting down API backend...")
+    task_queue.stop()
 
 app = FastAPI(title="Local Image Search API", lifespan=lifespan)
 
@@ -150,6 +154,7 @@ app.add_middleware(
 
 model_manager = ModelManager()
 indexer = Indexer(model_manager)
+task_queue = TaskQueueManager(indexer)
 
 class SearchQuery(BaseModel):
     query: str
@@ -165,6 +170,8 @@ class VideoBatchExtractRequest(BaseModel):
 
 class ModelSwitchRequest(BaseModel):
     model_name: str
+    clear_queue: bool = False
+    force: bool = False
 
 class ModelDeleteRequest(BaseModel):
     model_name: str
@@ -180,6 +187,21 @@ class GPUSettingsRequest(BaseModel):
     use_gpu: bool
     batch_size: int = 0
     precision_mode: str = "auto"
+
+class EnqueueTaskRequest(BaseModel):
+    type: TaskType
+    payload: dict = {}
+    title: str = ""
+    priority: str = "bottom"
+
+class WorkerControlRequest(BaseModel):
+    action: str  # start | pause_immediate | pause_after_current
+
+class MoveTaskRequest(BaseModel):
+    direction: str  # up | down | top | bottom
+
+class ReorderTasksRequest(BaseModel):
+    task_ids: List[str]
 
 @app.get("/settings/gpu")
 async def get_gpu_settings():
@@ -275,23 +297,49 @@ async def search_images_by_file(file: UploadFile = File(...), top_k: int = 50, m
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/index")
-async def start_indexing(req: IndexRequest, background_tasks: BackgroundTasks):
+async def start_indexing(req: IndexRequest):
     if not os.path.isdir(req.directory):
         raise HTTPException(status_code=400, detail="Invalid directory path.")
     
-    # Add folder indexing to background queue
-    background_tasks.add_task(indexer.index_directory, req.directory)
-    return {"status": "Indexing started in background", "target": req.directory}
+    dup = task_queue.is_folder_in_queue(req.directory)
+    if dup:
+        return {"status": "duplicate", "message": f"Folder '{req.directory}' is already in the queue.", "info": dup}
+
+    task = task_queue.enqueue(
+        TaskType.INDEX_FOLDERS,
+        {"folder_paths": [req.directory]},
+        title=f"Index: {os.path.basename(os.path.normpath(req.directory)) or req.directory}"
+    )
+    return {"status": "queued", "task_id": task.id, "target": req.directory}
 
 @app.post("/index/folders/batch-index")
-async def batch_index_folders(req: BatchFolderRequest, background_tasks: BackgroundTasks):
+async def batch_index_folders(req: BatchFolderRequest):
     # Filter out invalid directories
     valid_dirs = [d for d in req.folder_paths if os.path.isdir(d)]
     if not valid_dirs:
         raise HTTPException(status_code=400, detail="No valid directory paths provided.")
     
-    background_tasks.add_task(indexer.batch_index_folders, valid_dirs)
-    return {"status": "Batch indexing started in background", "targets": valid_dirs}
+    enqueued_tasks = []
+    duplicates = []
+    for d in valid_dirs:
+        dup = task_queue.is_folder_in_queue(d)
+        if dup:
+            duplicates.append({"path": d, "info": dup})
+        else:
+            t = task_queue.enqueue(
+                TaskType.INDEX_FOLDERS,
+                {"folder_paths": [d]},
+                title=f"Index: {os.path.basename(os.path.normpath(d)) or d}"
+            )
+            enqueued_tasks.append(t.to_dict())
+            
+    return {
+        "status": "queued" if enqueued_tasks else "duplicate",
+        "task_ids": [t["id"] for t in enqueued_tasks],
+        "tasks": enqueued_tasks,
+        "duplicates": duplicates,
+        "message": f"Enqueued {len(enqueued_tasks)} folder(s)." + (f" ({len(duplicates)} duplicate(s) skipped)" if duplicates else "")
+    }
 
 @app.post("/index/clear")
 def clear_index():
@@ -322,7 +370,7 @@ def get_indexed_folders():
 @app.get("/index/folder/contents")
 def get_indexed_folder_contents(
     folder_path: str = Query(...),
-    limit: int = Query(5000, ge=1, le=20000)
+    limit: int = Query(50000, ge=1, le=100000)
 ):
     try:
         return indexer.get_folder_contents(folder_path, limit)
@@ -340,12 +388,16 @@ def delete_folder_index(req: FolderDeleteRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/index/folder/reindex")
-async def reindex_folder(req: FolderDeleteRequest, background_tasks: BackgroundTasks):
+async def reindex_folder(req: FolderDeleteRequest):
     if not os.path.isdir(req.folder_path):
         raise HTTPException(status_code=400, detail="Invalid directory path.")
     
-    background_tasks.add_task(indexer.reindex_directory, req.folder_path)
-    return {"status": "Re-indexing started in background", "target": req.folder_path}
+    t = task_queue.enqueue(
+        TaskType.REINDEX_FOLDER,
+        {"folder_path": req.folder_path},
+        title=f"Reindex: {os.path.basename(os.path.normpath(req.folder_path)) or req.folder_path}"
+    )
+    return {"status": "queued", "task_id": t.id, "target": req.folder_path}
 
 @app.post("/index/folders/batch-delete")
 def batch_delete_folders(req: BatchFolderRequest):
@@ -356,13 +408,127 @@ def batch_delete_folders(req: BatchFolderRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/index/folders/batch-reindex")
-async def batch_reindex_folders(req: BatchFolderRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(indexer.batch_reindex_folders, req.folder_paths)
-    return {"status": "Batch re-indexing started in background"}
+async def batch_reindex_folders(req: BatchFolderRequest):
+    valid_dirs = [d for d in req.folder_paths if os.path.isdir(d)]
+    if not valid_dirs:
+        raise HTTPException(status_code=400, detail="No valid directory paths provided.")
+    enqueued = []
+    for d in valid_dirs:
+        t = task_queue.enqueue(
+            TaskType.REINDEX_FOLDER,
+            {"folder_path": d},
+            title=f"Reindex: {os.path.basename(os.path.normpath(d)) or d}"
+        )
+        enqueued.append(t.to_dict())
+    return {"status": "queued", "tasks": enqueued, "message": f"Enqueued {len(enqueued)} folder(s) for re-indexing."}
 
 @app.get("/status")
 async def get_status():
-    return indexer.get_status()
+    status = indexer.get_status()
+    # Augment with queue status
+    queue_snap = task_queue.get_snapshot()
+    active_task = queue_snap.get("active_task")
+    status["queue_pending_count"] = queue_snap["pending_count"]
+    status["queue_worker_state"] = queue_snap["worker_state"]
+    status["has_active_task"] = active_task is not None
+    status["active_task"] = active_task
+    is_paused = (
+        queue_snap["worker_state"] == "paused"
+        or (active_task is not None and (active_task.get("is_paused") or active_task.get("status") == "paused"))
+    )
+    status["is_paused"] = is_paused
+    return status
+
+# ================= Task Queue API =================
+
+@app.get("/queue")
+def get_queue_snapshot():
+    return task_queue.get_snapshot()
+
+@app.post("/queue/enqueue")
+def enqueue_task_endpoint(req: EnqueueTaskRequest):
+    if req.type == TaskType.INDEX_FOLDERS and "folder_paths" in req.payload:
+        paths = req.payload["folder_paths"]
+        added_tasks = []
+        duplicates = []
+        for p in paths:
+            dup = task_queue.is_folder_in_queue(p)
+            if dup:
+                duplicates.append({"path": p, "info": dup})
+            else:
+                t = task_queue.enqueue(
+                    TaskType.INDEX_FOLDERS,
+                    {"folder_paths": [p]},
+                    title=f"Index: {os.path.basename(os.path.normpath(p)) or p}",
+                    priority=req.priority
+                )
+                added_tasks.append(t.to_dict())
+        return {
+            "status": "queued" if added_tasks else "duplicate",
+            "tasks": added_tasks,
+            "duplicates": duplicates,
+            "message": f"Enqueued {len(added_tasks)} task(s)." + (f" ({len(duplicates)} duplicate(s) skipped)" if duplicates else "")
+        }
+    
+    task = task_queue.enqueue(req.type, req.payload, title=req.title, priority=req.priority)
+    return {
+        "status": "queued",
+        "task": task.to_dict(),
+        "position": len(task_queue.pending_queue),
+        "message": f"Task '{task.title}' enqueued."
+    }
+
+@app.post("/queue/control")
+def control_queue_worker(req: WorkerControlRequest):
+    res = task_queue.control_worker(req.action)
+    return {"status": "success", "result": res}
+
+@app.post("/queue/{task_id}/cancel")
+def cancel_queue_task(task_id: str):
+    success = task_queue.cancel_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found in active or pending queue.")
+    return {"status": "success", "message": f"Task {task_id} cancellation requested."}
+
+@app.post("/queue/{task_id}/pause")
+def pause_queue_task(task_id: str):
+    success = task_queue.pause_task(task_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Task is not currently running or cannot be paused.")
+    return {"status": "success", "message": f"Task {task_id} paused."}
+
+@app.post("/queue/{task_id}/resume")
+def resume_queue_task(task_id: str):
+    success = task_queue.resume_task(task_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Task is not currently paused.")
+    return {"status": "success", "message": f"Task {task_id} resumed."}
+
+@app.post("/queue/{task_id}/move")
+def move_queue_task(task_id: str, req: MoveTaskRequest):
+    success = task_queue.move_task(task_id, req.direction)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found in pending queue or invalid direction.")
+    return {"status": "success", "message": f"Task {task_id} moved {req.direction}."}
+
+@app.post("/queue/reorder")
+def reorder_queue_tasks(req: ReorderTasksRequest):
+    task_queue.reorder_tasks(req.task_ids)
+    return {"status": "success", "message": "Queue reordered successfully."}
+
+@app.post("/queue/{task_id}/retry")
+def retry_queue_task(task_id: str):
+    new_task = task_queue.retry_task(task_id)
+    if not new_task:
+        raise HTTPException(status_code=404, detail="Task not found in history.")
+    return {"status": "success", "task": new_task.to_dict(), "message": f"Task {task_id} re-enqueued as {new_task.id}."}
+
+@app.delete("/queue/history")
+def clear_queue_history():
+    count = task_queue.clear_history()
+    return {"status": "success", "cleared_count": count}
+
+# ================= Model Management =================
 
 @app.get("/models")
 async def list_models():
@@ -391,12 +557,14 @@ async def list_models():
 @app.post("/index/cancel")
 def cancel_indexing():
     indexer.cancel_indexing()
+    if task_queue.active_task:
+        task_queue.cancel_task(task_queue.active_task.id)
     return {"status": "success", "message": "Indexing cancellation requested."}
 
 @app.post("/models/delete")
 async def delete_model(req: ModelDeleteRequest):
-    if indexer.is_indexing:
-        raise HTTPException(status_code=400, detail="Cannot delete model while indexing is in progress.")
+    if (task_queue.active_task and task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED)) or indexer.is_indexing:
+        raise HTTPException(status_code=409, detail="Cannot delete model while an indexing or rebuild task is in progress.")
     if model_manager.is_downloading:
         raise HTTPException(status_code=400, detail="Cannot delete model while a download is in progress.")
         
@@ -430,8 +598,8 @@ async def delete_model(req: ModelDeleteRequest):
 
 @app.post("/models/download")
 async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTasks):
-    if indexer.is_indexing:
-        raise HTTPException(status_code=400, detail="Cannot download or switch model while indexing is in progress.")
+    if (task_queue.active_task and task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED)) or indexer.is_indexing:
+        raise HTTPException(status_code=409, detail="Cannot download or switch model while an indexing task is in progress.")
     if model_manager.is_downloading:
         return {"status": "Error", "message": "A download is already in progress."}
     
@@ -458,8 +626,23 @@ async def cancel_download():
 
 @app.post("/models/switch")
 def switch_model(req: ModelSwitchRequest):
-    if indexer.is_indexing:
-        raise HTTPException(status_code=400, detail="Cannot switch model while indexing is in progress.")
+    # Guard: Cannot switch while an active task is running
+    if task_queue.active_task and task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot switch models while an indexing or rebuild task is in progress. Please cancel the current task before switching."
+        )
+    if indexer.is_indexing or indexer.is_rebuilding_video_thumbnails:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot switch models while indexing or rebuilding is in progress."
+        )
+    
+    if req.clear_queue:
+        with task_queue.lock:
+            for task in list(task_queue.pending_queue):
+                task_queue.cancel_task(task.id)
+
     try:
         model_manager.load_model(req.model_name, local_files_only=True)
         # Switching models connects to a different ChromaDB collection
@@ -471,14 +654,13 @@ def switch_model(req: ModelSwitchRequest):
 
 @app.post("/models/unload")
 def unload_model():
-    if indexer.is_indexing:
-        raise HTTPException(status_code=400, detail="Cannot unload or eject model while indexing is in progress.")
+    if (task_queue.active_task and task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED)) or indexer.is_indexing:
+        raise HTTPException(status_code=409, detail="Cannot unload or eject model while an indexing task is in progress.")
     try:
         model_manager.unload_model()
         return {"status": "success", "message": "Model unloaded and VRAM cleared successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unload model: {str(e)}")
-
 
 @app.get("/image/cache/stats")
 def get_cache_statistics():
@@ -503,11 +685,13 @@ def batch_extract_video_frames(req: VideoBatchExtractRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/video/thumbnails/regenerate")
-async def regenerate_video_thumbnails(background_tasks: BackgroundTasks):
-    if indexer.is_indexing or indexer.is_rebuilding_video_thumbnails:
-        raise HTTPException(status_code=400, detail="Another indexing or rebuilding task is currently in progress.")
-    background_tasks.add_task(indexer.regenerate_video_thumbnails)
-    return {"status": "started", "message": "Video thumbnail regeneration started in background."}
+async def regenerate_video_thumbnails():
+    t = task_queue.enqueue(
+        TaskType.REBUILD_VIDEO_THUMBNAILS,
+        {},
+        title="Rebuild Video Thumbnails"
+    )
+    return {"status": "queued", "task_id": t.id, "message": "Video thumbnail regeneration added to queue."}
 
 @app.get("/image")
 def serve_image(

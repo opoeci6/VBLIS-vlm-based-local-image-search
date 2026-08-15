@@ -1,4 +1,5 @@
 import os
+import json
 import hashlib
 from PIL import Image
 import pillow_heif
@@ -586,6 +587,9 @@ class Indexer:
         self.client = chromadb.PersistentClient(path=db_path)
         self.collection = None
         self.selected_folders_by_collection = {}
+        self.cache_dir = pathlib.Path(__file__).parent.resolve() / "cache"
+        self.cache_dir.mkdir(exist_ok=True)
+        self._load_selected_folders()
         
         # Connect to the collection matching the loaded VLM
         if self.model_manager.current_model_id:
@@ -601,8 +605,6 @@ class Indexer:
         self.last_task_id = 0
         self.discovered_video_count = 0
         self.indexed_video_frames = 0
-        self.cache_dir = pathlib.Path(__file__).parent.resolve() / "cache"
-        self.cache_dir.mkdir(exist_ok=True)
         self.is_rebuilding_video_thumbnails = False
         self.rebuilt_video_frames = 0
         self.total_video_frames_to_rebuild = 0
@@ -611,7 +613,66 @@ class Indexer:
         self.cancel_requested = True
         print("[Notice] Indexing cancellation requested by user.")
 
-        
+    def _load_selected_folders(self):
+        config_path = self.cache_dir / "indexed_folders.json"
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self.selected_folders_by_collection = {
+                            k: set(v) for k, v in data.items() if isinstance(v, list)
+                        }
+            except Exception as e:
+                print(f"[Warning] Failed to load indexed_folders.json: {e}")
+
+    def _save_selected_folders(self):
+        config_path = self.cache_dir / "indexed_folders.json"
+        try:
+            data = {
+                k: sorted(list(v)) for k, v in self.selected_folders_by_collection.items()
+            }
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[Warning] Failed to save indexed_folders.json: {e}")
+
+    def _get_selected_folders(self):
+        if not self.collection:
+            return set()
+        return self.selected_folders_by_collection.setdefault(self.collection.name, set())
+
+    def _add_selected_folder(self, folder_path: str):
+        if not self.collection:
+            return
+        norm_new = os.path.abspath(os.path.normpath(folder_path))
+        norm_new_lower = norm_new.lower()
+        existing = self._get_selected_folders()
+
+        for ex in list(existing):
+            ex_lower = os.path.abspath(os.path.normpath(ex)).lower()
+            if norm_new_lower == ex_lower or norm_new_lower.startswith(ex_lower + os.sep):
+                return
+            if ex_lower.startswith(norm_new_lower + os.sep):
+                existing.discard(ex)
+
+        existing.add(norm_new)
+        self._save_selected_folders()
+
+    def _remove_selected_folder(self, folder_path: str):
+        if not self.collection:
+            return
+        norm_target = os.path.abspath(os.path.normpath(folder_path)).lower()
+        existing = self._get_selected_folders()
+        to_remove = {
+            ex for ex in existing
+            if os.path.abspath(os.path.normpath(ex)).lower() == norm_target
+            or os.path.abspath(os.path.normpath(ex)).lower().startswith(norm_target + os.sep)
+        }
+        for r in to_remove:
+            existing.discard(r)
+        self._save_selected_folders()
+
     def switch_collection(self, collection_name: str):
         print(f"Switching to Chroma collection: {collection_name}")
         self.collection = self.client.get_or_create_collection(
@@ -625,11 +686,6 @@ class Indexer:
             self.switch_collection(self.model_manager.get_collection_name())
         return self.collection is not None
 
-    def _get_selected_folders(self):
-        if not self.collection:
-            return set()
-        return self.selected_folders_by_collection.setdefault(self.collection.name, set())
-
     def clear_collection(self):
         """Wipe all data from the active collection."""
         if self.collection:
@@ -637,6 +693,7 @@ class Indexer:
             print(f"Clearing collection: {collection_name}")
             self.client.delete_collection(name=collection_name)
             self.selected_folders_by_collection.pop(collection_name, None)
+            self._save_selected_folders()
             self.switch_collection(collection_name)
             self.run_maintenance()
 
@@ -645,41 +702,191 @@ class Indexer:
         print(f"Deleting Chroma collection: {collection_name}")
         try:
             self.client.delete_collection(name=collection_name)
-            # If we just deleted the active collection, reset it
             if self.collection and self.collection.name == collection_name:
                 self.collection = None
             self.selected_folders_by_collection.pop(collection_name, None)
+            self._save_selected_folders()
             self.run_maintenance()
         except Exception as e:
             print(f"Error deleting collection {collection_name}: {e}")
 
     def get_indexed_folders(self):
-        """Get a list of unique parent directories that are currently indexed with existence status."""
+        """Get a list of unique parent directories and their subfolders currently indexed with existence status and item counts."""
         if not self._ensure_collection():
             return []
         
         try:
             results = self.collection.get(include=["metadatas"])
-            folders_map = {}
+            if not results or not results.get("metadatas"):
+                return []
+
+            seen_db_keys = set()
+            db_items = []
             for meta in results["metadatas"]:
                 if meta and "path" in meta:
-                    parent = os.path.dirname(meta["path"])
-                    if parent not in folders_map:
-                        # Check if it's a directory
-                        folders_map[parent] = os.path.isdir(parent)
+                    p = os.path.abspath(os.path.normpath(meta["path"]))
+                    m_type = meta.get("media_type", "image")
+                    key = (p.lower(), m_type)
+                    if key not in seen_db_keys:
+                        seen_db_keys.add(key)
+                        db_items.append({"path": p, "media_type": m_type})
 
-            for selected_folder in self._get_selected_folders():
-                nested_folders = [
-                    path for path in folders_map
-                    if path == selected_folder or path.startswith(selected_folder + os.sep)
+            if not db_items:
+                return []
+
+            db_paths = [item["path"] for item in db_items]
+
+            # 1. Start with persisted selected folders for this collection
+            selected_folders = self._get_selected_folders()
+            active_folders = set()
+
+            for sf in list(selected_folders):
+                sf_norm = os.path.abspath(os.path.normpath(sf))
+                sf_lower = sf_norm.lower()
+                has_items = any(p.lower() == sf_lower or p.lower().startswith(sf_lower + os.sep) for p in db_paths)
+                if has_items:
+                    active_folders.add(sf_norm)
+                else:
+                    selected_folders.discard(sf)
+
+            # 2. For any db_paths not covered by active selected folders, find their topmost common roots
+            covered_paths = set()
+            for sf in active_folders:
+                sf_lower = sf.lower()
+                for p in db_paths:
+                    if p.lower() == sf_lower or p.lower().startswith(sf_lower + os.sep):
+                        covered_paths.add(p)
+
+            uncovered_paths = [p for p in db_paths if p not in covered_paths]
+            if uncovered_paths:
+                uncovered_parents = set(os.path.dirname(p) for p in uncovered_paths)
+                sorted_parents = sorted(uncovered_parents, key=lambda x: len(x))
+                topmost_parents = set()
+                for parent in sorted_parents:
+                    parent_lower = parent.lower()
+                    if not any(parent_lower.startswith(top.lower() + os.sep) for top in topmost_parents):
+                        topmost_parents.add(parent)
+
+                for parent in topmost_parents:
+                    active_folders.add(parent)
+                    selected_folders.add(parent)
+
+            # 3. Collapse any nested subfolders (parent folder takes precedence as root)
+            final_root_folders = set()
+            sorted_active = sorted(active_folders, key=lambda x: len(x))
+            for f in sorted_active:
+                f_lower = f.lower()
+                if not any(f_lower.startswith(top.lower() + os.sep) for top in final_root_folders):
+                    final_root_folders.add(f)
+
+            self._save_selected_folders()
+
+            # 4. Build hierarchical tree with subfolders and file counts for each root folder
+            output = []
+            for root_path in sorted(final_root_folders, key=lambda x: x.lower()):
+                root_lower = root_path.lower()
+                root_items = [
+                    it for it in db_items
+                    if it["path"].lower() == root_lower or it["path"].lower().startswith(root_lower + os.sep)
                 ]
-                for nested_folder in nested_folders:
-                    folders_map.pop(nested_folder, None)
-                folders_map[selected_folder] = os.path.isdir(selected_folder)
-            
-            # Return as list of dictionaries
-            output = [{"path": p, "exists": e} for p, e in folders_map.items()]
-            return sorted(output, key=lambda x: x["path"])
+
+                # Scan disk file counts for this root folder tree
+                disk_counts_by_dir = {}
+                if os.path.isdir(root_path):
+                    try:
+                        for r, _, f_list in os.walk(root_path):
+                            r_norm = os.path.abspath(os.path.normpath(r))
+                            r_lower_dir = r_norm.lower()
+                            imgs = 0
+                            vids = 0
+                            for fname in f_list:
+                                ext = os.path.splitext(fname)[1].lower()
+                                if ext in IMAGE_EXTENSIONS:
+                                    imgs += 1
+                                elif ext in VIDEO_EXTENSIONS:
+                                    vids += 1
+                            if imgs > 0 or vids > 0:
+                                disk_counts_by_dir[r_lower_dir] = {"images": imgs, "videos": vids}
+                    except Exception:
+                        pass
+
+                subfolder_data = {}
+                direct_images = 0
+                direct_videos = 0
+
+                for it in root_items:
+                    file_dir = os.path.dirname(it["path"])
+                    is_img = it["media_type"] != "video"
+
+                    if file_dir.lower() == root_lower:
+                        if is_img:
+                            direct_images += 1
+                        else:
+                            direct_videos += 1
+                    else:
+                        if file_dir not in subfolder_data:
+                            subfolder_data[file_dir] = {"images": 0, "videos": 0}
+                        if is_img:
+                            subfolder_data[file_dir]["images"] += 1
+                        else:
+                            subfolder_data[file_dir]["videos"] += 1
+
+                subfolders_list = []
+                for sub_dir, counts in subfolder_data.items():
+                    rel = os.path.relpath(sub_dir, root_path)
+                    depth = len(rel.split(os.sep))
+                    sub_norm = os.path.abspath(os.path.normpath(sub_dir))
+                    sub_lower = sub_norm.lower()
+
+                    direct_disk_imgs = disk_counts_by_dir.get(sub_lower, {}).get("images", counts["images"])
+                    direct_disk_vids = disk_counts_by_dir.get(sub_lower, {}).get("videos", counts["videos"])
+                    sub_disk_imgs = sum(
+                        c["images"] for d, c in disk_counts_by_dir.items()
+                        if d == sub_lower or d.startswith(sub_lower + os.sep)
+                    )
+                    sub_disk_vids = sum(
+                        c["videos"] for d, c in disk_counts_by_dir.items()
+                        if d == sub_lower or d.startswith(sub_lower + os.sep)
+                    )
+
+                    subfolders_list.append({
+                        "path": sub_dir,
+                        "name": os.path.basename(sub_dir) or sub_dir,
+                        "relative_path": rel,
+                        "depth": depth,
+                        "exists": os.path.isdir(sub_dir),
+                        "image_count": counts["images"],
+                        "video_count": counts["videos"],
+                        "item_count": counts["images"] + counts["videos"],
+                        "disk_image_count": max(counts["images"], sub_disk_imgs),
+                        "disk_video_count": max(counts["videos"], sub_disk_vids),
+                        "direct_disk_image_count": max(counts["images"], direct_disk_imgs),
+                        "direct_disk_video_count": max(counts["videos"], direct_disk_vids)
+                    })
+
+                subfolders_list.sort(key=lambda s: s["relative_path"].lower())
+
+                total_images = direct_images + sum(s["image_count"] for s in subfolders_list)
+                total_videos = direct_videos + sum(s["video_count"] for s in subfolders_list)
+                root_disk_imgs = sum(c["images"] for c in disk_counts_by_dir.values())
+                root_disk_vids = sum(c["videos"] for c in disk_counts_by_dir.values())
+
+                output.append({
+                    "path": root_path,
+                    "name": os.path.basename(root_path) or root_path,
+                    "exists": os.path.isdir(root_path),
+                    "direct_image_count": direct_images,
+                    "direct_video_count": direct_videos,
+                    "image_count": total_images,
+                    "video_count": total_videos,
+                    "item_count": total_images + total_videos,
+                    "total_disk_image_count": max(total_images, root_disk_imgs),
+                    "total_disk_video_count": max(total_videos, root_disk_vids),
+                    "subfolder_count": len(subfolders_list),
+                    "subfolders": subfolders_list
+                })
+
+            return output
         except Exception as e:
             print(f"Error getting indexed folders: {e}")
             return []
@@ -709,17 +916,40 @@ class Indexer:
 
         return image_files, video_files
 
-    def get_folder_contents(self, folder_path: str, limit: int = 5000):
-        """List supported media in a folder without indexing or decoding it."""
+    def get_folder_contents(self, folder_path: str, limit: int = 50000):
+        """List supported media in a folder with indexing status and ghost record detection."""
         if not os.path.isdir(folder_path):
             raise ValueError("Folder does not exist or is not accessible.")
 
         normalized_folder = os.path.abspath(os.path.normpath(folder_path))
+        norm_folder_lower = normalized_folder.lower()
+
+        # 1. Fetch all indexed paths for this folder from ChromaDB
+        indexed_map = {} # path_lower -> {"path": meta_path, "media_type": meta_type}
+        if self._ensure_collection():
+            try:
+                res = self.collection.get(include=["metadatas"])
+                if res and res.get("metadatas"):
+                    for meta in res["metadatas"]:
+                        if meta and "path" in meta:
+                            raw_p = meta["path"]
+                            p_norm = os.path.abspath(os.path.normpath(raw_p))
+                            p_lower = p_norm.lower()
+                            if p_lower == norm_folder_lower or p_lower.startswith(norm_folder_lower + os.sep):
+                                if p_lower not in indexed_map:
+                                    indexed_map[p_lower] = {
+                                        "path": p_norm,
+                                        "media_type": meta.get("media_type", "image")
+                                    }
+            except Exception as e:
+                print(f"[Warning] Error querying ChromaDB metadata in get_folder_contents: {e}")
+
         items = []
         image_count = 0
         video_count = 0
-        truncated = False
+        seen_disk_paths = set()
 
+        # 2. Scan physical files on disk
         for root, _, files in os.walk(normalized_folder):
             for file in files:
                 extension = os.path.splitext(file)[1].lower()
@@ -727,6 +957,10 @@ class Indexer:
                     continue
 
                 file_path = os.path.join(root, file)
+                p_norm = os.path.abspath(os.path.normpath(file_path))
+                p_lower = p_norm.lower()
+                seen_disk_paths.add(p_lower)
+
                 media_type = "image" if extension in IMAGE_EXTENSIONS else "video"
 
                 try:
@@ -739,26 +973,57 @@ class Indexer:
                 else:
                     video_count += 1
 
-                if len(items) < limit:
-                    items.append({
-                        "name": file,
-                        "path": file_path,
-                        "relative_path": os.path.relpath(file_path, normalized_folder),
-                        "media_type": media_type,
-                        "extension": extension,
-                        "size": stat.st_size,
-                        "modified_at": stat.st_mtime
-                    })
-                else:
-                    truncated = True
+                is_indexed = p_lower in indexed_map
 
-        items.sort(key=lambda item: item["relative_path"].lower())
+                items.append({
+                    "name": file,
+                    "path": file_path,
+                    "relative_path": os.path.relpath(file_path, normalized_folder),
+                    "media_type": media_type,
+                    "extension": extension,
+                    "size": stat.st_size,
+                    "modified_at": stat.st_mtime,
+                    "is_indexed": is_indexed,
+                    "exists_on_disk": True
+                })
+
+        # 3. Detect ghost records (in vector DB, but no longer on disk)
+        missing_on_disk_items = []
+        for p_lower, info in indexed_map.items():
+            if p_lower not in seen_disk_paths:
+                ghost_path = info["path"]
+                ghost_name = os.path.basename(ghost_path) or ghost_path
+                ghost_ext = os.path.splitext(ghost_path)[1].lower()
+                ghost_media = info.get("media_type", "image")
+                missing_on_disk_items.append({
+                    "name": ghost_name,
+                    "path": ghost_path,
+                    "relative_path": os.path.relpath(ghost_path, normalized_folder),
+                    "media_type": ghost_media,
+                    "extension": ghost_ext,
+                    "size": 0,
+                    "modified_at": 0,
+                    "is_indexed": True,
+                    "exists_on_disk": False
+                })
+
+        all_items = items + missing_on_disk_items
+        all_items.sort(key=lambda item: item["relative_path"].lower())
+
+        indexed_count = sum(1 for it in all_items if it.get("is_indexed"))
+        unindexed_count = sum(1 for it in all_items if not it.get("is_indexed") and it.get("exists_on_disk"))
+        missing_on_disk_count = len(missing_on_disk_items)
+        truncated = len(all_items) > limit
+
         return {
             "folder_path": normalized_folder,
-            "items": items,
+            "items": all_items[:limit],
             "image_count": image_count,
             "video_count": video_count,
-            "total_count": image_count + video_count,
+            "total_count": len(all_items),
+            "indexed_count": indexed_count,
+            "unindexed_count": unindexed_count,
+            "missing_on_disk_count": missing_on_disk_count,
             "truncated": truncated,
             "limit": limit
         }
@@ -789,28 +1054,32 @@ class Indexer:
                 })
         return grouped
 
-    def _add_video_frame_batch(self, images, metadatas, record_ids):
+    def _add_video_frame_batch(self, images, metadatas, record_ids, task_context=None):
         """Embed and store one video-frame batch, falling back per frame on failure."""
         stored_count = 0
         try:
-            embeddings = self.model_manager.get_image_embeddings_batch(images)
-            self.collection.add(
-                embeddings=embeddings,
-                metadatas=metadatas,
-                ids=record_ids
-            )
-            stored_count = len(record_ids)
+            embeddings = self.model_manager.get_image_embeddings_batch(images, task_context=task_context)
+            if embeddings:
+                self.collection.add(
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                    ids=record_ids
+                )
+                stored_count = len(record_ids)
         except Exception as e:
             print(f"Video frame batch embedding failed, falling back frame-by-frame: {e}")
             for image, metadata, record_id in zip(images, metadatas, record_ids):
+                if task_context and not task_context.check_paused_or_cancelled():
+                    break
                 try:
-                    embedding = self.model_manager.get_image_embedding(image)
-                    self.collection.add(
-                        embeddings=[embedding],
-                        metadatas=[metadata],
-                        ids=[record_id]
-                    )
-                    stored_count += 1
+                    embedding = self.model_manager.get_image_embedding(image, task_context=task_context)
+                    if embedding:
+                        self.collection.add(
+                            embeddings=[embedding],
+                            metadatas=[metadata],
+                            ids=[record_id]
+                        )
+                        stored_count += 1
                 except Exception as frame_error:
                     print(f"Error indexing video frame {record_id}: {frame_error}")
                     self.error_count += 1
@@ -825,7 +1094,7 @@ class Indexer:
                     pass
         return stored_count
 
-    def _index_video_file(self, filepath, source_signature, batch_size):
+    def _index_video_file(self, filepath, source_signature, batch_size, task_context=None):
         """Extract and index adaptive scene-aware frames from one video."""
         normalized_path = os.path.abspath(os.path.normpath(filepath))
         source_key = hashlib.sha256(normalized_path.lower().encode("utf-8")).hexdigest()
@@ -836,12 +1105,19 @@ class Indexer:
         attempted_ids = []
         stored_count = 0
 
+        def should_cancel_fn():
+            if self.cancel_requested:
+                return True
+            if task_context and not task_context.check_paused_or_cancelled():
+                return True
+            return False
+
         try:
             for timestamp, image, sampling_metadata in iter_video_frames(
                 normalized_path,
-                should_cancel=lambda: self.cancel_requested
+                should_cancel=should_cancel_fn
             ):
-                if self.cancel_requested:
+                if should_cancel_fn():
                     image.close()
                     break
 
@@ -872,11 +1148,11 @@ class Indexer:
 
                 if len(pending_images) >= batch_size:
                     stored_count += self._add_video_frame_batch(
-                        pending_images, pending_metadatas, pending_ids
+                        pending_images, pending_metadatas, pending_ids, task_context=task_context
                     )
                     pending_images, pending_metadatas, pending_ids = [], [], []
 
-            if self.cancel_requested:
+            if self.cancel_requested or (task_context and task_context.cancel_requested):
                 for image in pending_images:
                     image.close()
                 if attempted_ids:
@@ -885,7 +1161,7 @@ class Indexer:
 
             if pending_images:
                 stored_count += self._add_video_frame_batch(
-                    pending_images, pending_metadatas, pending_ids
+                    pending_images, pending_metadatas, pending_ids, task_context=task_context
                 )
 
             if stored_count == 0:
@@ -904,17 +1180,19 @@ class Indexer:
                     pass
             raise
 
-    def _index_video_files(self, video_files, existing_video_entries=None):
+    def _index_video_files(self, video_files, existing_video_entries=None, task_context=None):
         """Index new or changed videos while preserving unchanged frame records."""
         existing_video_entries = existing_video_entries or {}
         batch_size = self.model_manager.get_effective_batch_size()
 
         for filepath in video_files:
-            if self.cancel_requested:
+            if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                 break
 
             normalized_path = os.path.abspath(os.path.normpath(filepath))
             self.current_file = normalized_path
+            if task_context:
+                task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(normalized_path))
             try:
                 source_signature = get_video_signature(normalized_path)
                 previous_entries = existing_video_entries.get(normalized_path, [])
@@ -930,15 +1208,19 @@ class Indexer:
                     self.collection.delete(ids=old_ids)
 
                 frame_count = self._index_video_file(
-                    normalized_path, source_signature, batch_size
+                    normalized_path, source_signature, batch_size, task_context=task_context
                 )
                 self.indexed_video_frames += frame_count
             except Exception as e:
                 print(f"Error indexing video {normalized_path}: {e}")
                 self.error_count += 1
                 self.failed_files.append(normalized_path)
+                if task_context:
+                    task_context.add_error(f"{os.path.basename(normalized_path)}: {e}")
             finally:
                 self.indexed_files += 1
+                if task_context:
+                    task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(normalized_path))
 
     def delete_folder_index(self, folder_path: str):
         """Delete all index entries belonging to a specific folder."""
@@ -946,18 +1228,18 @@ class Indexer:
             return 0
             
         try:
-            # We want to delete all files that are in this folder or its subfolders
-            # Normalizing folder_path to ensure correct matching
-            norm_folder = os.path.normpath(folder_path)
-            self._get_selected_folders().discard(norm_folder)
+            norm_folder = os.path.abspath(os.path.normpath(folder_path))
+            norm_folder_lower = norm_folder.lower()
+            self._remove_selected_folder(folder_path)
             
             results = self.collection.get(include=["metadatas"])
             ids_to_delete = []
             
             for i, meta in enumerate(results["metadatas"]):
                 if meta and "path" in meta:
-                    file_path = os.path.normpath(meta["path"])
-                    if file_path == norm_folder or file_path.startswith(norm_folder + os.sep):
+                    file_path = os.path.abspath(os.path.normpath(meta["path"]))
+                    file_path_lower = file_path.lower()
+                    if file_path_lower == norm_folder_lower or file_path_lower.startswith(norm_folder_lower + os.sep):
                         ids_to_delete.append(results["ids"][i])
             
             if ids_to_delete:
@@ -998,12 +1280,14 @@ class Indexer:
             "total_video_frames_to_rebuild": self.total_video_frames_to_rebuild
         }
 
-    def regenerate_video_thumbnails(self):
+    def regenerate_video_thumbnails(self, task_context=None):
         """Regenerate all video frame thumbnails for all indexed videos in the active collection."""
-        if self.is_indexing or self.is_rebuilding_video_thumbnails:
+        if (self.is_indexing or self.is_rebuilding_video_thumbnails) and task_context is None:
             return {"status": "error", "message": "Another indexing or rebuild task is already running."}
 
         if not self._ensure_collection():
+            if task_context:
+                task_context.add_error("No active collection.")
             return {"status": "error", "message": "No active collection."}
 
         self.is_rebuilding_video_thumbnails = True
@@ -1013,6 +1297,8 @@ class Indexer:
         try:
             entries_by_path = self._get_existing_video_entries()
             if not entries_by_path:
+                if task_context:
+                    task_context.update_progress(0, 0, "No indexed video records found.")
                 return {"status": "success", "message": "No indexed video records found.", "rebuilt": 0}
 
             total_frames = 0
@@ -1020,9 +1306,11 @@ class Indexer:
                 if os.path.isfile(filepath):
                     total_frames += len(entries)
             self.total_video_frames_to_rebuild = total_frames
+            if task_context:
+                task_context.update_progress(0, total_frames, "Starting video thumbnail rebuild...")
 
             for filepath, entries in entries_by_path.items():
-                if self.cancel_requested:
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                     break
                 if not os.path.isfile(filepath):
                     continue
@@ -1030,6 +1318,12 @@ class Indexer:
                 if timestamps:
                     def on_frame_done(_ts):
                         self.rebuilt_video_frames += 1
+                        if task_context:
+                            task_context.update_progress(
+                                self.rebuilt_video_frames,
+                                self.total_video_frames_to_rebuild,
+                                os.path.basename(filepath)
+                            )
 
                     extract_video_frames_batch(filepath, timestamps, self.cache_dir, on_frame_saved=on_frame_done)
 
@@ -1040,15 +1334,17 @@ class Indexer:
             }
         except Exception as e:
             print(f"Error rebuilding video thumbnails: {e}")
+            if task_context:
+                task_context.add_error(str(e))
             return {"status": "error", "message": str(e)}
         finally:
             self.is_rebuilding_video_thumbnails = False
 
-    def index_directory(self, directory: str):
-        self.batch_index_folders([directory])
+    def index_directory(self, directory: str, task_context=None):
+        self.batch_index_folders([directory], task_context=task_context)
 
-    def batch_index_folders(self, folder_paths: list[str]):
-        if self.is_indexing:
+    def batch_index_folders(self, folder_paths: list[str], task_context=None):
+        if self.is_indexing and task_context is None:
             return  # Prevent concurrent indexing
             
         self.is_indexing = True
@@ -1064,17 +1360,20 @@ class Indexer:
         if not self.collection:
             self.switch_collection(self.model_manager.get_collection_name())
 
-        selected_folders = self._get_selected_folders()
         for folder_path in folder_paths:
             if os.path.isdir(folder_path):
-                selected_folders.add(os.path.abspath(os.path.normpath(folder_path)))
+                self._add_selected_folder(folder_path)
             
         self.failed_files = []
         
         try:
+            if task_context:
+                task_context.update_progress(0, 0, "Discovering media files...")
             files_to_index, discovered_videos = self.discover_media_files(folder_paths)
             self.discovered_video_count = len(discovered_videos)
             self.total_files = len(files_to_index) + len(discovered_videos)
+            if task_context:
+                task_context.update_progress(0, self.total_files, "Comparing index cache...")
             
             # Get existing IDs (paths) to avoid redundant work
             existing_results = self.collection.get(include=["metadatas"])
@@ -1084,12 +1383,14 @@ class Indexer:
             # Filter out already indexed files
             pending_files = [f for f in files_to_index if f not in existing_ids]
             self.indexed_files = len(files_to_index) - len(pending_files)
+            if task_context:
+                task_context.update_progress(self.indexed_files, self.total_files, "Indexing items...")
 
             batch_size = self.model_manager.get_effective_batch_size()
             max_workers = min(16, max(2, (os.cpu_count() or 4)))
 
             for i in range(0, len(pending_files), batch_size):
-                if self.cancel_requested:
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                     print("[Notice] Indexing cancelled by user.")
                     break
 
@@ -1097,18 +1398,20 @@ class Indexer:
                 if not chunk_files:
                     continue
                 self.current_file = chunk_files[0]
+                if task_context:
+                    task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(self.current_file))
 
                 # 1. Parallel CPU preprocessing (file hashing & PIL image opening)
                 worker_results = []
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     future_to_file = {executor.submit(process_file_worker, f): f for f in chunk_files}
                     for future in as_completed(future_to_file):
-                        if self.cancel_requested:
+                        if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                             break
                         res = future.result()
                         worker_results.append(res)
 
-                if self.cancel_requested:
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                     # Clean up opened images if cancelled mid-batch
                     for _, _, img, _ in worker_results:
                         if img:
@@ -1128,6 +1431,9 @@ class Indexer:
                         self.error_count += 1
                         self.failed_files.append(filepath)
                         self.indexed_files += 1
+                        if task_context:
+                            task_context.add_error(f"{os.path.basename(filepath)}: {err}")
+                            task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
                     else:
                         valid_worker_items.append((filepath, file_hash, image))
                         chunk_hashes.append(file_hash)
@@ -1156,7 +1462,13 @@ class Indexer:
                 valid_metas = []
                 valid_ids = []
 
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                    break
+
                 for filepath, file_hash, image in valid_worker_items:
+                    if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                        break
+
                     if file_hash in existing_hash_map:
                         try:
                             embedding = existing_hash_map[file_hash]
@@ -1168,46 +1480,63 @@ class Indexer:
                             existing_ids.add(filepath)
                         except Exception as e:
                             print(f"Error adding reused embedding for {filepath}: {e}")
+                            if task_context:
+                                task_context.add_error(f"{os.path.basename(filepath)}: {e}")
                         finally:
                             try:
                                 image.close()
                             except Exception:
                                 pass
                             self.indexed_files += 1
+                            if task_context:
+                                task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
                     else:
                         valid_images.append(image)
                         valid_metas.append({"path": filepath, "hash": file_hash, "media_type": "image"})
                         valid_ids.append(filepath)
 
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                    break
+
                 # 5. Batched GPU inference for new images
                 if valid_images:
                     try:
-                        embeddings = self.model_manager.get_image_embeddings_batch(valid_images)
-                        self.collection.add(
-                            embeddings=embeddings,
-                            metadatas=valid_metas,
-                            ids=valid_ids
-                        )
-                        for fid in valid_ids:
-                            existing_ids.add(fid)
-                        self.indexed_files += len(valid_ids)
+                        embeddings = self.model_manager.get_image_embeddings_batch(valid_images, task_context=task_context)
+                        if embeddings:
+                            self.collection.add(
+                                embeddings=embeddings,
+                                metadatas=valid_metas,
+                                ids=valid_ids
+                            )
+                            for fid in valid_ids:
+                                existing_ids.add(fid)
+                            self.indexed_files += len(valid_ids)
+                            if task_context:
+                                task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(valid_ids[-1]))
                     except Exception as e:
                         print(f"Batch embedding failed, falling back to item-by-item: {e}")
                         for img, meta, fid in zip(valid_images, valid_metas, valid_ids):
+                            if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                                break
                             try:
-                                emb = self.model_manager.get_image_embedding(img)
-                                self.collection.add(
-                                    embeddings=[emb],
-                                    metadatas=[meta],
-                                    ids=[fid]
-                                )
-                                existing_ids.add(fid)
+                                emb = self.model_manager.get_image_embedding(img, task_context=task_context)
+                                if emb:
+                                    self.collection.add(
+                                        embeddings=[emb],
+                                        metadatas=[meta],
+                                        ids=[fid]
+                                    )
+                                    existing_ids.add(fid)
                             except Exception as ex:
                                 print(f"Error indexing item fallback {fid}: {ex}")
                                 self.error_count += 1
                                 self.failed_files.append(fid)
+                                if task_context:
+                                    task_context.add_error(f"{os.path.basename(fid)}: {ex}")
                             finally:
                                 self.indexed_files += 1
+                                if task_context:
+                                    task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(fid))
                     finally:
                         for img in valid_images:
                             try:
@@ -1215,21 +1544,24 @@ class Indexer:
                             except Exception:
                                 pass
 
-            self._index_video_files(discovered_videos, existing_video_entries)
+            if not self.cancel_requested and not (task_context and task_context.cancel_requested):
+                self._index_video_files(discovered_videos, existing_video_entries, task_context=task_context)
         finally:
             self.is_indexing = False
             self.current_file = ""
             self.last_task_id += 1
 
-    def reindex_directory(self, directory: str):
+    def reindex_directory(self, directory: str, task_context=None):
         """Synchronize the index with the current state of a directory.
         Adds new/changed files, removes files no longer on disk.
         """
-        if self.is_indexing:
+        if self.is_indexing and task_context is None:
             return
             
         if not os.path.isdir(directory):
             print(f"[Error] Cannot reindex: Directory '{directory}' not found.")
+            if task_context:
+                task_context.add_error(f"Directory '{directory}' not found.")
             return
 
         self.is_indexing = True
@@ -1244,12 +1576,14 @@ class Indexer:
         if not self.collection:
             self.switch_collection(self.model_manager.get_collection_name())
 
-        self._get_selected_folders().add(os.path.abspath(os.path.normpath(directory)))
+        self._add_selected_folder(directory)
             
         self.failed_files = []
         
         try:
             norm_target = os.path.normpath(directory)
+            if task_context:
+                task_context.update_progress(0, 0, f"Scanning {os.path.basename(norm_target)}...")
 
             # 1. Get current files on disk
             discovered_images, discovered_videos = self.discover_media_files([directory])
@@ -1280,6 +1614,8 @@ class Indexer:
             existing_video_entries = self._get_existing_video_entries(results)
 
             self.total_files = len(disk_files) + len(disk_video_files) + len(stale_source_paths)
+            if task_context:
+                task_context.update_progress(0, self.total_files, "Cleaning stale entries...")
             
             # 3. Remove entries from DB that are no longer on disk
             ids_to_remove = [entry["id"] for entry in stale_entries]
@@ -1291,13 +1627,15 @@ class Indexer:
             
             # Update progress
             self.indexed_files = len(stale_source_paths)
+            if task_context:
+                task_context.update_progress(self.indexed_files, self.total_files, "Processing updated files...")
             
             # 4. Add or update files from disk in batched chunks
             batch_size = self.model_manager.get_effective_batch_size()
             max_workers = min(16, max(2, (os.cpu_count() or 4)))
 
             for i in range(0, len(disk_files), batch_size):
-                if self.cancel_requested:
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                     print("[Notice] Re-indexing cancelled by user.")
                     break
 
@@ -1305,17 +1643,19 @@ class Indexer:
                 if not chunk_files:
                     continue
                 self.current_file = chunk_files[0]
+                if task_context:
+                    task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(self.current_file))
 
                 # Parallel CPU preprocessing
                 worker_results = []
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     future_to_file = {executor.submit(process_file_worker, f): f for f in chunk_files}
                     for future in as_completed(future_to_file):
-                        if self.cancel_requested:
+                        if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                             break
                         worker_results.append(future.result())
 
-                if self.cancel_requested:
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                     for _, _, img, _ in worker_results:
                         if img:
                             try:
@@ -1334,6 +1674,9 @@ class Indexer:
                         self.error_count += 1
                         self.failed_files.append(filepath)
                         self.indexed_files += 1
+                        if task_context:
+                            task_context.add_error(f"{os.path.basename(filepath)}: {err}")
+                            task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
                         continue
 
                     # If already in DB with same hash, skip
@@ -1343,6 +1686,8 @@ class Indexer:
                         except Exception:
                             pass
                         self.indexed_files += 1
+                        if task_context:
+                            task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
                     else:
                         # If filepath exists in DB but hash differs, delete old entry first
                         if filepath in db_paths:
@@ -1376,7 +1721,13 @@ class Indexer:
                 valid_metas = []
                 valid_ids = []
 
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                    break
+
                 for filepath, file_hash, image in items_needing_indexing:
+                    if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                        break
+
                     if file_hash in existing_hash_map:
                         try:
                             embedding = existing_hash_map[file_hash]
@@ -1387,42 +1738,59 @@ class Indexer:
                             )
                         except Exception as e:
                             print(f"Error adding reused embedding for {filepath}: {e}")
+                            if task_context:
+                                task_context.add_error(f"{os.path.basename(filepath)}: {e}")
                         finally:
                             try:
                                 image.close()
                             except Exception:
                                 pass
                             self.indexed_files += 1
+                            if task_context:
+                                task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
                     else:
                         valid_images.append(image)
                         valid_metas.append({"path": filepath, "hash": file_hash, "media_type": "image"})
                         valid_ids.append(filepath)
 
+                if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                    break
+
                 if valid_images:
                     try:
-                        embeddings = self.model_manager.get_image_embeddings_batch(valid_images)
-                        self.collection.add(
-                            embeddings=embeddings,
-                            metadatas=valid_metas,
-                            ids=valid_ids
-                        )
-                        self.indexed_files += len(valid_ids)
+                        embeddings = self.model_manager.get_image_embeddings_batch(valid_images, task_context=task_context)
+                        if embeddings:
+                            self.collection.add(
+                                embeddings=embeddings,
+                                metadatas=valid_metas,
+                                ids=valid_ids
+                            )
+                            self.indexed_files += len(valid_ids)
+                            if task_context:
+                                task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(valid_ids[-1]))
                     except Exception as e:
                         print(f"Batch embedding failed during reindex fallback: {e}")
                         for img, meta, fid in zip(valid_images, valid_metas, valid_ids):
+                            if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                                break
                             try:
-                                emb = self.model_manager.get_image_embedding(img)
-                                self.collection.add(
-                                    embeddings=[emb],
-                                    metadatas=[meta],
-                                    ids=[fid]
-                                )
+                                emb = self.model_manager.get_image_embedding(img, task_context=task_context)
+                                if emb:
+                                    self.collection.add(
+                                        embeddings=[emb],
+                                        metadatas=[meta],
+                                        ids=[fid]
+                                    )
                             except Exception as ex:
                                 print(f"Error re-indexing item fallback {fid}: {ex}")
                                 self.error_count += 1
                                 self.failed_files.append(fid)
+                                if task_context:
+                                    task_context.add_error(f"{os.path.basename(fid)}: {ex}")
                             finally:
                                 self.indexed_files += 1
+                                if task_context:
+                                    task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(fid))
                     finally:
                         for img in valid_images:
                             try:
@@ -1430,13 +1798,15 @@ class Indexer:
                             except Exception:
                                 pass
 
-            if not self.cancel_requested:
-                self._index_video_files(disk_video_files, existing_video_entries)
+            if not self.cancel_requested and not (task_context and task_context.cancel_requested):
+                self._index_video_files(disk_video_files, existing_video_entries, task_context=task_context)
                 
         finally:
             self.is_indexing = False
             self.current_file = ""
             self.last_task_id += 1
+
+    reindex_folder = reindex_directory
 
     def batch_delete_folders(self, folder_paths: list[str]):
         """Delete multiple folder indexes."""
@@ -1477,10 +1847,12 @@ class Indexer:
             print(f"Error during maintenance: {e}")
             return {"status": "error", "message": str(e)}
 
-    def batch_reindex_folders(self, folder_paths: list[str]):
+    def batch_reindex_folders(self, folder_paths: list[str], task_context=None):
         """Reindex multiple folders. Should be called sequentially or in background."""
         for path in folder_paths:
-            self.reindex_directory(path)
+            if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
+                break
+            self.reindex_directory(path, task_context=task_context)
 
     def search(self, query: str, top_k: int = 50, min_score: float = 0.2):
         if not self.collection:
