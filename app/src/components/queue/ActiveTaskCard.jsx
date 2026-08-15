@@ -9,7 +9,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
         className={`p-6 rounded-2xl text-center border ${
           uiTheme === 'modern'
             ? 'bg-gray-50/50 dark:bg-neutral-800/30 border-dashed border-gray-200 dark:border-neutral-800 text-neutral-400 dark:text-neutral-500'
-            : 'border-dashed border-white text-white/50'
+            : 'border-dashed border-current opacity-60'
         }`}
       >
         <Layers className="w-8 h-8 mx-auto mb-2 opacity-40" />
@@ -42,7 +42,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
           ? isPaused
             ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-500/30 shadow-sm'
             : 'bg-indigo-50/40 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-500/30 shadow-sm'
-          : 'border border-white bg-neutral-900 text-white'
+          : 'border border-current'
       }`}
     >
       {/* Header */}
@@ -52,7 +52,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
             className={`p-2 rounded-xl border ${
               isModern
                 ? 'bg-white dark:bg-neutral-800 border-gray-200/80 dark:border-neutral-700 shadow-xs'
-                : 'border border-white bg-black'
+                : 'icon-tile border border-current'
             }`}
           >
             {getTypeIcon()}
@@ -91,9 +91,9 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
           </span>
         </div>
 
-        <div className="w-full bg-gray-200 dark:bg-neutral-800 rounded-full h-2 overflow-hidden">
+        <div className="terminal-progress-track w-full bg-gray-200 dark:bg-neutral-800 rounded-full h-2 overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-300 ease-out ${
+            className={`terminal-progress-fill h-full rounded-full transition-all duration-300 ease-out ${
               isPaused
                 ? 'bg-amber-500'
                 : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500'

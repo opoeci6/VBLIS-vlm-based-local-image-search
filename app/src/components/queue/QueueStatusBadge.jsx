@@ -32,7 +32,7 @@ export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
             : pendingCount > 0
             ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30 hover:bg-blue-100'
             : 'bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-gray-200/80 dark:border-neutral-700'
-          : 'border border-white bg-black text-white hover:bg-neutral-900'
+          : 'border border-current'
       }`}
       title={titleText}
     >
@@ -66,7 +66,7 @@ export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
               ? isPaused
                 ? 'bg-amber-600 dark:bg-amber-500 text-white'
                 : 'bg-indigo-600 dark:bg-indigo-500 text-white'
-              : 'bg-white text-black'
+              : 'border border-current'
           }`}
         >
           +{pendingCount}

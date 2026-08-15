@@ -120,6 +120,7 @@ api/dist/
 api/chroma_data/
 api/cache/
 api/models/
+api/data/
 api/api.spec
 
 # VS Code

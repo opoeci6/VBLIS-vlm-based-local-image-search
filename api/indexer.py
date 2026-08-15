@@ -587,6 +587,8 @@ class Indexer:
         self.client = chromadb.PersistentClient(path=db_path)
         self.collection = None
         self.selected_folders_by_collection = {}
+        self.data_dir = pathlib.Path(__file__).parent.resolve() / "data"
+        self.data_dir.mkdir(exist_ok=True)
         self.cache_dir = pathlib.Path(__file__).parent.resolve() / "cache"
         self.cache_dir.mkdir(exist_ok=True)
         self._load_selected_folders()
@@ -614,20 +616,29 @@ class Indexer:
         print("[Notice] Indexing cancellation requested by user.")
 
     def _load_selected_folders(self):
-        config_path = self.cache_dir / "indexed_folders.json"
-        if config_path.exists():
+        config_path = self.data_dir / "indexed_folders.json"
+        legacy_path = self.cache_dir / "indexed_folders.json"
+        target_path = config_path if config_path.exists() else (legacy_path if legacy_path.exists() else None)
+        
+        if target_path:
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(target_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict):
                         self.selected_folders_by_collection = {
                             k: set(v) for k, v in data.items() if isinstance(v, list)
                         }
+                if target_path == legacy_path:
+                    self._save_selected_folders()
+                    try:
+                        legacy_path.unlink()
+                    except Exception:
+                        pass
             except Exception as e:
                 print(f"[Warning] Failed to load indexed_folders.json: {e}")
 
     def _save_selected_folders(self):
-        config_path = self.cache_dir / "indexed_folders.json"
+        config_path = self.data_dir / "indexed_folders.json"
         try:
             data = {
                 k: sorted(list(v)) for k, v in self.selected_folders_by_collection.items()

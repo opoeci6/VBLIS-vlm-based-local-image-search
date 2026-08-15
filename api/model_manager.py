@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 
 # Ensure HF_HOME is configured to local models directory before importing transformers
 _api_dir = Path(__file__).parent.resolve()
@@ -45,6 +46,14 @@ class ModelManager:
         self.oom_triggered = False
         self.oom_triggered_count = 0
         self._lock = threading.Lock()
+
+    @property
+    def active_model(self) -> Optional[str]:
+        return self.current_model_id
+
+    @active_model.setter
+    def active_model(self, value: Optional[str]):
+        self.current_model_id = value
 
     def get_effective_batch_size(self) -> int:
         """Calculate effective working batch size based on settings and available hardware/model."""

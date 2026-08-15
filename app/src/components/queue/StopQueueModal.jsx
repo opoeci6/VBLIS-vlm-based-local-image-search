@@ -11,7 +11,7 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
         className={`w-full max-w-md p-6 rounded-3xl shadow-2xl border transition-all animate-in zoom-in-95 duration-150 ${
           isModern
             ? 'bg-white dark:bg-neutral-900 border-gray-200 dark:border-neutral-800 text-neutral-900 dark:text-white'
-            : 'bg-black border-2 border-white text-white'
+            : 'border-2 border-current bg-[var(--terminal-background)] text-[var(--terminal-foreground)]'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -42,7 +42,7 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
             className={`w-full p-3.5 rounded-xl border text-left flex items-start gap-3 transition-all ${
               isModern
                 ? 'bg-gray-50 dark:bg-neutral-800/60 hover:bg-amber-50/60 dark:hover:bg-amber-950/30 border-gray-200 dark:border-neutral-700 hover:border-amber-300 dark:hover:border-amber-500/40'
-                : 'border border-white hover:bg-neutral-900'
+                : 'border border-current'
             }`}
           >
             <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
@@ -63,7 +63,7 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
             className={`w-full p-3.5 rounded-xl border text-left flex items-start gap-3 transition-all ${
               isModern
                 ? 'bg-gray-50 dark:bg-neutral-800/60 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 border-gray-200 dark:border-neutral-700 hover:border-indigo-300 dark:hover:border-indigo-500/40'
-                : 'border border-white hover:bg-neutral-900'
+                : 'border border-current'
             }`}
           >
             <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 mt-0.5 shrink-0">

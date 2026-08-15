@@ -83,6 +83,8 @@ os.environ["HF_HUB_ENABLE_EMERGENCY_RETRY"] = "False"
 
 CACHE_DIR = api_dir / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
+DATA_DIR = api_dir / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
 def compute_hash(filepath):
     hasher = hashlib.sha256()
@@ -136,6 +138,7 @@ async def lifespan(app: FastAPI):
         indexer.switch_collection(model_manager.get_collection_name())
     except Exception as e:
         print(f"[Notice] Active model '{active_model}' not loaded: {e}. Ready for manual download.")
+    task_queue.load_from_disk(current_active_model=model_manager.active_model)
     task_queue.start()
     yield
     print("Shutting down API backend...")
@@ -154,7 +157,7 @@ app.add_middleware(
 
 model_manager = ModelManager()
 indexer = Indexer(model_manager)
-task_queue = TaskQueueManager(indexer)
+task_queue = TaskQueueManager(indexer, persistence_path=str(DATA_DIR / "task_queue.json"))
 
 class SearchQuery(BaseModel):
     query: str
@@ -195,7 +198,8 @@ class EnqueueTaskRequest(BaseModel):
     priority: str = "bottom"
 
 class WorkerControlRequest(BaseModel):
-    action: str  # start | pause_immediate | pause_after_current
+    action: str  # start | pause_immediate | pause_after_current | adopt_active_model
+    adopt_model: bool = False
 
 class MoveTaskRequest(BaseModel):
     direction: str  # up | down | top | bottom
@@ -480,35 +484,37 @@ def enqueue_task_endpoint(req: EnqueueTaskRequest):
 
 @app.post("/queue/control")
 def control_queue_worker(req: WorkerControlRequest):
-    res = task_queue.control_worker(req.action)
+    res = task_queue.control_worker(req.action, adopt_model=req.adopt_model)
+    if res.get("success") is False:
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to start worker."))
     return {"status": "success", "result": res}
 
 @app.post("/queue/{task_id}/cancel")
 def cancel_queue_task(task_id: str):
     success = task_queue.cancel_task(task_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Task not found in active or pending queue.")
-    return {"status": "success", "message": f"Task {task_id} cancellation requested."}
+        raise HTTPException(status_code=404, detail="Task not found or could not be cancelled.")
+    return {"status": "success", "message": f"Task {task_id} cancelled."}
 
 @app.post("/queue/{task_id}/pause")
 def pause_queue_task(task_id: str):
     success = task_queue.pause_task(task_id)
     if not success:
-        raise HTTPException(status_code=400, detail="Task is not currently running or cannot be paused.")
+        raise HTTPException(status_code=400, detail="Task is not active or could not be paused.")
     return {"status": "success", "message": f"Task {task_id} paused."}
 
 @app.post("/queue/{task_id}/resume")
 def resume_queue_task(task_id: str):
     success = task_queue.resume_task(task_id)
     if not success:
-        raise HTTPException(status_code=400, detail="Task is not currently paused.")
+        raise HTTPException(status_code=400, detail="Task is not active or could not be resumed.")
     return {"status": "success", "message": f"Task {task_id} resumed."}
 
 @app.post("/queue/{task_id}/move")
 def move_queue_task(task_id: str, req: MoveTaskRequest):
     success = task_queue.move_task(task_id, req.direction)
     if not success:
-        raise HTTPException(status_code=404, detail="Task not found in pending queue or invalid direction.")
+        raise HTTPException(status_code=400, detail="Failed to move task.")
     return {"status": "success", "message": f"Task {task_id} moved {req.direction}."}
 
 @app.post("/queue/reorder")
@@ -520,8 +526,8 @@ def reorder_queue_tasks(req: ReorderTasksRequest):
 def retry_queue_task(task_id: str):
     new_task = task_queue.retry_task(task_id)
     if not new_task:
-        raise HTTPException(status_code=404, detail="Task not found in history.")
-    return {"status": "success", "task": new_task.to_dict(), "message": f"Task {task_id} re-enqueued as {new_task.id}."}
+        raise HTTPException(status_code=404, detail="Historical task not found.")
+    return {"status": "success", "task": new_task.to_dict()}
 
 @app.delete("/queue/history")
 def clear_queue_history():
@@ -556,10 +562,10 @@ async def list_models():
 
 @app.post("/index/cancel")
 def cancel_indexing():
-    indexer.cancel_indexing()
     if task_queue.active_task:
         task_queue.cancel_task(task_queue.active_task.id)
-    return {"status": "success", "message": "Indexing cancellation requested."}
+    indexer.cancel_indexing()
+    return {"status": "Indexing cancelled"}
 
 @app.post("/models/delete")
 async def delete_model(req: ModelDeleteRequest):
@@ -572,6 +578,9 @@ async def delete_model(req: ModelDeleteRequest):
     # If the model to delete is currently active, unload it first
     if model_manager.current_model_id == model_id:
         model_manager.unload_model()
+        task_queue.current_model_id = None
+        task_queue._check_model_mismatch()
+        task_queue.save_to_disk()
     
     # Deriving collection name manually to delete index if requested
     if req.delete_index:
@@ -598,17 +607,54 @@ async def delete_model(req: ModelDeleteRequest):
 
 @app.post("/models/download")
 async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTasks):
-    if (task_queue.active_task and task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED)) or indexer.is_indexing:
-        raise HTTPException(status_code=409, detail="Cannot download or switch model while an indexing task is in progress.")
     if model_manager.is_downloading:
         return {"status": "Error", "message": "A download is already in progress."}
     
     def download_and_switch(model_name):
         try:
-            model_manager.load_model(model_name, local_files_only=False)
-            indexer.switch_collection(model_manager.get_collection_name())
-            persist_active_model(model_name)
-            print(f"Successfully downloaded and loaded {model_name}")
+            # 1. Download model files without altering active model weights in memory
+            status_info = model_manager.downloader.inspect_model_status(model_name)
+            snapshot_dir = model_manager.get_model_snapshot_path(model_name)
+            if not (status_info["downloaded"] and snapshot_dir is not None):
+                model_manager.downloader.download_model(model_name)
+            
+            # 2. Check active model and queued tasks models
+            is_model_active = model_manager.model is not None and model_manager.current_model_id is not None
+            
+            queued_model_ids = set()
+            if task_queue.active_task and task_queue.active_task.model_id:
+                queued_model_ids.add(task_queue.active_task.model_id)
+            for t in task_queue.pending_queue:
+                if t.model_id:
+                    queued_model_ids.add(t.model_id)
+
+            has_tasks = bool(
+                task_queue.active_task or 
+                task_queue.pending_queue or 
+                indexer.is_indexing or 
+                indexer.is_rebuilding_video_thumbnails
+            )
+
+            # Check if this downloaded model matches all queued tasks
+            matches_all_queued_tasks = bool(queued_model_ids and queued_model_ids == {model_name})
+
+            # Auto-activate ONLY if:
+            # 1. No tasks exist at all (clean state)
+            # 2. OR no model is active and this downloaded model is the EXACT model expected by the queue
+            should_auto_activate = False
+            if not has_tasks:
+                should_auto_activate = True
+            elif not is_model_active and matches_all_queued_tasks:
+                should_auto_activate = True
+
+            if should_auto_activate:
+                model_manager.load_model(model_name, local_files_only=True)
+                indexer.switch_collection(model_manager.get_collection_name())
+                persist_active_model(model_name)
+                task_queue.retarget_tasks_to_model(model_name)
+                print(f"[ModelDownload] Successfully downloaded and auto-activated {model_name}")
+            else:
+                print(f"[ModelDownload] Successfully downloaded {model_name}. Preserving active model '{model_manager.current_model_id}' (queued tasks expect {queued_model_ids or 'existing active model'}).")
         except Exception as e:
             error_msg = str(e)
             if "cancelled by user" in error_msg.lower():
@@ -648,6 +694,8 @@ def switch_model(req: ModelSwitchRequest):
         # Switching models connects to a different ChromaDB collection
         indexer.switch_collection(model_manager.get_collection_name())
         persist_active_model(req.model_name)
+        # Retarget remaining queued tasks to the newly activated model
+        task_queue.retarget_tasks_to_model(req.model_name)
         return {"status": "Model switched correctly", "active_model": req.model_name}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Model not found locally: {str(e)}")
@@ -658,6 +706,9 @@ def unload_model():
         raise HTTPException(status_code=409, detail="Cannot unload or eject model while an indexing task is in progress.")
     try:
         model_manager.unload_model()
+        task_queue.current_model_id = None
+        task_queue._check_model_mismatch()
+        task_queue.save_to_disk()
         return {"status": "success", "message": "Model unloaded and VRAM cleared successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unload model: {str(e)}")
@@ -667,7 +718,7 @@ def get_cache_statistics():
     return get_cache_stats()
 
 @app.post("/image/cache/clear")
-def clear_image_cache(target: str = Query("all", regex="^(all|images|videos)$")):
+def clear_image_cache(target: str = Query("all", pattern="^(all|images|videos)$")):
     try:
         result = safe_clear_cache(target=target)
         return {"status": "success", "message": f"Successfully cleared {target} thumbnail cache.", "result": result}

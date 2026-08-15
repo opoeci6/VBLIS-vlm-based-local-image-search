@@ -9,6 +9,8 @@ export const useTaskQueue = (API_BASE, setToast) => {
   const [historyCount, setHistoryCount] = useState(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [showStopModal, setShowStopModal] = useState(false);
+  const [modelMismatch, setModelMismatch] = useState(null);
+  const [activeModel, setActiveModel] = useState(null);
 
   const prevActiveTaskId = useRef(null);
 
@@ -23,6 +25,21 @@ export const useTaskQueue = (API_BASE, setToast) => {
       setWorkerState(data.worker_state || 'running');
       setPendingCount(data.pending_count || 0);
       setHistoryCount(data.history_count || 0);
+      const rawMismatch = data.model_mismatch || null;
+      const normalizedMismatch = rawMismatch
+        ? {
+            ...rawMismatch,
+            isMismatch: Boolean(rawMismatch.is_mismatch ?? rawMismatch.isMismatch),
+            is_mismatch: Boolean(rawMismatch.is_mismatch ?? rawMismatch.isMismatch),
+            queued_model: rawMismatch.queued_model ?? rawMismatch.queuedModel ?? '',
+            queuedModel: rawMismatch.queued_model ?? rawMismatch.queuedModel ?? '',
+            active_model: rawMismatch.active_model ?? rawMismatch.activeModel ?? null,
+            activeModel: rawMismatch.active_model ?? rawMismatch.activeModel ?? null,
+            reason: rawMismatch.reason || ''
+          }
+        : null;
+      setModelMismatch(normalizedMismatch);
+      setActiveModel(data.active_model || null);
 
       // Toast when an active task completes
       if (prevActiveTaskId.current && !data.active_task && data.history && data.history.length > 0) {
@@ -135,16 +152,16 @@ export const useTaskQueue = (API_BASE, setToast) => {
     }
   }, [API_BASE, setToast, fetchQueue]);
 
-  const controlWorker = useCallback(async (action) => {
+  const controlWorker = useCallback(async (action, adoptModel = false) => {
     try {
       const res = await fetch(`${API_BASE}/queue/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action })
+        body: JSON.stringify({ action, adopt_model: adoptModel })
       });
       const data = await res.json();
       if (res.ok) {
-        if (action === 'start') {
+        if (action === 'start' || action === 'adopt_active_model') {
           setToast?.({ message: 'Queue worker started.', type: 'success' });
         } else if (action === 'pause_immediate') {
           setToast?.({ message: 'Queue worker stopped immediately.', type: 'info' });
@@ -152,6 +169,12 @@ export const useTaskQueue = (API_BASE, setToast) => {
           setToast?.({ message: 'Queue will stop after active task completes.', type: 'info' });
         }
         setShowStopModal(false);
+        fetchQueue();
+      } else {
+        setToast?.({
+          message: data.detail || 'Failed to update queue worker state.',
+          type: 'error'
+        });
         fetchQueue();
       }
     } catch (err) {
@@ -231,6 +254,8 @@ export const useTaskQueue = (API_BASE, setToast) => {
     setIsDrawerOpen,
     showStopModal,
     setShowStopModal,
+    modelMismatch,
+    activeModel,
     fetchQueue,
     enqueueFolderIndexing,
     cancelTask,

@@ -12,7 +12,7 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
         className={`p-8 rounded-2xl text-center border ${
           isModern
             ? 'bg-gray-50/50 dark:bg-neutral-800/30 border-dashed border-gray-200 dark:border-neutral-800 text-neutral-400 dark:text-neutral-500'
-            : 'border-dashed border-white text-white/50'
+            : 'border-dashed border-current opacity-60'
         }`}
       >
         <History className="w-8 h-8 mx-auto mb-2 opacity-40" />
@@ -75,7 +75,7 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
               className={`p-3.5 rounded-2xl border transition-all duration-150 ${
                 isModern
                   ? 'bg-white dark:bg-neutral-800/60 border-gray-100 dark:border-neutral-800 hover:border-gray-200 dark:hover:border-neutral-700 shadow-2xs'
-                  : 'border border-white bg-black text-white'
+                  : 'border border-current'
               }`}
             >
               <div className="flex items-start justify-between gap-3">

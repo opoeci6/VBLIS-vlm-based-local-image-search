@@ -144,18 +144,23 @@ body {
 }
 
 /* Sharp geometry in Terminal Theme */
+.terminal-theme,
+.terminal-theme *,
+.terminal-theme [class*="rounded"],
 .terminal-theme .rounded-sm,
 .terminal-theme .rounded,
 .terminal-theme .rounded-md,
 .terminal-theme .rounded-lg,
 .terminal-theme .rounded-xl,
 .terminal-theme .rounded-2xl,
-.terminal-theme .rounded-3xl {
+.terminal-theme .rounded-3xl,
+.terminal-theme .rounded-full {
   border-radius: 0 !important;
 }
 
 .terminal-theme .icon-tile {
   border-radius: 0 !important;
+  border: 1px solid var(--terminal-foreground) !important;
 }
 
 .terminal-theme,
@@ -249,17 +254,23 @@ body {
   box-shadow: none !important;
 }
 
-.terminal-theme .terminal-progress-track {
+.terminal-theme .terminal-progress-track,
+.terminal-theme [class*="terminal-progress-track"] {
   background: var(--terminal-background) !important;
   border: 1px solid var(--terminal-foreground) !important;
   border-radius: 0 !important;
 }
 
-.terminal-theme .terminal-progress-fill {
+.terminal-theme .terminal-progress-fill,
+.terminal-theme [class*="terminal-progress-fill"] {
   background: var(--terminal-foreground) !important;
   background-color: var(--terminal-foreground) !important;
   background-image: none !important;
   border-radius: 0 !important;
+}
+
+.terminal-theme [class*="border-dashed"] {
+  border-color: var(--terminal-foreground) !important;
 }
 
 .terminal-theme .model-status-dot {

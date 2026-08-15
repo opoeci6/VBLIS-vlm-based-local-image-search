@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import uuid
 import threading
 from enum import Enum
@@ -37,12 +38,14 @@ class Task:
         task_type: TaskType,
         payload: Dict[str, Any],
         title: str = "",
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        model_id: Optional[str] = None
     ):
         self.id: str = task_id or str(uuid.uuid4())
         self.type: TaskType = task_type
         self.title: str = title or self._generate_default_title(task_type, payload)
         self.payload: Dict[str, Any] = payload
+        self.model_id: Optional[str] = model_id
         self.status: TaskStatus = TaskStatus.QUEUED
         self.progress: float = 0.0
         self.current_item: str = ""
@@ -126,6 +129,7 @@ class Task:
             "type": self.type.value if hasattr(self.type, "value") else str(self.type),
             "title": self.title,
             "payload": self.payload,
+            "model_id": self.model_id,
             "status": self.status.value if hasattr(self.status, "value") else str(self.status),
             "progress": self.progress,
             "current_item": self.current_item,
@@ -145,16 +149,65 @@ class Task:
             "cancel_requested": self.cancel_requested
         }
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Task":
+        task_type_str = d.get("type", "INDEX_FOLDERS")
+        try:
+            task_type = TaskType(task_type_str)
+        except Exception:
+            task_type = TaskType.INDEX_FOLDERS
+
+        task = cls(
+            task_type=task_type,
+            payload=d.get("payload", {}),
+            title=d.get("title", ""),
+            task_id=d.get("id"),
+            model_id=d.get("model_id")
+        )
+        status_str = d.get("status", "queued")
+        try:
+            task.status = TaskStatus(status_str)
+        except Exception:
+            task.status = TaskStatus.QUEUED
+
+        task.progress = float(d.get("progress", 0.0))
+        task.current_item = str(d.get("current_item", ""))
+        task.processed_count = int(d.get("processed_count", 0))
+        task.total_count = int(d.get("total_count", 0))
+        task.error_count = int(d.get("error_count", 0))
+        task.errors = list(d.get("errors", []))
+        task.created_at = float(d.get("created_at", time.time()))
+        task.started_at = d.get("started_at")
+        task.completed_at = d.get("completed_at")
+        task.cancel_requested = bool(d.get("cancel_requested", False))
+
+        if d.get("is_paused", False) or task.status == TaskStatus.PAUSED:
+            task.pause()
+        else:
+            task.resume()
+
+        return task
+
 
 class TaskQueueManager:
-    def __init__(self, indexer=None):
+    def __init__(self, indexer=None, persistence_path: Optional[str] = None):
         self.indexer = indexer
+        if persistence_path is not None:
+            self.persistence_path = persistence_path
+        else:
+            data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+            os.makedirs(data_dir, exist_ok=True)
+            self.persistence_path = os.path.join(data_dir, "task_queue.json")
+
         self.lock = threading.RLock()
         self.worker_state: WorkerState = WorkerState.RUNNING
         self.active_task: Optional[Task] = None
         self.pending_queue: List[Task] = []
         self.history: List[Task] = []
         self.max_history: int = 50
+
+        self.current_model_id: Optional[str] = None
+        self.model_mismatch_warning: Optional[Dict[str, Any]] = None
 
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
@@ -173,29 +226,185 @@ class TaskQueueManager:
                 print("[TaskQueue] Background worker thread started.")
 
     def stop(self):
-        self._stop_event.set()
-        self._wake_event.set()
         with self.lock:
-            if self.active_task:
-                self.active_task.cancel_requested = True
-                self.active_task.resume()
+            self._stop_event.set()
+            self._wake_event.set()
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=2.0)
             print("[TaskQueue] Background worker thread stopped.")
+
+    def _is_model_loaded(self) -> bool:
+        if self.indexer and hasattr(self.indexer, "model_manager"):
+            mm = self.indexer.model_manager
+            if hasattr(mm, "model"):
+                return mm.model is not None
+            return bool(getattr(mm, "current_model_id", None) or getattr(mm, "active_model", None))
+        return bool(self.current_model_id)
+
+    def _get_active_model_id(self) -> Optional[str]:
+        if self.indexer and hasattr(self.indexer, "model_manager"):
+            mm = self.indexer.model_manager
+            if hasattr(mm, "model") and mm.model is None:
+                return None
+            return getattr(mm, "current_model_id", None) or getattr(mm, "active_model", None)
+        return self.current_model_id
+
+    def _check_model_mismatch(self):
+        """Checks if pending tasks expect a model different from the active model."""
+        active_m = self._get_active_model_id()
+        is_ready = self._is_model_loaded()
+
+        if not active_m or not is_ready:
+            # If no model is currently active/loaded, warn if tasks exist
+            if self.pending_queue:
+                queued_m = self.pending_queue[0].model_id or "unknown"
+                self.model_mismatch_warning = {
+                    "is_mismatch": True,
+                    "queued_model": queued_m,
+                    "active_model": None,
+                    "mismatched_count": len(self.pending_queue),
+                    "reason": "no_model_loaded"
+                }
+            else:
+                self.model_mismatch_warning = None
+            return
+
+        mismatches = []
+        for task in self.pending_queue:
+            if task.model_id and task.model_id != active_m:
+                mismatches.append({
+                    "task_id": task.id,
+                    "title": task.title,
+                    "task_model": task.model_id,
+                    "active_model": active_m
+                })
+
+        if mismatches:
+            self.model_mismatch_warning = {
+                "is_mismatch": True,
+                "queued_model": mismatches[0]["task_model"],
+                "active_model": active_m,
+                "mismatched_count": len(mismatches),
+                "reason": "model_difference"
+            }
+        else:
+            self.model_mismatch_warning = None
+
+    def retarget_tasks_to_model(self, new_model_id: str):
+        """Retargets all queued/pending tasks to adopt the specified active model."""
+        with self.lock:
+            for task in self.pending_queue:
+                task.model_id = new_model_id
+            self.current_model_id = new_model_id
+            self._check_model_mismatch()
+            self.save_to_disk()
+
+    def save_to_disk(self):
+        if not self.persistence_path:
+            return
+        with self.lock:
+            try:
+                os.makedirs(os.path.dirname(os.path.abspath(self.persistence_path)), exist_ok=True)
+                snapshot = {
+                    "version": 1,
+                    "worker_state": self.worker_state.value if hasattr(self.worker_state, "value") else str(self.worker_state),
+                    "active_model_at_save": self._get_active_model_id(),
+                    "active_task": self.active_task.to_dict() if self.active_task else None,
+                    "pending_tasks": [t.to_dict() for t in self.pending_queue],
+                    "history": [t.to_dict() for t in self.history[:self.max_history]]
+                }
+                tmp_path = f"{self.persistence_path}.tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(snapshot, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, self.persistence_path)
+            except Exception as e:
+                print(f"[TaskQueue] Failed to save queue to {self.persistence_path}: {e}")
+
+    def load_from_disk(self, current_active_model: Optional[str] = None):
+        """Hydrate queue state from disk with crash recovery and model mismatch checks."""
+        if current_active_model is not None:
+            self.current_model_id = current_active_model
+        elif self.indexer and hasattr(self.indexer, "model_manager"):
+            mm = self.indexer.model_manager
+            self.current_model_id = getattr(mm, "current_model_id", None) or getattr(mm, "active_model", None)
+
+        target_path = self.persistence_path
+        legacy_path = None
+        if not target_path or not os.path.exists(target_path):
+            legacy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "task_queue.json")
+            if os.path.exists(legacy_path):
+                target_path = legacy_path
+            else:
+                return
+
+        with self.lock:
+            try:
+                with open(target_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                saved_worker_state = data.get("worker_state", "running")
+                raw_active_task = data.get("active_task")
+                raw_pending = data.get("pending_tasks", [])
+                raw_history = data.get("history", [])
+
+                self.history = [Task.from_dict(d) for d in raw_history[:self.max_history]]
+                self.pending_queue = [Task.from_dict(d) for d in raw_pending]
+
+                interrupted_task = None
+                if raw_active_task:
+                    t = Task.from_dict(raw_active_task)
+                    if t.status in (TaskStatus.RUNNING, TaskStatus.PAUSED, TaskStatus.QUEUED):
+                        t.status = TaskStatus.QUEUED
+                        interrupted_task = t
+
+                # Also reset any task in pending queue that was marked RUNNING
+                for idx, task in enumerate(self.pending_queue):
+                    if task.status == TaskStatus.RUNNING:
+                        task.status = TaskStatus.QUEUED
+                        if not interrupted_task and idx == 0:
+                            interrupted_task = task
+
+                if interrupted_task:
+                    # Place interrupted task as #1 in the queue (index 0)
+                    existing_ids = [t.id for t in self.pending_queue]
+                    if interrupted_task.id not in existing_ids:
+                        self.pending_queue.insert(0, interrupted_task)
+                    # The Startup Safety Rule: Pause global queue when recovering interrupted tasks
+                    self.worker_state = WorkerState.PAUSED
+                    print(f"[TaskQueue] Recovered interrupted task '{interrupted_task.title}' to queue position #1. Worker set to PAUSED.")
+                elif saved_worker_state == "paused":
+                    self.worker_state = WorkerState.PAUSED
+                else:
+                    self.worker_state = WorkerState.RUNNING
+
+                self._check_model_mismatch()
+                self.save_to_disk()
+                if target_path == legacy_path:
+                    try:
+                        os.remove(legacy_path)
+                    except Exception:
+                        pass
+                print(f"[TaskQueue] Successfully loaded persistent queue: {len(self.pending_queue)} pending, {len(self.history)} history.")
+            except Exception as e:
+                print(f"[TaskQueue] Failed to load queue from {self.persistence_path}: {e}")
 
     def enqueue(
         self,
         task_type: TaskType,
         payload: Dict[str, Any],
         title: str = "",
-        priority: str = "bottom"
+        priority: str = "bottom",
+        model_id: Optional[str] = None
     ) -> Task:
-        task = Task(task_type=task_type, payload=payload, title=title)
+        assigned_model = model_id or self._get_active_model_id()
+        task = Task(task_type=task_type, payload=payload, title=title, model_id=assigned_model)
         with self.lock:
             if priority == "top":
                 self.pending_queue.insert(0, task)
             else:
                 self.pending_queue.append(task)
+            self._check_model_mismatch()
+            self.save_to_disk()
             self._wake_event.set()
         return task
 
@@ -246,6 +455,7 @@ class TaskQueueManager:
                 self.active_task.resume()  # unpause so it exits loop quickly
                 if self.indexer:
                     self.indexer.cancel_indexing()
+                self.save_to_disk()
                 return True
 
             # Check pending queue
@@ -255,6 +465,8 @@ class TaskQueueManager:
                     task.completed_at = time.time()
                     self.pending_queue.pop(i)
                     self._add_to_history(task)
+                    self._check_model_mismatch()
+                    self.save_to_disk()
                     return True
         return False
 
@@ -262,6 +474,7 @@ class TaskQueueManager:
         with self.lock:
             if self.active_task and self.active_task.id == task_id:
                 self.active_task.pause()
+                self.save_to_disk()
                 return True
         return False
 
@@ -269,12 +482,35 @@ class TaskQueueManager:
         with self.lock:
             if self.active_task and self.active_task.id == task_id:
                 self.active_task.resume()
+                self.save_to_disk()
                 return True
         return False
 
-    def control_worker(self, action: str) -> Dict[str, Any]:
+    def control_worker(self, action: str, adopt_model: bool = False) -> Dict[str, Any]:
         with self.lock:
-            if action == "start":
+            active_m = self._get_active_model_id()
+            is_ready = self._is_model_loaded()
+
+            if action in ("start", "resume", "adopt_active_model"):
+                has_model_dependent_tasks = any(
+                    t.type in (TaskType.INDEX_FOLDERS, TaskType.REINDEX_FOLDER, TaskType.BATCH_REINDEX, TaskType.PRUNE_DELETED)
+                    for t in self.pending_queue
+                ) or (self.active_task and self.active_task.type in (TaskType.INDEX_FOLDERS, TaskType.REINDEX_FOLDER, TaskType.BATCH_REINDEX, TaskType.PRUNE_DELETED))
+
+                if has_model_dependent_tasks and not is_ready:
+                    self.worker_state = WorkerState.PAUSED
+                    self._check_model_mismatch()
+                    self.save_to_disk()
+                    return {
+                        "success": False,
+                        "worker_state": self.worker_state.value,
+                        "active_task_id": self.active_task.id if self.active_task else None,
+                        "error": "No AI model loaded in memory. Please select and download/activate a model in Settings first.",
+                        "model_mismatch": self.model_mismatch_warning
+                    }
+
+                if (adopt_model or action == "adopt_active_model") and active_m:
+                    self.retarget_tasks_to_model(active_m)
                 self.worker_state = WorkerState.RUNNING
                 if self.active_task:
                     self.active_task.resume()
@@ -288,10 +524,26 @@ class TaskQueueManager:
                     self.worker_state = WorkerState.STOPPING_AFTER_CURRENT
                 else:
                     self.worker_state = WorkerState.PAUSED
+
+            self._check_model_mismatch()
+            self.save_to_disk()
             return {
+                "success": True,
                 "worker_state": self.worker_state.value,
-                "active_task_id": self.active_task.id if self.active_task else None
+                "active_task_id": self.active_task.id if self.active_task else None,
+                "model_mismatch": self.model_mismatch_warning
             }
+
+    def retarget_tasks_to_model(self, new_model_id: str):
+        """Retarget all pending tasks to the newly selected/active model."""
+        with self.lock:
+            self.current_model_id = new_model_id
+            for task in self.pending_queue:
+                task.model_id = new_model_id
+            if self.active_task:
+                self.active_task.model_id = new_model_id
+            self._check_model_mismatch()
+            self.save_to_disk()
 
     def move_task(self, task_id: str, direction: str) -> bool:
         with self.lock:
@@ -317,6 +569,7 @@ class TaskQueueManager:
             else:
                 self.pending_queue.insert(idx, task)
                 return False
+            self.save_to_disk()
             return True
 
     def reorder_tasks(self, task_ids: List[str]) -> bool:
@@ -330,6 +583,7 @@ class TaskQueueManager:
             for remaining_task in id_to_task.values():
                 new_queue.append(remaining_task)
             self.pending_queue = new_queue
+            self.save_to_disk()
             return True
 
     def retry_task(self, task_id: str) -> Optional[Task]:
@@ -345,9 +599,12 @@ class TaskQueueManager:
             new_task = Task(
                 task_type=target.type,
                 payload=dict(target.payload),
-                title=target.title
+                title=target.title,
+                model_id=self._get_active_model_id()
             )
             self.pending_queue.append(new_task)
+            self._check_model_mismatch()
+            self.save_to_disk()
             self._wake_event.set()
             return new_task
 
@@ -355,6 +612,7 @@ class TaskQueueManager:
         with self.lock:
             count = len(self.history)
             self.history.clear()
+            self.save_to_disk()
             return count
 
     def _add_to_history(self, task: Task):
@@ -364,13 +622,17 @@ class TaskQueueManager:
 
     def get_snapshot(self) -> Dict[str, Any]:
         with self.lock:
+            self._check_model_mismatch()
+            active_m = self._get_active_model_id()
             return {
                 "worker_state": self.worker_state.value,
                 "active_task": self.active_task.to_dict() if self.active_task else None,
                 "pending_tasks": [t.to_dict() for t in self.pending_queue],
                 "history": [t.to_dict() for t in self.history],
                 "pending_count": len(self.pending_queue),
-                "history_count": len(self.history)
+                "history_count": len(self.history),
+                "model_mismatch": self.model_mismatch_warning,
+                "active_model": active_m
             }
 
     def _worker_loop(self):
@@ -379,11 +641,25 @@ class TaskQueueManager:
             with self.lock:
                 if self.worker_state != WorkerState.PAUSED and self.active_task is None:
                     if self.pending_queue:
-                        task_to_run = self.pending_queue.pop(0)
-                        self.active_task = task_to_run
-                        task_to_run.status = TaskStatus.RUNNING
-                        task_to_run.started_at = time.time()
-                        task_to_run.resume()
+                        next_task = self.pending_queue[0]
+                        requires_model = next_task.type in (
+                            TaskType.INDEX_FOLDERS,
+                            TaskType.REINDEX_FOLDER,
+                            TaskType.BATCH_REINDEX,
+                            TaskType.PRUNE_DELETED,
+                        )
+                        if requires_model and not self._is_model_loaded():
+                            print(f"[TaskQueue] Cannot run task {next_task.id}: No AI model loaded in memory. Pausing worker.")
+                            self.worker_state = WorkerState.PAUSED
+                            self._check_model_mismatch()
+                            self.save_to_disk()
+                        else:
+                            task_to_run = self.pending_queue.pop(0)
+                            self.active_task = task_to_run
+                            task_to_run.status = TaskStatus.RUNNING
+                            task_to_run.started_at = time.time()
+                            task_to_run.resume()
+                            self.save_to_disk()
 
             if task_to_run:
                 self._execute_task(task_to_run)
@@ -401,6 +677,9 @@ class TaskQueueManager:
 
                     if self.worker_state == WorkerState.STOPPING_AFTER_CURRENT:
                         self.worker_state = WorkerState.PAUSED
+
+                    self._check_model_mismatch()
+                    self.save_to_disk()
             else:
                 self._wake_event.wait(timeout=0.5)
                 self._wake_event.clear()

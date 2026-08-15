@@ -207,7 +207,9 @@ const SubfolderTreeNode = ({
             ? isSelected || isAllDescendantsSelected
               ? 'bg-cyan-50/90 dark:bg-cyan-950/30 border-cyan-300 dark:border-cyan-500/40 shadow-xs'
               : 'bg-white/80 dark:bg-neutral-800/40 border-gray-100 dark:border-neutral-800/80 hover:bg-gray-100/70 dark:hover:bg-neutral-800/80 hover:border-cyan-200 dark:hover:border-cyan-500/30'
-            : 'border border-white/60 bg-neutral-900 text-white hover:bg-neutral-800'
+            : isSelected || isAllDescendantsSelected
+            ? 'border-2 border-current font-bold'
+            : 'border border-current'
         } ${!node.exists ? 'border-rose-200 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/5' : ''}`}
         title={rowTooltip}
       >
@@ -320,7 +322,7 @@ const SubfolderTreeNode = ({
                   className={
                     isModern
                       ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-500/30'
-                      : 'inline-flex items-center gap-1 px-1.5 py-0.5 border border-white text-white text-[10px] font-mono'
+                      : 'inline-flex items-center gap-1 px-1.5 py-0.5 border border-current text-[10px] font-mono'
                   }
                   title={
                     node.disk_image_count && node.disk_image_count > node.total_image_count
@@ -342,7 +344,7 @@ const SubfolderTreeNode = ({
                   className={
                     isModern
                       ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-50 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-200/80 dark:border-cyan-500/30'
-                      : 'inline-flex items-center gap-1 px-1.5 py-0.5 border border-white text-white text-[10px] font-mono'
+                      : 'inline-flex items-center gap-1 px-1.5 py-0.5 border border-current text-[10px] font-mono'
                   }
                   title={
                     node.disk_video_count && node.disk_video_count > node.total_video_count
@@ -527,7 +529,9 @@ export const IndexedFolderTree = ({
                   ? isRootSelected || isAllSubsSelected
                     ? 'bg-indigo-50/80 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-500/30 ring-1 ring-indigo-500/10 shadow-xs'
                     : 'bg-gray-50/80 dark:bg-neutral-800/20 border-gray-100 dark:border-neutral-800/60 hover:bg-gray-100/70 dark:hover:bg-neutral-800/50 hover:border-gray-200 dark:hover:border-neutral-700'
-                  : 'border border-white bg-black text-white hover:bg-neutral-900'
+                  : isRootSelected || isAllSubsSelected
+                  ? 'border-2 border-current font-bold'
+                  : 'border border-current'
               } ${!folder.exists ? 'border-rose-200 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/5' : ''}`}
               title={rootTooltip}
             >
@@ -595,7 +599,7 @@ export const IndexedFolderTree = ({
                         ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-500 border-rose-200/60 dark:border-rose-500/30'
                         : isModern
                         ? 'bg-white dark:bg-neutral-800 border-gray-200/80 dark:border-neutral-700 shadow-2xs text-indigo-600 dark:text-indigo-400'
-                        : 'border border-white bg-black text-white'
+                        : 'icon-tile border border-current'
                     }`}
                   >
                     {isExpanded ? (
@@ -646,7 +650,7 @@ export const IndexedFolderTree = ({
                             className={
                               isModern
                                 ? 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-500/30'
-                                : 'inline-flex items-center gap-1 px-2 py-0.5 border border-white text-white text-[10px] font-mono'
+                                : 'inline-flex items-center gap-1 px-2 py-0.5 border border-current text-[10px] font-mono'
                             }
                             title={
                               folder.total_disk_image_count && folder.total_disk_image_count > folder.image_count
@@ -668,7 +672,7 @@ export const IndexedFolderTree = ({
                             className={
                               isModern
                                 ? 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-50 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-200/80 dark:border-cyan-500/30'
-                                : 'inline-flex items-center gap-1 px-2 py-0.5 border border-white text-white text-[10px] font-mono'
+                                : 'inline-flex items-center gap-1 px-2 py-0.5 border border-current text-[10px] font-mono'
                             }
                             title={
                               folder.total_disk_video_count && folder.total_disk_video_count > folder.video_count

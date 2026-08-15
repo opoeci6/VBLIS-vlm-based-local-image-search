@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { X, Layers, Play, Pause, Clock, History, Loader2, RefreshCw } from 'lucide-react';
+import { X, Layers, Play, Pause, Clock, History, Loader2, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react';
 import { ActiveTaskCard } from './ActiveTaskCard';
 import { QueuedTaskList } from './QueuedTaskList';
 import { TaskHistoryList } from './TaskHistoryList';
 import { StopQueueModal } from './StopQueueModal';
 
-export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
+export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpenSettings }) => {
   const [activeTab, setActiveTab] = useState('all');
   const isModern = uiTheme === 'modern';
 
@@ -20,6 +20,8 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
     historyCount,
     showStopModal,
     setShowStopModal,
+    modelMismatch,
+    activeModel,
     cancelTask,
     pauseTask,
     resumeTask,
@@ -33,9 +35,24 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
   const isPaused = workerState === 'paused';
   const isStoppingAfterCurrent = workerState === 'stopping_after_current';
 
+  const effectiveMismatch = (modelMismatch?.isMismatch || modelMismatch?.is_mismatch)
+    ? modelMismatch
+    : !activeModel && (pendingTasks.length > 0 || activeTask)
+    ? {
+        isMismatch: true,
+        queued_model: pendingTasks[0]?.model_id || activeTask?.model_id || 'unknown',
+        active_model: null,
+        reason: 'no_model_loaded'
+      }
+    : null;
+
   const handleMasterToggle = () => {
     if (isPaused) {
-      controlWorker('start');
+      if (effectiveMismatch?.reason === 'model_difference') {
+        controlWorker('start', true);
+      } else {
+        controlWorker('start');
+      }
     } else {
       if (activeTask && activeTask.status === 'running') {
         setShowStopModal(true);
@@ -56,7 +73,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
           className={`w-[780px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden rounded-3xl border animate-in zoom-in-95 duration-200 ${
             isModern
               ? 'bg-white dark:bg-neutral-900 border-gray-200 dark:border-neutral-800 text-neutral-900 dark:text-white'
-              : 'bg-black border-2 border-white text-white'
+              : 'border-2 border-current bg-[var(--terminal-background)] text-[var(--terminal-foreground)]'
           }`}
           onClick={(e) => e.stopPropagation()}
         >
@@ -130,7 +147,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
                   activeTab === 'all'
                     ? isModern
                       ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-white text-black'
+                      : 'border-current font-bold'
                     : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-200/60 dark:border-neutral-700/60'
                 }`}
               >
@@ -144,7 +161,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
                   activeTab === 'queued'
                     ? isModern
                       ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-white text-black'
+                      : 'border-current font-bold'
                     : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-200/60 dark:border-neutral-700/60'
                 }`}
               >
@@ -158,7 +175,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
                   activeTab === 'history'
                     ? isModern
                       ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-white text-black'
+                      : 'border-current font-bold'
                     : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-200/60 dark:border-neutral-700/60'
                 }`}
               >
@@ -176,6 +193,67 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern' }) => {
 
           {/* Modal Body */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+            {/* Model Mismatch / Missing Model Alert Banner */}
+            {effectiveMismatch && (
+              <div
+                className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-200 ${
+                  isModern
+                    ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-500/30 text-amber-900 dark:text-amber-200'
+                    : 'border-2 border-current'
+                }`}
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span>
+                        {effectiveMismatch.reason === 'no_model_loaded'
+                          ? 'No AI Model Loaded in Memory'
+                          : 'Model Mismatch Detected'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] opacity-90 leading-relaxed">
+                      {effectiveMismatch.reason === 'no_model_loaded'
+                        ? `Tasks were queued for '${effectiveMismatch.queued_model?.split('/').pop() || 'AI Model'}', but no model is currently active. Activate a model before starting the queue.`
+                        : `Tasks were queued for '${effectiveMismatch.queued_model?.split('/').pop()}', but '${effectiveMismatch.active_model?.split('/').pop()}' is currently active.`}
+                    </p>
+                  </div>
+                </div>
+
+                {effectiveMismatch.reason === 'model_difference' && (
+                  <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+                    <button
+                      type="button"
+                      onClick={() => controlWorker('adopt_active_model')}
+                      className="w-full sm:w-auto px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      title={`Retarget queued tasks to ${effectiveMismatch.active_model} and start processing`}
+                    >
+                      <span>Proceed with {effectiveMismatch.active_model?.split('/').pop()}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {effectiveMismatch.reason === 'no_model_loaded' && (
+                  <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        if (typeof onOpenSettings === 'function') onOpenSettings();
+                      }}
+                      className="w-full sm:w-auto px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Open Settings</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'all' && (
               <>
                 {/* Active Task Card Section */}
