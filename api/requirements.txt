@@ -16,7 +16,7 @@ opencv-python-headless>=4.10
 av>=14.0.0
 
 # Deep learning & embeddings
-torch>=2.6.0+cu124
+torch>=2.6.0
 transformers
 safetensors
 sentencepiece

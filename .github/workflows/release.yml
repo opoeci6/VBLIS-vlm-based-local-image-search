@@ -70,10 +70,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
-      # Step 5: Install Python dependencies with CUDA 12.4 PyTorch (torchvision omitted) & PyInstaller
+      # Step 5: Install Python dependencies with CUDA 12.4 PyTorch & PyInstaller
       - name: Install Python Dependencies (CUDA 12.4 PyTorch) & PyInstaller
         working-directory: api
         run: |
+          $ErrorActionPreference = "Stop"
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cu124
           pip install -r requirements.txt
@@ -83,7 +84,8 @@ jobs:
       - name: Build Python Backend with PyInstaller
         working-directory: api
         run: |
-          pyinstaller api.spec
+          $ErrorActionPreference = "Stop"
+          python -m PyInstaller api.spec -y
 
       # Step 7: Install Node dependencies
       - name: Install Node Dependencies
