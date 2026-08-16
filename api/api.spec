@@ -1,20 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 block_cipher = None
 
-# Collect all data files for chromadb and its dependencies
-datas = collect_data_files('chromadb')
-datas += collect_data_files('transformers')
-datas += collect_data_files('tokenizers')
-datas += collect_data_files('av')
-
-# Include all submodules for chromadb to avoid missing hidden imports
-hidden_imports = collect_submodules('chromadb')
-hidden_imports += collect_submodules('av')
-hidden_imports += [
+datas = []
+binaries = []
+hidden_imports = [
     'uvicorn.logging', 
     'uvicorn.loops', 
     'uvicorn.loops.auto', 
@@ -25,9 +18,6 @@ hidden_imports += [
     'uvicorn.protocols.websockets.auto', 
     'uvicorn.lifespan', 
     'uvicorn.lifespan.on', 
-    'fastapi',
-    'pydantic.deprecated.decorator',
-    'huggingface_hub',
     'opentelemetry.instrumentation',
     'cffi',
     '_cffi_backend',
@@ -39,6 +29,27 @@ hidden_imports += [
     'av.packet'
 ]
 
+# Explicitly collect all data, binaries, and submodules for critical packages
+for pkg in [
+    'fastapi',
+    'starlette',
+    'uvicorn',
+    'pydantic',
+    'pydantic_core',
+    'chromadb',
+    'transformers',
+    'tokenizers',
+    'huggingface_hub',
+    'av',
+    'PIL',
+    'pillow_heif'
+]:
+    pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hidden_imports += pkg_hidden
+
+
 a = Analysis(
     ['main.py'],
     pathex=[],
@@ -48,7 +59,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['torchvision', 'scipy', 'matplotlib', 'pytest', 'unittest', 'tkinter', 'IPython'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

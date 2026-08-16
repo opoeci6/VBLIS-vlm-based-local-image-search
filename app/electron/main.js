@@ -34,12 +34,28 @@ function startPythonBackend() {
     : path.join(__dirname, '../../api/main.py');
 
   const args = isProd ? [] : [scriptPath];
+  const cwd = path.dirname(pythonPath);
   
-  console.log('Starting Python backend...', pythonPath, args);
-  pythonProcess = spawn(pythonPath, args, { stdio: 'inherit' });
+  console.log('Starting Python backend...', pythonPath, args, 'cwd:', cwd);
+  pythonProcess = spawn(pythonPath, args, { 
+    cwd: cwd,
+    stdio: ['ignore', 'pipe', 'pipe'] 
+  });
   
+  pythonProcess.stdout?.on('data', (data) => {
+    console.log(`[Python backend]: ${data}`);
+  });
+
+  pythonProcess.stderr?.on('data', (data) => {
+    console.error(`[Python backend error]: ${data}`);
+  });
+
   pythonProcess.on('error', (err) => {
     console.error('Failed to start python process:', err);
+  });
+
+  pythonProcess.on('exit', (code, signal) => {
+    console.log(`Python process exited with code ${code}, signal ${signal}`);
   });
 }
 

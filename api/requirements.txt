@@ -17,7 +17,6 @@ av>=14.0.0
 
 # Deep learning & embeddings
 torch>=2.6.0+cu124
-torchvision
 transformers
 safetensors
 sentencepiece

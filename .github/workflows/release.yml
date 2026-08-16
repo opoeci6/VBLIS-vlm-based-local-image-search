@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Release Version Tag (e.g. v0.1.0)'
+        description: 'Release Version Tag (e.g. v0.2.0)'
         required: true
-        default: 'v0.1.0'
+        default: 'v0.2.0'
       publish_release:
         description: 'Publish to GitHub Releases? (Uncheck to only build artifacts)'
         required: true
@@ -36,8 +36,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Step 2: Determine version tag from manual input or git tag
-      - name: Determine Version Tag
+      # Step 2: Determine version tag from manual input or git tag, and sync to package.json
+      - name: Determine Version Tag & Sync package.json
         id: get_version
         shell: pwsh
         run: |
@@ -48,6 +48,11 @@ jobs:
           }
           Write-Host "Building version: $ver"
           echo "VERSION=$ver" >> $env:GITHUB_ENV
+          
+          # Clean version string (e.g. v0.2.0 -> 0.2.0)
+          $cleanVer = $ver -replace '^v', ''
+          Write-Host "Syncing app/package.json version to $cleanVer"
+          npm --prefix app version $cleanVer --no-git-tag-version --allow-same-version
 
       # Step 3: Set up Python 3.10 environment
       - name: Set up Python 3.10
@@ -65,12 +70,12 @@ jobs:
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
-      # Step 5: Install Python dependencies with CUDA 12.4 PyTorch and PyInstaller
+      # Step 5: Install Python dependencies with CUDA 12.4 PyTorch (torchvision omitted) & PyInstaller
       - name: Install Python Dependencies (CUDA 12.4 PyTorch) & PyInstaller
         working-directory: api
         run: |
           python -m pip install --upgrade pip
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+          pip install torch --index-url https://download.pytorch.org/whl/cu124
           pip install -r requirements.txt
           pip install pyinstaller
 
@@ -95,14 +100,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 9: Upload build artifacts to GitHub Actions workflow run (retained for 30 days)
-      - name: Upload Build Artifacts
+      # Step 9: Upload build artifacts to GitHub Actions workflow run (split for easy individual download)
+      - name: Upload Installer (.exe)
         uses: actions/upload-artifact@v4
         with:
-          name: VBLIS-Windows-${{ env.VERSION }}
-          path: |
-            app/dist-built/*.exe
-            app/dist-built/*.zip
+          name: VBLIS-Installer-${{ env.VERSION }}
+          path: app/dist-built/*.exe
+          retention-days: 30
+
+      - name: Upload Portable Zip (.zip)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VBLIS-Portable-${{ env.VERSION }}
+          path: app/dist-built/*.zip
           retention-days: 30
 
       # Step 10: Publish to GitHub Releases

@@ -1,7 +1,7 @@
 {
   "name": "app",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "VLM-based local image search",
   "author": "opoeci6",
   "repository": {
@@ -46,6 +46,7 @@
   "build": {
     "appId": "com.vblis.search",
     "productName": "VBLIS",
+    "compression": "maximum",
     "publish": {
       "provider": "github",
       "owner": "opoeci6",
@@ -61,10 +62,7 @@
     "extraResources": [
       {
         "from": "../api/dist/api",
-        "to": "api",
-        "filter": [
-          "**/*"
-        ]
+        "to": "api"
       }
     ],
     "win": {
