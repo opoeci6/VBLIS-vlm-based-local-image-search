@@ -2,6 +2,12 @@
   "name": "app",
   "private": true,
   "version": "0.0.1",
+  "description": "VLM-based local image search",
+  "author": "opoeci6",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opoeci6/VBLIS-vlm-based-local-image-search.git"
+  },
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -40,6 +46,11 @@
   "build": {
     "appId": "com.vblis.search",
     "productName": "VBLIS",
+    "publish": {
+      "provider": "github",
+      "owner": "opoeci6",
+      "repo": "VBLIS-vlm-based-local-image-search"
+    },
     "directories": {
       "output": "dist-built"
     },
