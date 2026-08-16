@@ -1,14 +1,28 @@
+# PyTorch CUDA 12.4 index
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+# Core framework & API
 fastapi
 uvicorn
 pydantic
 python-dotenv
+python-multipart
+requests
+
+# Image and video processing
 Pillow
 pillow-heif
-chromadb
-torch>=2.6
-transformers
-tqdm
-huggingface_hub
-python-multipart
 opencv-python-headless>=4.10
 av>=14.0.0
+
+# Deep learning & embeddings
+torch>=2.6.0+cu124
+torchvision
+transformers
+safetensors
+sentencepiece
+protobuf
+chromadb
+huggingface_hub
+tqdm
+

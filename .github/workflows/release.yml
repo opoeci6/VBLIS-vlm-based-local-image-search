@@ -1,0 +1,124 @@
+name: Release VBLIS
+
+on:
+  # Manual trigger via GitHub Web UI
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Release Version Tag (e.g. v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+      publish_release:
+        description: 'Publish to GitHub Releases? (Uncheck to only build artifacts)'
+        required: true
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark as Pre-release'
+        required: false
+        type: boolean
+        default: false
+
+  # Automatic trigger on Git tag push
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      # Step 1: Check out the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Determine version tag from manual input or git tag
+      - name: Determine Version Tag
+        id: get_version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $ver = "${{ github.event.inputs.version_tag }}"
+          } else {
+            $ver = "${{ github.ref_name }}"
+          }
+          Write-Host "Building version: $ver"
+          echo "VERSION=$ver" >> $env:GITHUB_ENV
+
+      # Step 3: Set up Python 3.10 environment
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: api/requirements.txt
+
+      # Step 4: Set up Node.js 20 environment
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      # Step 5: Install Python dependencies with CUDA 12.4 PyTorch and PyInstaller
+      - name: Install Python Dependencies (CUDA 12.4 PyTorch) & PyInstaller
+        working-directory: api
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # Step 6: Build Python backend executable with PyInstaller
+      - name: Build Python Backend with PyInstaller
+        working-directory: api
+        run: |
+          pyinstaller api.spec
+
+      # Step 7: Install Node dependencies
+      - name: Install Node Dependencies
+        working-directory: app
+        run: |
+          npm ci
+
+      # Step 8: Build React frontend and package Electron application
+      - name: Build React Frontend & Package Electron App
+        working-directory: app
+        run: |
+          npm run build
+          npx electron-builder build --windows --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 9: Upload build artifacts to GitHub Actions workflow run (retained for 30 days)
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VBLIS-Windows-${{ env.VERSION }}
+          path: |
+            app/dist-built/*.exe
+            app/dist-built/*.zip
+          retention-days: 30
+
+      # Step 10: Publish to GitHub Releases
+      - name: Create GitHub Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        if: |
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == true)
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          generate_release_notes: true
+          files: |
+            app/dist-built/*.exe
+            app/dist-built/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
