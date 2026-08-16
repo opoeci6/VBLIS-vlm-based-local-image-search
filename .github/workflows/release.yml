@@ -122,12 +122,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: |
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == true)
+          (github.event_name == 'workflow_dispatch' && (inputs.publish_release == true || inputs.publish_release == 'true'))
         with:
           tag_name: ${{ env.VERSION }}
           name: Release ${{ env.VERSION }}
           draft: false
-          prerelease: ${{ github.event.inputs.prerelease || false }}
+          prerelease: ${{ inputs.prerelease == true || inputs.prerelease == 'true' }}
           generate_release_notes: true
           files: |
             app/dist-built/*.exe
