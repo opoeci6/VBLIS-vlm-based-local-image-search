@@ -108,11 +108,13 @@ jobs:
           path: app/dist-built/*.exe
           retention-days: 30
 
-      - name: Upload Portable Zip (.zip)
+      - name: Upload Portable Archive (.7z / .zip)
         uses: actions/upload-artifact@v4
         with:
           name: VBLIS-Portable-${{ env.VERSION }}
-          path: app/dist-built/*.zip
+          path: |
+            app/dist-built/*.7z
+            app/dist-built/*.zip
           retention-days: 30
 
       # Step 10: Publish to GitHub Releases
@@ -129,6 +131,7 @@ jobs:
           generate_release_notes: true
           files: |
             app/dist-built/*.exe
+            app/dist-built/*.7z
             app/dist-built/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -46,7 +46,6 @@
   "build": {
     "appId": "com.vblis.search",
     "productName": "VBLIS",
-    "compression": "maximum",
     "publish": {
       "provider": "github",
       "owner": "opoeci6",
@@ -71,7 +70,7 @@
           "target": "nsis"
         },
         {
-          "target": "zip"
+          "target": "7z"
         }
       ]
     },
