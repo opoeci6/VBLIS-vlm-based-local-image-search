@@ -1,14 +1,20 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronDown, ChevronUp, Sparkles, LogOut, XCircle, Copy, Video, Terminal, Play, Pause } from 'lucide-react';
 import TitleBar from './TitleBar';
 import { API_BASE } from './config';
 import { cn } from './utils/cn';
 import { formatBytes, formatDuration, formatVideoTimestamp } from './utils/formatters';
 import { getMediaPreviewUrl } from './utils/media';
-import { annotateDuplicates, groupVideoResults, getImageResults } from './utils/searchResults';
-import { getAllSelectablePaths, toggleFolderSelection as toggleFolderSelectionPure } from './utils/folderSelection';
-import { getPathForFile, isDirectory } from './utils/electron';
 import { useTaskQueue } from './hooks/useTaskQueue';
+import { useThemePreferences } from './hooks/useThemePreferences';
+import { useToast } from './hooks/useToast';
+import { useBackendStatus } from './hooks/useBackendStatus';
+import { useModelManager } from './hooks/useModelManager';
+import { useMediaSearch } from './hooks/useMediaSearch';
+import { useFileDrop } from './hooks/useFileDrop';
+import { useIndexedFolders } from './hooks/useIndexedFolders';
+import { useFolderContents } from './hooks/useFolderContents';
+import { useCacheStats } from './hooks/useCacheStats';
 import { QueueStatusBadge } from './components/queue/QueueStatusBadge';
 import { QueueDrawer } from './components/queue/QueueDrawer';
 import { ModelSwitchWarningModal } from './components/modals/ModelSwitchWarningModal';
@@ -23,138 +29,140 @@ import { DragOverlay } from './components/common/DragOverlay';
 import { Toast } from './components/common/Toast';
 
 function App() {
-  const [theme, setTheme] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('theme');
-      if (saved) return saved;
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return 'dark';
-  });
-
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  const [uiTheme, setUiTheme] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('ui_theme_style');
-      if (saved) return saved;
-    }
-    return 'modern';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('ui_theme_style', uiTheme);
-    if (uiTheme === 'terminal') {
-      document.documentElement.setAttribute('data-theme-style', 'terminal');
-    } else {
-      document.documentElement.setAttribute('data-theme-style', 'modern');
-    }
-  }, [uiTheme]);
-
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedVideoGroup, setSelectedVideoGroup] = useState(null);
-  const [showSearchResults, setShowSearchResults] = useState(false);
   const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
 
-  const [minScore, setMinScore] = useState(0.20);
-  const [maxResults, setMaxResults] = useState(50);
-  const [visibleResultsCount, setVisibleResultsCount] = useState(80);
 
-  const [status, setStatus] = useState({
-    is_indexing: false,
-    percent: 0,
-    progress: '0/0',
-    total_files: 0,
-    indexed_files: 0,
-    current_file: '',
-    errors: 0,
-    failed_files: [],
-    last_task_id: 0,
-    is_downloading: false,
-    download_total_bytes: 0,
-    download_current_bytes: 0,
-    download_speed: 0,
-    download_eta: 0,
-    download_error: null,
-    cancel_download: false,
-    is_loading_model: false,
-    discovered_video_count: 0,
-    indexed_video_frames: 0,
-    is_rebuilding_video_thumbnails: false,
-    rebuilt_video_frames: 0,
-    total_video_frames_to_rebuild: 0
-  });
-  const [modelLoadError, setModelLoadError] = useState(null);
-
-
-  const [models, setModels] = useState({ active_model: '', models: [] });
   const [showSettings, setShowSettings] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
-  const [pendingModel, setPendingModel] = useState("google/siglip2-base-patch16-224");
-  const [backendReady, setBackendReady] = useState(false);
-  const [isSwitchingModel, setIsSwitchingModel] = useState(false);
-  const [isUnloadingModel, setIsUnloadingModel] = useState(false);
-  const [isDeletingModel, setIsDeletingModel] = useState(false);
-  const [deleteIndexWithModel, setDeleteIndexWithModel] = useState(false);
-  const [showConfirmDeleteModel, setShowConfirmDeleteModel] = useState(null);
-  const [isClearingThumbnails, setIsClearingThumbnails] = useState(false);
-  const [showConfirmClearThumbnails, setShowConfirmClearThumbnails] = useState(null); // null | 'all' | 'images' | 'videos'
-  const [cacheStats, setCacheStats] = useState({
-    images: { count: 0, bytes: 0, formatted: '0 B' },
-    videos: { count: 0, bytes: 0, formatted: '0 B' },
-    total: { count: 0, bytes: 0, formatted: '0 B' }
-  });
-  const [isTriggeringRebuildThumbnails, setIsTriggeringRebuildThumbnails] = useState(false);
-  const [toast, setToast] = useState(null);
+  const { theme, setTheme, uiTheme, setUiTheme } = useThemePreferences();
+  const { toast, setToast } = useToast();
   const queue = useTaskQueue(API_BASE, setToast);
-  const [modelSwitchWarning, setModelSwitchWarning] = useState({
-    isOpen: false,
-    mode: 'active_task',
-    targetModel: null
+  const {
+    query,
+    setQuery,
+    results,
+    isSearching,
+    hasSearched,
+    showSearchResults,
+    minScore,
+    setMinScore,
+    maxResults,
+    setMaxResults,
+    visibleResultsCount,
+    setVisibleResultsCount,
+    imageSearchContext,
+    imageResults,
+    visibleImageResults,
+    videoGroups,
+    sentinelRef,
+    sentinelTerminalRef,
+    handleSearch,
+    handleImageDrop,
+    handleCloseSearchResults,
+    handleClearImageSearch,
+    clearResults,
+    resetSearch
+  } = useMediaSearch({
+    setToast,
+    onSearchStart: () => setIsFoldersExpanded(false),
+    onClose: () => {
+      setSelectedImage(null);
+      setSelectedVideoGroup(null);
+    }
   });
-  const [imageSearchContext, setImageSearchContext] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [indexedFolders, setIndexedFolders] = useState([]);
-  const [isFetchingFolders, setIsFetchingFolders] = useState(false);
-  const [selectedFolders, setSelectedFolders] = useState([]);
-  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  const [showFolderContents, setShowFolderContents] = useState(false);
-  const [browsingFolder, setBrowsingFolder] = useState(null);
-  const [folderContents, setFolderContents] = useState(null);
-  const [isFetchingFolderContents, setIsFetchingFolderContents] = useState(false);
-  const [isCleaningGhostRecords, setIsCleaningGhostRecords] = useState(false);
-  const [folderVisibleLimit, setFolderVisibleLimit] = useState(60);
-  const [showErrorAlert, setShowErrorAlert] = useState(false);
-  const [gpuSettings, setGpuSettings] = useState({ 
-    use_gpu: false, 
-    cuda_available: false, 
-    device: 'cpu', 
-    batch_size: 0, 
-    effective_batch_size: 16,
-    precision_mode: 'auto', 
-    active_precision: 'fp32', 
-    fp16_supported: false, 
-    gpu_name: '' 
+  const { status, setStatus, showErrorAlert, setShowErrorAlert, isCancellingIndexing, handleCancelIndexing } = useBackendStatus({ setToast });
+  const {
+    modelLoadError,
+    setModelLoadError,
+    models,
+    pendingModel,
+    setPendingModel,
+    backendReady,
+    isSwitchingModel,
+    isUnloadingModel,
+    isDeletingModel,
+    deleteIndexWithModel,
+    setDeleteIndexWithModel,
+    showConfirmDeleteModel,
+    setShowConfirmDeleteModel,
+    modelSwitchWarning,
+    setModelSwitchWarning,
+    gpuSettings,
+    isSwitchingGpu,
+    handleUpdatePerformanceSettings,
+    handleToggleGpu,
+    handleModelSwitch,
+    executeModelSwitch,
+    handleUnloadModel,
+    handleCancelDownload,
+    handleDownloadModel,
+    handleDeleteModel
+  } = useModelManager({
+    status,
+    setStatus,
+    queue,
+    setToast,
+    onSwitchStart: () => {
+      setShowSettings(false);
+      resetSearch();
+    }
   });
-  const [isSwitchingGpu, setIsSwitchingGpu] = useState(false);
-  const [isCancellingIndexing, setIsCancellingIndexing] = useState(false);
+  const { isDragging, handleDragOver, handleDragLeave, handleDrop } = useFileDrop({
+    enabled: Boolean(models.active_model),
+    setToast,
+    onFolders: queue.enqueueFolderIndexing,
+    onImage: handleImageDrop
+  });
+  const {
+    indexedFolders,
+    isFetchingFolders,
+    selectedFolders,
+    isBatchProcessing,
+    fetchIndexedFolders,
+    handleReindexFolder,
+    handleDeleteFolderIndex,
+    handleBatchDelete,
+    handleBatchReindex,
+    allSelectableFolderPaths,
+    toggleFolderSelection,
+    toggleSelectAll
+  } = useIndexedFolders({
+    activeModel: models.active_model,
+    lastTaskId: status.last_task_id,
+    isExpanded: isFoldersExpanded,
+    setToast,
+    onIndexChanged: clearResults
+  });
+  const {
+    showFolderContents,
+    browsingFolder,
+    folderContents,
+    isFetchingFolderContents,
+    isCleaningGhostRecords,
+    setIsCleaningGhostRecords,
+    folderVisibleLimit,
+    setFolderVisibleLimit,
+    handleBrowseFolderContents,
+    handleCloseFolderContents
+  } = useFolderContents({
+    activeModel: models.active_model,
+    lastTaskId: status.last_task_id,
+    setToast,
+    refreshFolders: fetchIndexedFolders
+  });
+  const {
+    cacheStats,
+    isClearingThumbnails,
+    showConfirmClearThumbnails,
+    setShowConfirmClearThumbnails,
+    isTriggeringRebuildThumbnails,
+    handleClearThumbnailCache,
+    handleRebuildVideoThumbnails
+  } = useCacheStats({ isSettingsOpen: showSettings, status, setToast });
   const searchInputRef = useRef(null);
-  const lastToastedError = useRef(null);
-  const prevIsDownloading = useRef(false);
-  const prevIsIndexing = useRef(false);
-  const prevLastTaskId = useRef(0);
   const foldersRef = useRef(null);
 
   useEffect(() => {
@@ -176,541 +184,11 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isFoldersExpanded, showFolderContents, selectedImage, selectedVideoGroup, showSettings, queue.isDrawerOpen]);
 
-  const imageResults = useMemo(
-    () => getImageResults(results),
-    [results]
-  );
-
-  const visibleImageResults = useMemo(
-    () => imageResults.slice(0, visibleResultsCount),
-    [imageResults, visibleResultsCount]
-  );
-
-  const sentinelRef = useRef(null);
-  const sentinelTerminalRef = useRef(null);
-
-  // Background Prefetcher: Quietly prefetch the next 80 image thumbnails in browser idle time
-  useEffect(() => {
-    if (imageResults.length <= visibleResultsCount) return;
-    const nextBatch = imageResults.slice(visibleResultsCount, visibleResultsCount + 80);
-    const prefetchTimer = setTimeout(() => {
-      nextBatch.forEach(item => {
-        const url = getMediaPreviewUrl(API_BASE, item, 'thumbnail');
-        const img = new window.Image();
-        img.src = url;
-      });
-    }, 150);
-
-    return () => clearTimeout(prefetchTimer);
-  }, [imageResults, visibleResultsCount, API_BASE]);
-
-  // Seamless Infinite Scroll: Auto-expands visibleResultsCount when scrolling near bottom
-  useEffect(() => {
-    if (imageResults.length <= visibleResultsCount) return;
-    const observer = new IntersectionObserver((entries) => {
-      const isVisible = entries.some(e => e.isIntersecting);
-      if (isVisible) {
-        setVisibleResultsCount(prev => Math.min(prev + 80, imageResults.length));
-      }
-    }, {
-      root: null,
-      rootMargin: '500px', // Pre-trigger 500px before reaching bottom
-      threshold: 0.01
-    });
-
-    if (sentinelRef.current) observer.observe(sentinelRef.current);
-    if (sentinelTerminalRef.current) observer.observe(sentinelTerminalRef.current);
-
-    return () => observer.disconnect();
-  }, [imageResults.length, visibleResultsCount]);
-
-  const videoGroups = useMemo(() => groupVideoResults(results), [results]);
-
-  const handleCancelIndexing = async () => {
-    if (isCancellingIndexing) return;
-    setIsCancellingIndexing(true);
-    try {
-      await fetch(`${API_BASE}/index/cancel`, { method: 'POST' });
-      setToast({ message: "Indexing cancellation requested.", type: 'info' });
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Failed to cancel indexing.", type: 'error' });
-    } finally {
-      setIsCancellingIndexing(false);
-    }
-  };
-
-  const handleUpdatePerformanceSettings = async (updates) => {
-    if (isSwitchingGpu) return;
-    setIsSwitchingGpu(true);
-    
-    const payload = {
-      use_gpu: updates.use_gpu !== undefined ? updates.use_gpu : gpuSettings.use_gpu,
-      batch_size: updates.batch_size !== undefined ? Number(updates.batch_size) : (gpuSettings.batch_size ?? 0),
-      precision_mode: updates.precision_mode !== undefined ? updates.precision_mode : (gpuSettings.precision_mode || 'auto')
-    };
-
-    try {
-      const res = await fetch(`${API_BASE}/settings/gpu`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      setGpuSettings(data);
-      setToast({ message: "Performance settings updated.", type: 'success' });
-      
-      const resModels = await fetch(`${API_BASE}/models`);
-      const dataModels = await resModels.json();
-      setModels(dataModels);
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Failed to update settings.", type: 'error' });
-    } finally {
-      setIsSwitchingGpu(false);
-    }
-  };
-
-  const handleToggleGpu = async () => {
-    await handleUpdatePerformanceSettings({ use_gpu: !gpuSettings.use_gpu });
-  };
-
-  // Auto-dismiss toast
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
-
-  // Poll status and backend boot
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/status`);
-        const data = await res.json();
-        if (mounted) setStatus(data);
-      } catch { /* backend not reachable yet; ignore */ }
-    };
-
-    const fetchModels = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/models`);
-        const data = await res.json();
-        if (mounted) {
-          setModels(data);
-          setBackendReady(true);
-        }
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const fetchGpuSettings = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/settings/gpu`);
-        if (!res.ok) throw new Error("Failed to fetch GPU settings");
-        const data = await res.json();
-        if (mounted) setGpuSettings(data);
-      } catch (e) {
-        console.error("GPU Settings Fetch Error:", e);
-      }
-    };
-
-    fetchStatus();
-    fetchGpuSettings();
-    fetchModels();
-
-    const interval = setInterval(() => {
-      fetchStatus();
-      fetchGpuSettings();
-      fetchModels();
-    }, 1500);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Refresh models list when a background download finishes
-  useEffect(() => {
-    let mounted = true;
-    if (!status.is_downloading && backendReady) {
-      const fetchModels = async () => {
-        try {
-          const res = await fetch(`${API_BASE}/models`);
-          const data = await res.json();
-          if (mounted) setModels(data);
-        } catch { /* backend not reachable yet; ignore */ }
-      };
-      fetchModels();
-    }
-    return () => { mounted = false; };
-  }, [status.is_downloading, backendReady]);
-
-  // Refresh cache stats whenever settings modal opens or rebuild completes
-  useEffect(() => {
-    if (showSettings) {
-      fetchCacheStats();
-    }
-  }, [showSettings, status.is_rebuilding_video_thumbnails]);
-
-  // Toast for download completion
-  useEffect(() => {
-    // 1. Success case: download finished with no error
-    if (prevIsDownloading.current === true && status.is_downloading === false && !status.download_error && status.download_total_bytes > 0) {
-      const modelName = pendingModel.split('/').pop();
-      fetch(`${API_BASE}/models`)
-        .then((res) => res.json())
-        .then((data) => {
-          setModels(data);
-          if (data.active_model === pendingModel) {
-            setToast({ message: `Model ${modelName} downloaded and activated successfully!`, type: 'success' });
-          } else {
-            setToast({ message: `Model ${modelName} downloaded successfully.`, type: 'success' });
-          }
-        })
-        .catch(() => {
-          setToast({ message: `Model ${modelName} downloaded successfully.`, type: 'success' });
-        });
-    }
-
-    // 2. Error case: download error detected
-    if (status.download_error && status.download_error !== lastToastedError.current) {
-      setToast({ message: `Download failed: ${status.download_error}`, type: 'error' });
-      setModelLoadError({ model: pendingModel, message: status.download_error });
-      lastToastedError.current = status.download_error;
-    }
-
-    // Reset lastToastedError when a new download starts (if caught by polling)
-    if (status.is_downloading && !prevIsDownloading.current) {
-      lastToastedError.current = null;
-    }
-
-    prevIsDownloading.current = status.is_downloading;
-  }, [status.is_downloading, status.download_total_bytes, status.download_error, pendingModel]);
-
-  // Alert for indexing completion with errors
-  useEffect(() => {
-    // Show alert if a task just finished and there were errors
-    if (status.last_task_id > prevLastTaskId.current) {
-      if (status.errors > 0) {
-        setShowErrorAlert(true);
-      } else if (status.discovered_video_count > 0) {
-        setToast({
-          message: `Indexed ${status.indexed_video_frames || 0} adaptive frame(s) from ${status.discovered_video_count} video file(s).`,
-          type: 'success'
-        });
-      } else if (status.total_files === 0 && !status.is_indexing) {
-        // Only toast about 0 files if it's a "fresh" completion
-        setToast({ message: "No supported images or videos were found in the selected folder.", type: 'error' });
-      }
-    }
-
-    // Also support the traditional "transition from indexing to not indexing" for safety
-    if (prevIsIndexing.current === true && status.is_indexing === false && status.errors > 0) {
-      setShowErrorAlert(true);
-    }
-
-    // If a new indexing starts, hide previous alert
-    if (status.is_indexing === true && prevIsIndexing.current === false) {
-      setShowErrorAlert(false);
-    }
-
-    prevIsIndexing.current = status.is_indexing;
-    prevLastTaskId.current = status.last_task_id;
-  }, [status.is_indexing, status.errors, status.last_task_id, status.total_files, status.discovered_video_count, status.indexed_video_frames]);
-
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!query.trim()) {
-      if (hasSearched && !imageSearchContext) {
-        setResults([]);
-        setHasSearched(false);
-        setQuery('');
-      }
-      return;
-    }
-
-    setIsFoldersExpanded(false);
-    setIsSearching(true);
-    setHasSearched(true);
-    setImageSearchContext(null);
-    setVisibleResultsCount(80);
-    try {
-      const res = await fetch(`${API_BASE}/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, top_k: parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults), min_score: parseFloat(minScore) })
-      });
-      const data = await res.json();
-      setResults(annotateDuplicates(data.results));
-      setShowSearchResults(true);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const handleImageDrop = async (file) => {
-    if (!file.type.startsWith('image/')) {
-      setToast({ message: "Please drop an image file.", type: 'error' });
-      return;
-    }
-
-    setIsFoldersExpanded(false);
-    setIsSearching(true);
-    setHasSearched(true);
-    setImageSearchContext(file.name);
-    setVisibleResultsCount(80);
-    setQuery('');
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      // We can also append top_k and min_score if the API takes them as form fields or query params
-      // Our API takes them as query params in the new endpoint if we defined it that way
-      const url = new URL(`${API_BASE}/search/image`);
-      url.searchParams.append('top_k', parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults));
-      url.searchParams.append('min_score', parseFloat(minScore));
-
-      const res = await fetch(url.toString(), {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await res.json();
-      setResults(annotateDuplicates(data.results));
-      setShowSearchResults(true);
-      setToast({ message: `Found ${data.results?.length || 0} similar media result(s).`, type: 'success' });
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Failed to search by image.", type: 'error' });
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const handleCloseSearchResults = () => {
-    setShowSearchResults(false);
-    setResults([]);
-    setQuery('');
-    setHasSearched(false);
-    setImageSearchContext(null);
-    setSelectedImage(null);
-    setSelectedVideoGroup(null);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Only show the overlay if we are dragging actual files (from the OS)
-    if (models.active_model && e.dataTransfer.types.includes('Files')) {
-      setIsDragging(true);
-    }
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
-  const handleDrop = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    if (!files || files.length === 0) return;
-
-    if (!models.active_model) {
-      setToast({ message: "Please select or download a model first.", type: 'error' });
-      return;
-    }
-
-    // Separate paths into folders and images
-    const folderPaths = [];
-    const imageFiles = [];
-
-    for (const file of files) {
-      // In modern Electron, we use getPathForFile to get the absolute path
-      const filePath = getPathForFile(file);
-      if (!filePath) continue;
-
-      const isDir = await isDirectory(filePath);
-      if (isDir) {
-        folderPaths.push(filePath);
-      } else if (file.type.startsWith('image/')) {
-        imageFiles.push(file);
-      }
-    }
-
-    if (folderPaths.length > 0) {
-      await queue.enqueueFolderIndexing(folderPaths);
-    } else if (imageFiles.length > 0) {
-      handleImageDrop(imageFiles[0]);
-    } else {
-      setToast({ message: "Please drop a folder or an image file.", type: 'error' });
-    }
-  };
-
   const handleOpenFolder = async () => {
     if (!window.electronAPI) return;
     const paths = await window.electronAPI.openDirectory();
     if (paths && paths.length > 0) {
       await queue.enqueueFolderIndexing(paths);
-    }
-  };
-
-  const handleModelSwitch = async (model_name) => {
-    // 1. Guard against active running/paused task
-    if (queue.activeTask && (queue.activeTask.status === 'running' || queue.activeTask.status === 'paused')) {
-      setModelSwitchWarning({
-        isOpen: true,
-        mode: 'active_task',
-        targetModel: model_name
-      });
-      return;
-    }
-
-    // 2. Guard against queued tasks with idle worker
-    if (queue.pendingCount > 0) {
-      setModelSwitchWarning({
-        isOpen: true,
-        mode: 'queued_tasks',
-        targetModel: model_name
-      });
-      return;
-    }
-
-    await executeModelSwitch(model_name, false);
-  };
-
-  const executeModelSwitch = async (model_name, clearQueue = false) => {
-    setIsSwitchingModel(true);
-    setShowSettings(false);
-    setModelLoadError(null);
-    setModelSwitchWarning(prev => ({ ...prev, isOpen: false }));
-    // Reset search state immediately when switching models
-    setResults([]);
-    setHasSearched(false);
-    setQuery('');
-    setImageSearchContext(null);
-
-    try {
-      const res = await fetch(`${API_BASE}/models/switch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name, clear_queue: clearQueue })
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ detail: res.statusText }));
-        const errorMessage = errorData.detail || "Failed to load model into memory.";
-        setToast({ message: `Model load error: ${errorMessage}`, type: 'error' });
-        setModelLoadError({ model: model_name, message: errorMessage });
-        
-        // Refresh models list to ensure status is accurate
-        const resModels = await fetch(`${API_BASE}/models`);
-        const data = await resModels.json();
-        setModels(data);
-        return;
-      }
-      // Refresh models to get correct active state and status
-      const resModels = await fetch(`${API_BASE}/models`);
-      const data = await resModels.json();
-      setModels(data);
-      setPendingModel(model_name);
-      setModelLoadError(null);
-      setToast({ message: `Successfully activated ${model_name.split('/').pop()}`, type: 'success' });
-      queue.fetchQueue();
-    } catch (err) {
-      console.error(err);
-      setToast({ message: `Network error while loading model: ${err.message}`, type: 'error' });
-      setModelLoadError({ model: model_name, message: err.message });
-    } finally {
-      setIsSwitchingModel(false);
-    }
-  };
-
-  const handleUnloadModel = async () => {
-    setIsUnloadingModel(true);
-    try {
-      const res = await fetch(`${API_BASE}/models/unload`, { method: 'POST' });
-      if (res.ok) {
-        setToast({ message: 'Model unloaded and GPU memory freed successfully.', type: 'success' });
-        // Refresh models list
-        const resModels = await fetch(`${API_BASE}/models`);
-        const data = await resModels.json();
-        setModels(data);
-      } else {
-        const error = await res.json();
-        setToast({ message: `Unload error: ${error.detail}`, type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Failed to unload model.', type: 'error' });
-    } finally {
-      setIsUnloadingModel(false);
-    }
-  };
-
-  const handleCancelDownload = async () => {
-    try {
-      await fetch(`${API_BASE}/models/download/cancel`, { method: 'POST' });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleDownloadModel = async (model_name) => {
-    lastToastedError.current = null;
-    setModelLoadError(null);
-    setStatus(prev => ({ ...prev, download_error: null, is_downloading: true }));
-    try {
-      await fetch(`${API_BASE}/models/download`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_name })
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleDeleteModel = async (model_name) => {
-    setIsDeletingModel(true);
-    try {
-      const res = await fetch(`${API_BASE}/models/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model_name,
-          delete_index: deleteIndexWithModel
-        })
-      });
-      if (res.ok) {
-        setToast({ message: `Model ${model_name} ${deleteIndexWithModel ? 'and index ' : ''}deleted successfully.`, type: 'success' });
-        // Refresh models list
-        const resModels = await fetch(`${API_BASE}/models`);
-        const data = await resModels.json();
-        setModels(data);
-      } else {
-        const error = await res.json();
-        setToast({ message: `Error: ${error.detail}`, type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Failed to delete model.', type: 'error' });
-    } finally {
-      setIsDeletingModel(false);
-      setShowConfirmDeleteModel(null);
-      setDeleteIndexWithModel(false);
     }
   };
 
@@ -723,10 +201,7 @@ function App() {
         method: 'POST'
       });
       // Reset UI cleanly
-      setResults([]);
-      setHasSearched(false);
-      setQuery('');
-      setImageSearchContext(null);
+      resetSearch();
       setSelectedImage(null);
       setSelectedVideoGroup(null);
     } catch (err) {
@@ -737,294 +212,6 @@ function App() {
       setShowSettings(false); // Optionally close modal on success
     }
   };
-
-  const fetchCacheStats = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/image/cache/stats`);
-      if (res.ok) {
-        const data = await res.json();
-        setCacheStats(data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch cache stats:", e);
-    }
-  };
-
-  const handleClearThumbnailCache = async (target = 'all') => {
-    setIsClearingThumbnails(true);
-    try {
-      const res = await fetch(`${API_BASE}/image/cache/clear?target=${target}`, {
-        method: 'POST'
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const label = target === 'all' ? 'All' : target === 'images' ? 'Image' : 'Video';
-        setToast({ message: `${label} thumbnail cache cleared successfully.`, type: 'success' });
-        fetchCacheStats();
-      } else {
-        setToast({ message: data.detail || 'Failed to clear thumbnail cache.', type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Failed to clear thumbnail cache.', type: 'error' });
-    } finally {
-      setIsClearingThumbnails(false);
-      setShowConfirmClearThumbnails(null);
-    }
-  };
-
-  const handleRebuildVideoThumbnails = async () => {
-    if (status.is_rebuilding_video_thumbnails || status.is_indexing || isTriggeringRebuildThumbnails) return;
-    setIsTriggeringRebuildThumbnails(true);
-    try {
-      const res = await fetch(`${API_BASE}/video/thumbnails/regenerate`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        setToast({ message: 'Video thumbnail rebuilding started in background.', type: 'info' });
-        fetchCacheStats();
-      } else {
-        setToast({ message: data.detail || 'Failed to start video thumbnail rebuilding.', type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Failed to connect to backend.', type: 'error' });
-    } finally {
-      setIsTriggeringRebuildThumbnails(false);
-    }
-  };
-
-
-
-  const handleClearImageSearch = () => {
-    setImageSearchContext(null);
-    setResults([]);
-    setHasSearched(false);
-  };
-
-  const fetchIndexedFolders = async (silent = false) => {
-    if (!models.active_model) return;
-    if (!silent) setIsFetchingFolders(true);
-    try {
-      const res = await fetch(`${API_BASE}/index/folders`);
-      const data = await res.json();
-      setIndexedFolders(data.folders || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      if (!silent) setIsFetchingFolders(false);
-    }
-  };
-
-  const handleBrowseFolderContents = async (folder, silent = false) => {
-    if (!folder) return;
-    if (!silent) {
-      setBrowsingFolder(folder);
-      setFolderContents(null);
-      setFolderVisibleLimit(60);
-      setShowFolderContents(true);
-      setIsFetchingFolderContents(true);
-    }
-
-    try {
-      const url = new URL(`${API_BASE}/index/folder/contents`);
-      url.searchParams.set('folder_path', folder.path);
-      const res = await fetch(url.toString());
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.detail || 'Failed to browse folder contents.');
-      }
-
-      setFolderContents(data);
-    } catch (err) {
-      console.error(err);
-      if (!silent) {
-        setToast({ message: err.message || 'Failed to browse folder contents.', type: 'error' });
-        setShowFolderContents(false);
-        setBrowsingFolder(null);
-      }
-      // Immediately refresh indexed folders to update missing status in the tree UI
-      fetchIndexedFolders(true);
-    } finally {
-      if (!silent) {
-        setIsFetchingFolderContents(false);
-      }
-    }
-  };
-
-  const handleCloseFolderContents = () => {
-    setShowFolderContents(false);
-    setBrowsingFolder(null);
-    setFolderContents(null);
-    setFolderVisibleLimit(60);
-  };
-
-  const handleReindexFolder = async (folder_path) => {
-    try {
-      const res = await fetch(`${API_BASE}/index/folder/reindex`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folder_path })
-      });
-      if (res.ok) {
-        setToast({ message: 'Re-indexing started in background.', type: 'success' });
-      } else {
-        const error = await res.json().catch(() => ({ detail: res.statusText }));
-        const isMissing = error.detail?.toLowerCase().includes('invalid directory') || error.detail?.toLowerCase().includes('not exist');
-        setToast({
-          message: isMissing
-            ? 'Folder is still not accessible on disk. Please reconnect the drive and try again.'
-            : `Error: ${error.detail}`,
-          type: 'error'
-        });
-        fetchIndexedFolders(true);
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Failed to connect to backend for re-indexing.', type: 'error' });
-      fetchIndexedFolders(true);
-    }
-  };
-
-  const handleDeleteFolderIndex = async (folder_path) => {
-    try {
-      const res = await fetch(`${API_BASE}/index/folder/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folder_path })
-      });
-      if (res.ok) {
-        setToast({ message: 'Folder index removed successfully.', type: 'success' });
-        setSelectedFolders(prev => prev.filter(path => path !== folder_path));
-        fetchIndexedFolders();
-        // Reset results as they might be stale
-        setResults([]);
-        setHasSearched(false);
-        setImageSearchContext(null);
-      } else {
-        const error = await res.json();
-        setToast({ message: `Error: ${error.detail}`, type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Failed to delete folder index.', type: 'error' });
-    }
-  };
-
-  const handleBatchDelete = async () => {
-    if (selectedFolders.length === 0) return;
-    setIsBatchProcessing(true);
-    try {
-      const res = await fetch(`${API_BASE}/index/folders/batch-delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folder_paths: selectedFolders })
-      });
-      if (res.ok) {
-        setToast({ message: `Successfully removed ${selectedFolders.length} folders.`, type: 'success' });
-        setSelectedFolders([]);
-        fetchIndexedFolders();
-        // Reset results as they might be stale
-        setResults([]);
-        setHasSearched(false);
-        setImageSearchContext(null);
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Batch deletion failed.', type: 'error' });
-    } finally {
-      setIsBatchProcessing(false);
-    }
-  };
-
-  const handleBatchReindex = async () => {
-    if (selectedFolders.length === 0) return;
-    setIsBatchProcessing(true);
-    try {
-      const res = await fetch(`${API_BASE}/index/folders/batch-reindex`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folder_paths: selectedFolders })
-      });
-      if (res.ok) {
-        setToast({ message: `Re-indexing started for ${selectedFolders.length} folders.`, type: 'success' });
-        setSelectedFolders([]);
-      }
-    } catch (err) {
-      console.error(err);
-      setToast({ message: 'Batch re-indexing failed.', type: 'error' });
-    } finally {
-      setIsBatchProcessing(false);
-    }
-  };
-
-  const allSelectableFolderPaths = useMemo(() => {
-    return getAllSelectablePaths(indexedFolders);
-  }, [indexedFolders]);
-
-  const toggleFolderSelection = (targetPath, isSubfolder = false, parentFolder = null) => setSelectedFolders(prev => toggleFolderSelectionPure(prev, targetPath, isSubfolder, parentFolder));
-
-  const toggleSelectAll = () => {
-    if (selectedFolders.length === allSelectableFolderPaths.length && allSelectableFolderPaths.length > 0) {
-      setSelectedFolders([]);
-    } else {
-      setSelectedFolders(allSelectableFolderPaths);
-    }
-  };
-
-  // 1. Initial load & task completions (auto-updates tree and open modal)
-  useEffect(() => {
-    if (models.active_model) {
-      fetchIndexedFolders();
-      // If Folder Contents modal is currently open, refresh its contents live!
-      if (showFolderContents && browsingFolder) {
-        handleBrowseFolderContents(browsingFolder, true);
-      }
-    }
-  }, [models.active_model, status.last_task_id]);
-
-  // 2. Refresh folder existence whenever user opens/expands the Indexed Folders panel
-  useEffect(() => {
-    if (isFoldersExpanded && models.active_model) {
-      fetchIndexedFolders(true);
-    }
-  }, [isFoldersExpanded, models.active_model]);
-
-  // 3. Live Sync on Window Focus (updates folder tree AND open Folder Contents modal)
-  useEffect(() => {
-    const handleWindowFocus = () => {
-      if (models.active_model) {
-        fetchIndexedFolders(true);
-        if (showFolderContents && browsingFolder) {
-          handleBrowseFolderContents(browsingFolder, true);
-        }
-      }
-    };
-    window.addEventListener('focus', handleWindowFocus);
-    return () => window.removeEventListener('focus', handleWindowFocus);
-  }, [models.active_model, showFolderContents, browsingFolder]);
-
-  // 4. Polling while folder list is expanded (every 8 seconds)
-  useEffect(() => {
-    if (!isFoldersExpanded || !models.active_model) return;
-    const interval = setInterval(() => {
-      fetchIndexedFolders(true);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [isFoldersExpanded, models.active_model]);
-
-  // 5. Polling while Folder Contents modal is open (every 10 seconds)
-  useEffect(() => {
-    if (!showFolderContents || !browsingFolder || !models.active_model) return;
-    const interval = setInterval(() => {
-      handleBrowseFolderContents(browsingFolder, true);
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [showFolderContents, browsingFolder, models.active_model]);
-
-  useEffect(() => {
-    setSelectedFolders([]);
-  }, [models.active_model]);
 
   return (
     <div
