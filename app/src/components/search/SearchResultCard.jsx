@@ -3,8 +3,9 @@ import { CheckCircle2, Sparkles, Copy, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
+import { API_BASE } from '../../config';
 
-export const SearchResultCard = memo(function SearchResultCard({ res, idx, API_BASE, onSelect, uiTheme = 'modern' }) {
+export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSelect, uiTheme = 'modern' }) {
   const isModern = uiTheme === 'modern';
 
   return (

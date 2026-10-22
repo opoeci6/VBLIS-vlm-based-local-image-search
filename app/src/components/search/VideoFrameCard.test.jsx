@@ -9,7 +9,7 @@ describe('VideoFrameCard', () => {
   afterEach(cleanup);
 
   it('renders the frame number, match percentage and timestamp', () => {
-    render(<VideoFrameCard frame={frame} index={0} API_BASE={API} onSelect={() => {}} />);
+    render(<VideoFrameCard frame={frame} index={0} onSelect={() => {}} />);
     expect(screen.getByText('FRAME 1')).toBeTruthy();
     expect(screen.getByText('80% MATCH')).toBeTruthy();
     expect(screen.getAllByText('1:05').length).toBeGreaterThan(0);
@@ -19,13 +19,13 @@ describe('VideoFrameCard', () => {
   });
 
   it('numbers frames from the index', () => {
-    render(<VideoFrameCard frame={frame} index={4} API_BASE={API} onSelect={() => {}} />);
+    render(<VideoFrameCard frame={frame} index={4} onSelect={() => {}} />);
     expect(screen.getByText('FRAME 5')).toBeTruthy();
   });
 
   it('calls onSelect(frame) on click, Enter and Space only', () => {
     const onSelect = vi.fn();
-    render(<VideoFrameCard frame={frame} index={0} API_BASE={API} onSelect={onSelect} />);
+    render(<VideoFrameCard frame={frame} index={0} onSelect={onSelect} />);
     const card = screen.getByRole('button');
 
     fireEvent.click(card);
@@ -40,7 +40,7 @@ describe('VideoFrameCard', () => {
   });
 
   it('drops the image and keeps the timestamp placeholder when the image errors', () => {
-    render(<VideoFrameCard frame={frame} index={0} API_BASE={API} onSelect={() => {}} uiTheme="terminal" />);
+    render(<VideoFrameCard frame={frame} index={0} onSelect={() => {}} uiTheme="terminal" />);
     fireEvent.error(screen.getByAltText('Video frame at 1:05'));
     expect(screen.queryByAltText('Video frame at 1:05')).toBeNull();
     expect(screen.getAllByText('1:05').length).toBeGreaterThan(0);

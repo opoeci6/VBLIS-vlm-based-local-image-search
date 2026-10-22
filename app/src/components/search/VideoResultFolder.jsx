@@ -2,8 +2,9 @@ import { memo } from 'react';
 import { FolderOpen, ChevronRight, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { getMediaPreviewUrl, prewarmVideoGroup } from '../../utils/media';
+import { API_BASE } from '../../config';
 
-export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, API_BASE, onSelect, uiTheme = 'modern' }) {
+export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, onSelect, uiTheme = 'modern' }) {
   const isModern = uiTheme === 'modern';
 
   return (

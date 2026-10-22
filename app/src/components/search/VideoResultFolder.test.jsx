@@ -30,7 +30,7 @@ describe('VideoResultFolder', () => {
 
   it('renders the name, best score and frame count', () => {
     const group = makeGroup();
-    render(<VideoResultFolder group={group} idx={0} API_BASE={API} onSelect={() => {}} />);
+    render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} />);
     expect(screen.getByText(group.name)).toBeTruthy();
     expect(screen.getByText(/BEST 87%/)).toBeTruthy();
     expect(screen.getByText(/2 returned frames/)).toBeTruthy();
@@ -39,13 +39,13 @@ describe('VideoResultFolder', () => {
   it('uses the singular for a single frame', () => {
     const group = makeGroup();
     group.frames = [group.frames[0]];
-    render(<VideoResultFolder group={group} idx={0} API_BASE={API} onSelect={() => {}} />);
+    render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} />);
     expect(screen.getByText(/1 returned frame$/)).toBeTruthy();
   });
 
   it('prewarms frames with one POST on mouse enter, even if hovered repeatedly', () => {
     const group = makeGroup();
-    render(<VideoResultFolder group={group} idx={0} API_BASE={API} onSelect={() => {}} />);
+    render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} />);
     const card = screen.getByRole('button');
     fireEvent.mouseEnter(card);
     fireEvent.mouseEnter(card);
@@ -60,7 +60,7 @@ describe('VideoResultFolder', () => {
   it('calls onSelect(group) on click and on Enter', () => {
     const onSelect = vi.fn();
     const group = makeGroup();
-    render(<VideoResultFolder group={group} idx={0} API_BASE={API} onSelect={onSelect} />);
+    render(<VideoResultFolder group={group} idx={0} onSelect={onSelect} />);
     const card = screen.getByRole('button');
 
     fireEvent.click(card);
@@ -75,7 +75,7 @@ describe('VideoResultFolder', () => {
   it('also selects on Space but ignores other keys', () => {
     const onSelect = vi.fn();
     const group = makeGroup();
-    render(<VideoResultFolder group={group} idx={0} API_BASE={API} onSelect={onSelect} />);
+    render(<VideoResultFolder group={group} idx={0} onSelect={onSelect} />);
     const card = screen.getByRole('button');
     fireEvent.keyDown(card, { key: 'a' });
     expect(onSelect).not.toHaveBeenCalled();
@@ -85,7 +85,7 @@ describe('VideoResultFolder', () => {
 
   it.each(['modern', 'terminal'])('renders in the %s theme', (uiTheme) => {
     const group = makeGroup();
-    render(<VideoResultFolder group={group} idx={0} API_BASE={API} onSelect={() => {}} uiTheme={uiTheme} />);
+    render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} uiTheme={uiTheme} />);
     expect(screen.getByText('VIDEO')).toBeTruthy();
   });
 });

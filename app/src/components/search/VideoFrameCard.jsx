@@ -3,8 +3,9 @@ import { Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
+import { API_BASE } from '../../config';
 
-export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, API_BASE, onSelect, uiTheme = 'modern' }) {
+export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSelect, uiTheme = 'modern' }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';

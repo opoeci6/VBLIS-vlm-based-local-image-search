@@ -2,8 +2,9 @@ import { useState, memo } from 'react';
 import { Image as ImageIcon, AlertTriangle, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { getMediaPreviewUrl } from '../../utils/media';
+import { API_BASE } from '../../config';
 
-export const FolderItemThumbnail = memo(function FolderItemThumbnail({ item, API_BASE, uiTheme = 'modern', onSelect }) {
+export const FolderItemThumbnail = memo(function FolderItemThumbnail({ item, uiTheme = 'modern', onSelect }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';

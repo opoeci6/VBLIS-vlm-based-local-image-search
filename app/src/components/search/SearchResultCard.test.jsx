@@ -19,7 +19,6 @@ describe('SearchResultCard', () => {
       <SearchResultCard
         res={imageRes({ isDuplicate: true, duplicateType: 'exact', dupeColor: '#0078d4', otherPaths: ['/b.jpg'] })}
         idx={0}
-        API_BASE={API}
         onSelect={() => {}}
       />
     );
@@ -31,7 +30,6 @@ describe('SearchResultCard', () => {
       <SearchResultCard
         res={imageRes({ isDuplicate: true, duplicateType: 'visual', dupeColor: '#f59e0b', otherPaths: ['/b.jpg', '/c.jpg'] })}
         idx={0}
-        API_BASE={API}
         onSelect={() => {}}
       />
     );
@@ -39,7 +37,7 @@ describe('SearchResultCard', () => {
   });
 
   it('shows no duplicate badge for a normal result', () => {
-    render(<SearchResultCard res={imageRes()} idx={0} API_BASE={API} onSelect={() => {}} />);
+    render(<SearchResultCard res={imageRes()} idx={0} onSelect={() => {}} />);
     expect(screen.queryByText(/Exact Copy|Visual Duplicate/)).toBeNull();
     expect(screen.getByText('cat.jpg')).toBeTruthy();
     expect(screen.getByText(/87% Match/)).toBeTruthy();
@@ -50,7 +48,6 @@ describe('SearchResultCard', () => {
       <SearchResultCard
         res={{ path: '/v/clip.mp4', media_type: 'video', score: 0.5, timestamp_seconds: 65 }}
         idx={0}
-        API_BASE={API}
         onSelect={() => {}}
       />
     );
@@ -61,14 +58,14 @@ describe('SearchResultCard', () => {
   it('calls onSelect with the result when clicked', () => {
     const onSelect = vi.fn();
     const res = imageRes();
-    render(<SearchResultCard res={res} idx={0} API_BASE={API} onSelect={onSelect} />);
+    render(<SearchResultCard res={res} idx={0} onSelect={onSelect} />);
     fireEvent.click(screen.getByAltText('Result'));
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith(res);
   });
 
   it.each(['modern', 'terminal'])('renders in the %s theme', (uiTheme) => {
-    render(<SearchResultCard res={imageRes()} idx={0} API_BASE={API} onSelect={() => {}} uiTheme={uiTheme} />);
+    render(<SearchResultCard res={imageRes()} idx={0} onSelect={() => {}} uiTheme={uiTheme} />);
     expect(screen.getByAltText('Result').getAttribute('src')).toBe(
       `${API}/image?path=C%3A%5Cpics%5Ccat.jpg&size=thumbnail`
     );
