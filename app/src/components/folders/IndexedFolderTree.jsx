@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Folder,
   FolderOpen,
@@ -6,7 +6,6 @@ import {
   ChevronRight,
   RefreshCw,
   Trash2,
-  AlertTriangle,
   Video,
   ImageIcon,
   Eye

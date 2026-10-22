@@ -59,7 +59,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         }
       }
       prevActiveTaskId.current = data.active_task ? data.active_task.id : null;
-    } catch (err) {
+    } catch {
       // Backend polling error ignored silently
     }
   }, [API_BASE, setToast]);
@@ -101,7 +101,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         setToast?.({ message: `Queue error: ${data.detail || res.statusText}`, type: 'error' });
         return null;
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Failed to connect to task queue.', type: 'error' });
       return null;
     }
@@ -117,7 +117,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to cancel task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error cancelling task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -132,7 +132,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to pause task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error pausing task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -147,7 +147,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to resume task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error resuming task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -177,7 +177,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         });
         fetchQueue();
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Failed to send worker control signal.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -226,7 +226,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to retry task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error retrying task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);

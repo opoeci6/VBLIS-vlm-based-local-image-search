@@ -1,8 +1,7 @@
-import { app, BrowserWindow, protocol, net, ipcMain, dialog, shell, Menu } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain, dialog, shell, Menu } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import os from 'node:os';
 import fs from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -99,8 +98,6 @@ app.on('activate', () => {
   }
 });
 
-import { pathToFileURL } from 'node:url';
-
 app.whenReady().then(() => {
   protocol.registerFileProtocol('local', (request, callback) => {
     // request.url is "local://C:/Users..." or "local://d:/..."
@@ -135,7 +132,7 @@ app.whenReady().then(() => {
   ipcMain.handle('fs:isDirectory', (event, filePath) => {
     try {
       return fs.existsSync(filePath) && fs.statSync(filePath).isDirectory();
-    } catch (e) {
+    } catch {
       return false;
     }
   });

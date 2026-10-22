@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, ChevronDown, ChevronUp, Info, Sparkles, LogOut, XCircle, Copy, Video, Terminal, Play, Pause } from 'lucide-react';
+import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, ChevronDown, ChevronUp, Sparkles, LogOut, XCircle, Copy, Video, Terminal, Play, Pause } from 'lucide-react';
 import TitleBar from './TitleBar';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -51,7 +51,7 @@ const getMediaPreviewUrl = (API_BASE, item, size = 'thumbnail') => {
   return `${API_BASE}/image?${params.toString()}`;
 };
 
-const FolderItemThumbnail = memo(({ item, API_BASE, uiTheme = 'modern', onSelect }) => {
+const FolderItemThumbnail = memo(function FolderItemThumbnail({ item, API_BASE, uiTheme = 'modern', onSelect }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';
@@ -133,7 +133,7 @@ const FolderItemThumbnail = memo(({ item, API_BASE, uiTheme = 'modern', onSelect
   );
 });
 
-const SearchResult = memo(({ res, idx, API_BASE, onSelect, uiTheme = 'modern' }) => {
+const SearchResult = memo(function SearchResult({ res, idx, API_BASE, onSelect, uiTheme = 'modern' }) {
   const isModern = uiTheme === 'modern';
 
   return (
@@ -227,7 +227,7 @@ const prewarmVideoGroup = async (API_BASE, group) => {
   }
 };
 
-const VideoFrameCard = memo(({ frame, index, API_BASE, onSelect, uiTheme = 'modern' }) => {
+const VideoFrameCard = memo(function VideoFrameCard({ frame, index, API_BASE, onSelect, uiTheme = 'modern' }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';
@@ -299,7 +299,7 @@ const VideoFrameCard = memo(({ frame, index, API_BASE, onSelect, uiTheme = 'mode
   );
 });
 
-const VideoResultFolder = memo(({ group, idx, API_BASE, onSelect, uiTheme = 'modern' }) => {
+const VideoResultFolder = memo(function VideoResultFolder({ group, idx, API_BASE, onSelect, uiTheme = 'modern' }) {
   const isModern = uiTheme === 'modern';
 
   return (
@@ -949,7 +949,6 @@ function App() {
   });
   const [imageSearchContext, setImageSearchContext] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragError, setDragError] = useState(null);
   const [indexedFolders, setIndexedFolders] = useState([]);
   const [isFetchingFolders, setIsFetchingFolders] = useState(false);
   const [selectedFolders, setSelectedFolders] = useState([]);
@@ -1153,7 +1152,7 @@ function App() {
         const res = await fetch(`${API_BASE}/status`);
         const data = await res.json();
         if (mounted) setStatus(data);
-      } catch (e) { }
+      } catch { /* backend not reachable yet; ignore */ }
     };
 
     const fetchModels = async () => {
@@ -1165,7 +1164,7 @@ function App() {
           setBackendReady(true);
         }
         return true;
-      } catch (e) {
+      } catch {
         return false;
       }
     };
@@ -1206,7 +1205,7 @@ function App() {
           const res = await fetch(`${API_BASE}/models`);
           const data = await res.json();
           if (mounted) setModels(data);
-        } catch (e) { }
+        } catch { /* backend not reachable yet; ignore */ }
       };
       fetchModels();
     }
@@ -3105,7 +3104,7 @@ function App() {
                             message: 'Cannot resume queue: No AI model is currently loaded in memory. Please select a model in Settings.',
                             type: 'error'
                           });
-                          setIsSettingsOpen(true);
+                          setShowSettings(true);
                           return;
                         }
                         if (queue.activeTask) {
@@ -4102,7 +4101,7 @@ function App() {
         onClose={() => queue.setIsDrawerOpen(false)}
         queue={queue}
         uiTheme={uiTheme}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       {/* Model Switch Safeguard Warning Modal */}
