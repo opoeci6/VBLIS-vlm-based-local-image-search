@@ -1,55 +1,19 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { Search, FolderOpen, Settings, Loader2, Image as ImageIcon, Check, CheckCircle2, Trash2, AlertTriangle, X, RefreshCw, CheckSquare, Square, ChevronRight, ChevronDown, ChevronUp, Sparkles, LogOut, XCircle, Copy, Video, Terminal, Play, Pause } from 'lucide-react';
 import TitleBar from './TitleBar';
-import clsx from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { API_BASE } from './config';
+import { cn } from './utils/cn';
+import { formatBytes, formatDuration, formatVideoTimestamp } from './utils/formatters';
+import { getMediaPreviewUrl, prewarmVideoGroup } from './utils/media';
+import { VBLIS_ASCII_POINTS } from './utils/asciiLogoPoints';
+import { annotateDuplicates, groupVideoResults, getImageResults } from './utils/searchResults';
+import { getAllSelectablePaths, toggleFolderSelection as toggleFolderSelectionPure } from './utils/folderSelection';
+import { getPathForFile, isDirectory } from './utils/electron';
 import { useTaskQueue } from './hooks/useTaskQueue';
 import { QueueStatusBadge } from './components/queue/QueueStatusBadge';
 import { QueueDrawer } from './components/queue/QueueDrawer';
 import { ModelSwitchWarningModal } from './components/modals/ModelSwitchWarningModal';
 import { IndexedFolderTree } from './components/folders/IndexedFolderTree';
-
-function cn(...inputs) {
-  return twMerge(clsx(inputs));
-}
-
-const API_BASE = 'http://127.0.0.1:8000';
-const formatBytes = (bytes) => {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
-
-const formatDuration = (seconds) => {
-  if (!seconds || seconds <= 0) return '0s';
-  if (seconds === Infinity) return 'Calculating...';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-};
-
-const formatVideoTimestamp = (seconds = 0) => {
-  const totalSeconds = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const remainingSeconds = totalSeconds % 60;
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
-    : `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-};
-
-const getMediaPreviewUrl = (API_BASE, item, size = 'thumbnail') => {
-  const params = new URLSearchParams({ path: item.path, size });
-  if (item.media_type === 'video') {
-    params.set('timestamp', String(item.timestamp_seconds ?? 1.0));
-  }
-  return `${API_BASE}/image?${params.toString()}`;
-};
 
 const FolderItemThumbnail = memo(function FolderItemThumbnail({ item, API_BASE, uiTheme = 'modern', onSelect }) {
   const [loaded, setLoaded] = useState(false);
@@ -209,23 +173,6 @@ const SearchResult = memo(function SearchResult({ res, idx, API_BASE, onSelect, 
     </div>
   );
 });
-
-const prewarmedVideoPaths = new Set();
-const prewarmVideoGroup = async (API_BASE, group) => {
-  if (!group || !group.path || !group.frames || group.frames.length === 0) return;
-  if (prewarmedVideoPaths.has(group.path)) return;
-  prewarmedVideoPaths.add(group.path);
-  try {
-    const timestamps = group.frames.map(f => f.timestamp_seconds ?? 0);
-    await fetch(`${API_BASE}/video/frames/batch-extract`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: group.path, timestamps })
-    });
-  } catch (err) {
-    console.debug('Batch prewarm skipped or failed:', err);
-  }
-};
 
 const VideoFrameCard = memo(function VideoFrameCard({ frame, index, API_BASE, onSelect, uiTheme = 'modern' }) {
   const [loaded, setLoaded] = useState(false);
@@ -441,55 +388,6 @@ const SettingsSelect = ({ value, onChange, options, disabled, placeholder }) => 
     </div>
   );
 };
-
-const ASCII_GLYPHS = {
-  V: ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
-  B: ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
-  L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
-  I: ['11111', '00100', '00100', '00100', '00100', '00100', '11111'],
-  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110']
-};
-
-const buildAsciiLogoPoints = () => {
-  const text = 'VBLIS';
-  const points = [];
-  const letterWidth = 5;
-  const spacing = 1.5;
-  const totalWidth = text.length * letterWidth + (text.length - 1) * spacing;
-
-  text.split('').forEach((letter, letterIndex) => {
-    ASCII_GLYPHS[letter].forEach((row, rowIndex) => {
-      row.split('').forEach((cell, columnIndex) => {
-        if (cell !== '1') return;
-
-        const centerX = letterIndex * (letterWidth + spacing) + columnIndex - totalWidth / 2;
-        const centerY = rowIndex - 3;
-        const samples = [-0.38, 0, 0.38];
-        const depthSamples = [-1.35, -0.68, 0, 0.68, 1.35];
-
-        samples.forEach(offsetX => {
-          samples.forEach(offsetY => {
-            points.push({ x: centerX + offsetX, y: centerY + offsetY, z: -1.35 });
-            points.push({ x: centerX + offsetX, y: centerY + offsetY, z: 1.35 });
-          });
-        });
-
-        depthSamples.forEach(z => {
-          samples.forEach(offset => {
-            points.push({ x: centerX - 0.38, y: centerY + offset, z });
-            points.push({ x: centerX + 0.38, y: centerY + offset, z });
-            points.push({ x: centerX + offset, y: centerY - 0.38, z });
-            points.push({ x: centerX + offset, y: centerY + 0.38, z });
-          });
-        });
-      });
-    });
-  });
-
-  return points;
-};
-
-const VBLIS_ASCII_POINTS = buildAsciiLogoPoints();
 
 const RotatingAsciiLogo = () => {
   const outputRef = useRef(null);
@@ -1000,7 +898,7 @@ function App() {
   }, [isFoldersExpanded, showFolderContents, selectedImage, selectedVideoGroup, showSettings, queue.isDrawerOpen]);
 
   const imageResults = useMemo(
-    () => results.filter(result => result.media_type !== 'video'),
+    () => getImageResults(results),
     [results]
   );
 
@@ -1047,44 +945,7 @@ function App() {
     return () => observer.disconnect();
   }, [imageResults.length, visibleResultsCount]);
 
-  const videoGroups = useMemo(() => {
-    const groupsByPath = new Map();
-
-    results.forEach(frame => {
-      if (frame.media_type !== 'video') return;
-
-      const existingGroup = groupsByPath.get(frame.path);
-      if (existingGroup) {
-        existingGroup.frames.push(frame);
-        if ((frame.score || 0) > existingGroup.bestScore) {
-          existingGroup.bestScore = frame.score || 0;
-          existingGroup.bestFrame = frame;
-        }
-        return;
-      }
-
-      groupsByPath.set(frame.path, {
-        path: frame.path,
-        name: frame.path.split('\\').pop().split('/').pop() || frame.path,
-        frames: [frame],
-        bestScore: frame.score || 0,
-        bestFrame: frame
-      });
-    });
-
-    return Array.from(groupsByPath.values())
-      .map(group => ({
-        ...group,
-        frames: [...group.frames].sort(
-          (first, second) => {
-            const scoreDifference = (second.score || 0) - (first.score || 0);
-            if (scoreDifference !== 0) return scoreDifference;
-            return (first.timestamp_seconds || 0) - (second.timestamp_seconds || 0);
-          }
-        )
-      }))
-      .sort((first, second) => second.bestScore - first.bestScore);
-  }, [results]);
+  const videoGroups = useMemo(() => groupVideoResults(results), [results]);
 
   const handleCancelIndexing = async () => {
     if (isCancellingIndexing) return;
@@ -1285,115 +1146,6 @@ function App() {
     prevLastTaskId.current = status.last_task_id;
   }, [status.is_indexing, status.errors, status.last_task_id, status.total_files, status.discovered_video_count, status.indexed_video_frames]);
 
-  const processSearchResults = (dataResults) => {
-    const results = dataResults || [];
-    if (results.length === 0) return [];
-
-    // Helper: Fast dot product for normalized vectors
-    const vectorDot = (a, b) => {
-      if (!a || !b || a.length !== b.length) return 0;
-      let sum = 0;
-      for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
-      return sum;
-    };
-
-    // 1. Group exact file duplicates by SHA-256 hash
-    const exactHashGroups = {};
-    results.forEach(res => {
-      if (res.media_type !== 'video' && res.hash) {
-        if (!exactHashGroups[res.hash]) exactHashGroups[res.hash] = [];
-        exactHashGroups[res.hash].push(res.path);
-      }
-    });
-
-    const exactDupeHashes = new Set(
-      Object.keys(exactHashGroups).filter(h => exactHashGroups[h].length > 1)
-    );
-
-    // 2. Pairwise Cosine Similarity for Visual Duplicates (Threshold >= 0.985)
-    // Run full pairwise on top candidate results (up to 800) to keep JS thread non-blocking for 4k+ sets
-    const VISUAL_THRESHOLD = 0.985;
-    const visualGroups = []; // Array of Sets of indices
-    const maxVisualLimit = Math.min(results.length, 800);
-
-    for (let i = 0; i < maxVisualLimit; i++) {
-      const itemA = results[i];
-      if (itemA.media_type === 'video' || !itemA.embedding) continue;
-
-      for (let j = i + 1; j < maxVisualLimit; j++) {
-        const itemB = results[j];
-        if (itemB.media_type === 'video' || !itemB.embedding) continue;
-
-        // Skip if already exact hash match
-        if (itemA.hash && itemB.hash && itemA.hash === itemB.hash) continue;
-
-        const sim = vectorDot(itemA.embedding, itemB.embedding);
-        if (sim >= VISUAL_THRESHOLD) {
-          let targetGroup = visualGroups.find(g => g.has(i) || g.has(j));
-          if (!targetGroup) {
-            targetGroup = new Set();
-            visualGroups.push(targetGroup);
-          }
-          targetGroup.add(i);
-          targetGroup.add(j);
-        }
-      }
-    }
-
-    // Color Palettes
-    const exactColors = ['#0078d4', '#ec4899', '#10b981', '#f59e0b']; // System blue / Pink / Emerald / Amber
-    const visualColors = ['#f59e0b', '#10b981', '#f97316', '#eab308']; // Amber / Emerald / Orange / Yellow
-
-    const exactColorMap = {};
-    let exactIdx = 0;
-    exactDupeHashes.forEach(h => {
-      exactColorMap[h] = exactColors[exactIdx % exactColors.length];
-      exactIdx++;
-    });
-
-    const visualColorMap = new Map();
-    const visualPathsMap = new Map();
-    visualGroups.forEach((gSet, gIdx) => {
-      const color = visualColors[gIdx % visualColors.length];
-      const indices = Array.from(gSet);
-      const paths = indices.map(idx => results[idx].path);
-      indices.forEach(idx => {
-        visualColorMap.set(idx, color);
-        visualPathsMap.set(idx, paths.filter(p => p !== results[idx].path));
-      });
-    });
-
-    // 3. Map final enhanced result objects (strip heavy raw embeddings to save memory)
-    return results.map((res, idx) => {
-      const isExact = !!(res.hash && exactDupeHashes.has(res.hash));
-      const isVisual = !isExact && visualColorMap.has(idx);
-
-      let duplicateType = null;
-      let dupeColor = null;
-      let otherPaths = [];
-
-      if (isExact) {
-        duplicateType = 'exact';
-        dupeColor = exactColorMap[res.hash];
-        otherPaths = exactHashGroups[res.hash].filter(p => p !== res.path);
-      } else if (isVisual) {
-        duplicateType = 'visual';
-        dupeColor = visualColorMap.get(idx);
-        otherPaths = visualPathsMap.get(idx) || [];
-      }
-
-      const { embedding, ...cleanRes } = res;
-
-      return {
-        ...cleanRes,
-        isDuplicate: isExact || isVisual,
-        duplicateType: duplicateType, // 'exact' | 'visual' | null
-        dupeColor: dupeColor,
-        otherPaths: otherPaths
-      };
-    });
-  };
-
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) {
@@ -1417,7 +1169,7 @@ function App() {
         body: JSON.stringify({ query, top_k: parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults), min_score: parseFloat(minScore) })
       });
       const data = await res.json();
-      setResults(processSearchResults(data.results));
+      setResults(annotateDuplicates(data.results));
       setShowSearchResults(true);
     } catch (err) {
       console.error(err);
@@ -1454,7 +1206,7 @@ function App() {
       });
 
       const data = await res.json();
-      setResults(processSearchResults(data.results));
+      setResults(annotateDuplicates(data.results));
       setShowSearchResults(true);
       setToast({ message: `Found ${data.results?.length || 0} similar media result(s).`, type: 'success' });
     } catch (err) {
@@ -1509,10 +1261,10 @@ function App() {
 
     for (const file of files) {
       // In modern Electron, we use getPathForFile to get the absolute path
-      const filePath = window.electronAPI?.getPathForFile ? window.electronAPI.getPathForFile(file) : file.path;
+      const filePath = getPathForFile(file);
       if (!filePath) continue;
 
-      const isDir = await window.electronAPI.isDirectory(filePath);
+      const isDir = await isDirectory(filePath);
       if (isDir) {
         folderPaths.push(filePath);
       } else if (file.type.startsWith('image/')) {
@@ -1928,30 +1680,10 @@ function App() {
   };
 
   const allSelectableFolderPaths = useMemo(() => {
-    return indexedFolders.flatMap(f => [f.path, ...(f.subfolders || []).map(s => s.path)]);
+    return getAllSelectablePaths(indexedFolders);
   }, [indexedFolders]);
 
-  const toggleFolderSelection = (targetPath, isSubfolder = false, parentFolder = null) => {
-    setSelectedFolders(prev => {
-      const childPaths = parentFolder?.descendantPaths || (parentFolder?.subfolders || []).map(s => s.path);
-
-      if (!isSubfolder || (childPaths && childPaths.length > 0)) {
-        const allTreePaths = [targetPath, ...(childPaths || [])];
-        const isSelected = prev.includes(targetPath) || (childPaths.length > 0 && childPaths.every(s => prev.includes(s)));
-
-        if (isSelected) {
-          return prev.filter(p => !allTreePaths.includes(p));
-        } else {
-          const next = new Set([...prev, ...allTreePaths]);
-          return Array.from(next);
-        }
-      }
-
-      return prev.includes(targetPath)
-        ? prev.filter(p => p !== targetPath)
-        : [...prev, targetPath];
-    });
-  };
+  const toggleFolderSelection = (targetPath, isSubfolder = false, parentFolder = null) => setSelectedFolders(prev => toggleFolderSelectionPure(prev, targetPath, isSubfolder, parentFolder));
 
   const toggleSelectAll = () => {
     if (selectedFolders.length === allSelectableFolderPaths.length && allSelectableFolderPaths.length > 0) {
