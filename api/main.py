@@ -74,17 +74,16 @@ def _apply_exif_orientation(img: Image.Image, exif_bytes: bytes) -> Image.Image:
     return img
 
 
-# Ensure we load the .env relative to THIS script, and strictly enforce HF_HOME
-api_dir = pathlib.Path(__file__).parent.resolve()
-load_dotenv(api_dir / ".env", override=True)
-os.environ["HF_HOME"] = str(api_dir / "models")
+# Ensure we load the .env from the data root (see paths.py), and strictly enforce HF_HOME
+import paths
+load_dotenv(paths.ENV_FILE, override=True)
+os.environ["HF_HOME"] = str(paths.MODELS_DIR)
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "30"
 os.environ["HF_HUB_ENABLE_EMERGENCY_RETRY"] = "False"
 
-CACHE_DIR = api_dir / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
-DATA_DIR = api_dir / "data"
-DATA_DIR.mkdir(exist_ok=True)
+paths.ensure_dirs()
+CACHE_DIR = paths.CACHE_DIR
+DATA_DIR = paths.DATA_DIR
 
 def compute_hash(filepath):
     hasher = hashlib.sha256()
@@ -95,7 +94,7 @@ def compute_hash(filepath):
 
 def persist_active_model(model_name: str):
     try:
-        env_path = api_dir / ".env"
+        env_path = paths.ENV_FILE
         lines = []
         if env_path.exists():
             with open(env_path, "r") as f:
@@ -234,7 +233,7 @@ async def set_gpu_settings(req: GPUSettingsRequest):
     
     # Persist settings to .env
     try:
-        env_path = api_dir / ".env"
+        env_path = paths.ENV_FILE
         lines = []
         if env_path.exists():
             with open(env_path, "r") as f:
@@ -588,7 +587,7 @@ async def delete_model(req: ModelDeleteRequest):
         collection_name = model_id.replace("/", "_").replace("-", "_")
         indexer.delete_collection(collection_name)
 
-    hub_path = api_dir / "models" / "hub"
+    hub_path = paths.HUB_DIR
     folder_name = f"models--{model_id.replace('/', '--')}"
     model_path = hub_path / folder_name
     

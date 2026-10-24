@@ -11,6 +11,7 @@ from av.codec.hwaccel import hwdevices_available, HWAccel
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from model_manager import ModelManager
 import pathlib
+import paths
 from functools import partial
 from thumbnail_cache import (
     TEMP_FILE_GLOB, get_or_create_thumbnail, is_thumbnail_cached, save_jpeg_thumbnail
@@ -118,12 +119,10 @@ def open_video_cascade(filepath):
     except Exception as e:
         raise ValueError(f"Video could not be opened: {e}")
 
-CACHE_DIR = pathlib.Path(__file__).parent.resolve() / "cache"
-IMAGE_CACHE_DIR = CACHE_DIR / "images"
-VIDEO_CACHE_DIR = CACHE_DIR / "videos"
-CACHE_DIR.mkdir(exist_ok=True)
-IMAGE_CACHE_DIR.mkdir(exist_ok=True)
-VIDEO_CACHE_DIR.mkdir(exist_ok=True)
+CACHE_DIR = paths.CACHE_DIR
+IMAGE_CACHE_DIR = paths.IMAGE_CACHE_DIR
+VIDEO_CACHE_DIR = paths.VIDEO_CACHE_DIR
+paths.ensure_dirs()
 
 def format_bytes(size_bytes: int) -> str:
     if size_bytes < 1024:
@@ -578,19 +577,19 @@ def iter_video_frames(
         previous_descriptor = descriptor
 
 class Indexer:
-    def __init__(self, model_manager: ModelManager, db_path=None):
+    def __init__(self, model_manager: ModelManager, db_path=None, data_dir=None, cache_dir=None):
         if db_path is None:
-            # Always put the db relative to this python file inside the api folder
-            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chroma_data")
+            db_path = paths.CHROMA_DIR
+        self.db_path = str(db_path)
             
         self.model_manager = model_manager
-        self.client = chromadb.PersistentClient(path=db_path)
+        self.client = chromadb.PersistentClient(path=self.db_path)
         self.collection = None
         self.selected_folders_by_collection = {}
-        self.data_dir = pathlib.Path(__file__).parent.resolve() / "data"
-        self.data_dir.mkdir(exist_ok=True)
-        self.cache_dir = pathlib.Path(__file__).parent.resolve() / "cache"
-        self.cache_dir.mkdir(exist_ok=True)
+        self.data_dir = pathlib.Path(data_dir if data_dir is not None else paths.DATA_DIR)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir = pathlib.Path(cache_dir if cache_dir is not None else paths.CACHE_DIR)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._load_selected_folders()
         
         # Connect to the collection matching the loaded VLM
@@ -1828,8 +1827,7 @@ class Indexer:
 
     def run_maintenance(self):
         """Perform database maintenance: VACUUM the SQLite database and return space saved."""
-        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chroma_data")
-        sqlite_file = os.path.join(db_path, "chroma.sqlite3")
+        sqlite_file = os.path.join(self.db_path, "chroma.sqlite3")
         
         if not os.path.exists(sqlite_file):
             return {"status": "error", "message": "Database file not found."}

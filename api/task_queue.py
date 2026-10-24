@@ -6,6 +6,8 @@ import threading
 from enum import Enum
 from typing import Optional, List, Dict, Any
 
+import paths
+
 
 class TaskType(str, Enum):
     INDEX_FOLDERS = "INDEX_FOLDERS"
@@ -195,7 +197,7 @@ class TaskQueueManager:
         if persistence_path is not None:
             self.persistence_path = persistence_path
         else:
-            data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+            data_dir = str(paths.DATA_DIR)
             os.makedirs(data_dir, exist_ok=True)
             self.persistence_path = os.path.join(data_dir, "task_queue.json")
 
@@ -322,7 +324,7 @@ class TaskQueueManager:
         target_path = self.persistence_path
         legacy_path = None
         if not target_path or not os.path.exists(target_path):
-            legacy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "task_queue.json")
+            legacy_path = os.path.join(str(paths.CACHE_DIR), "task_queue.json")
             if os.path.exists(legacy_path):
                 target_path = legacy_path
             else:
