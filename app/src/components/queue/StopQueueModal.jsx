@@ -1,4 +1,3 @@
-import React from 'react';
 import { Pause, CheckCircle2, X } from 'lucide-react';
 
 export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'modern' }) => {

@@ -1,4 +1,3 @@
-import React from 'react';
 import { AlertTriangle, X, ShieldAlert, Layers, Trash2, CheckCircle2 } from 'lucide-react';
 
 export const ModelSwitchWarningModal = ({
@@ -93,7 +92,7 @@ export const ModelSwitchWarningModal = ({
                 <span>{pendingCount} task(s) waiting in queue</span>
               </div>
               <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
-                Switching models now means queued tasks will index into the newly selected model's collection.
+                Switching models now means queued tasks will index into the newly selected model&apos;s collection.
               </p>
             </div>
           </div>

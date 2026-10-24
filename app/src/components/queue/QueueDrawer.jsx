@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Layers, Play, Pause, Clock, History, Loader2, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react';
+import { useState } from 'react';
+import { X, Layers, Play, Pause, Clock, History, Loader2, AlertTriangle, ArrowRight } from 'lucide-react';
 import { ActiveTaskCard } from './ActiveTaskCard';
 import { QueuedTaskList } from './QueuedTaskList';
 import { TaskHistoryList } from './TaskHistoryList';

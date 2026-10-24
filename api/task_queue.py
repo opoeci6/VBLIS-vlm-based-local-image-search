@@ -290,15 +290,6 @@ class TaskQueueManager:
         else:
             self.model_mismatch_warning = None
 
-    def retarget_tasks_to_model(self, new_model_id: str):
-        """Retargets all queued/pending tasks to adopt the specified active model."""
-        with self.lock:
-            for task in self.pending_queue:
-                task.model_id = new_model_id
-            self.current_model_id = new_model_id
-            self._check_model_mismatch()
-            self.save_to_disk()
-
     def save_to_disk(self):
         if not self.persistence_path:
             return
@@ -709,7 +700,7 @@ class TaskQueueManager:
                 if hasattr(self.indexer, "prune_deleted_files"):
                     self.indexer.prune_deleted_files(task_context=task)
             elif task.type == TaskType.CLEAR_CACHE:
-                from .indexer import safe_clear_cache
+                from indexer import safe_clear_cache
                 target = task.payload.get("target", "all")
                 safe_clear_cache(target=target)
                 task.update_progress(1, 1, f"Cleared {target} cache")

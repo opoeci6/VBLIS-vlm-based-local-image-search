@@ -1,5 +1,4 @@
-import React from 'react';
-import { Play, Pause, Square, Folder, Video, RefreshCw, Layers, AlertCircle, FileText } from 'lucide-react';
+import { Play, Pause, Square, Folder, Video, RefreshCw, Layers, AlertCircle } from 'lucide-react';
 import { formatDuration } from '../../utils/formatters';
 
 export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'modern' }) => {

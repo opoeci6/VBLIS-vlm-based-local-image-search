@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ChevronUp, ChevronDown, ChevronsUp, Trash2, Folder, Video, Clock, RefreshCw, GripVertical } from 'lucide-react';
 
 export const QueuedTaskList = ({

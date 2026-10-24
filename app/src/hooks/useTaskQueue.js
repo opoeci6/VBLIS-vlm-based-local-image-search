@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { keepIfEqual } from '../utils/jsonEqual';
 
 export const useTaskQueue = (API_BASE, setToast) => {
   const [activeTask, setActiveTask] = useState(null);
@@ -19,9 +20,9 @@ export const useTaskQueue = (API_BASE, setToast) => {
       const res = await fetch(`${API_BASE}/queue`);
       if (!res.ok) return;
       const data = await res.json();
-      setActiveTask(data.active_task);
-      setPendingTasks(data.pending_tasks || []);
-      setHistory(data.history || []);
+      setActiveTask(keepIfEqual(data.active_task));
+      setPendingTasks(keepIfEqual(data.pending_tasks || []));
+      setHistory(keepIfEqual(data.history || []));
       setWorkerState(data.worker_state || 'running');
       setPendingCount(data.pending_count || 0);
       setHistoryCount(data.history_count || 0);
@@ -38,7 +39,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
             reason: rawMismatch.reason || ''
           }
         : null;
-      setModelMismatch(normalizedMismatch);
+      setModelMismatch(keepIfEqual(normalizedMismatch));
       setActiveModel(data.active_model || null);
 
       // Toast when an active task completes
@@ -59,7 +60,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         }
       }
       prevActiveTaskId.current = data.active_task ? data.active_task.id : null;
-    } catch (err) {
+    } catch {
       // Backend polling error ignored silently
     }
   }, [API_BASE, setToast]);
@@ -101,7 +102,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         setToast?.({ message: `Queue error: ${data.detail || res.statusText}`, type: 'error' });
         return null;
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Failed to connect to task queue.', type: 'error' });
       return null;
     }
@@ -117,7 +118,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to cancel task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error cancelling task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -132,7 +133,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to pause task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error pausing task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -147,7 +148,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to resume task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error resuming task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -177,7 +178,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         });
         fetchQueue();
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Failed to send worker control signal.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -226,7 +227,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to retry task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error retrying task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
