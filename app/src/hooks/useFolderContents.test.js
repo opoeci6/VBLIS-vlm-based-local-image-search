@@ -187,4 +187,39 @@ describe('useFolderContents', () => {
       expect(contentCalls()).toHaveLength(1);
     });
   });
+
+  describe('poll state identity', () => {
+    beforeEach(() => {
+      fetchMock.mockImplementation(async () => jsonResponse(JSON.parse(JSON.stringify(contentsPayload))));
+    });
+
+    it('keeps folderContents across a silent re-browse with an equal payload', async () => {
+      const { result } = render();
+      await act(async () => { await result.current.handleBrowseFolderContents(folder); });
+      const contents = result.current.folderContents;
+      expect(contents).toEqual(contentsPayload);
+
+      await act(async () => { await result.current.handleBrowseFolderContents(folder, true); });
+      expect(contentCalls()).toHaveLength(2);
+      expect(result.current.folderContents).toBe(contents);
+    });
+
+    it('returns a new reference when the payload changes', async () => {
+      const { result } = render();
+      await act(async () => { await result.current.handleBrowseFolderContents(folder); });
+      const contents = result.current.folderContents;
+
+      fetchMock.mockImplementation(async () => jsonResponse({ items: [], total: 0 }));
+      await act(async () => { await result.current.handleBrowseFolderContents(folder, true); });
+      expect(result.current.folderContents).not.toBe(contents);
+      expect(result.current.folderContents).toEqual({ items: [], total: 0 });
+    });
+
+    it('keeps handleCloseFolderContents stable across re-renders', () => {
+      const { result, rerender } = render();
+      const handler = result.current.handleCloseFolderContents;
+      rerender(baseProps());
+      expect(result.current.handleCloseFolderContents).toBe(handler);
+    });
+  });
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_BASE } from '../config';
+import { keepIfEqual } from '../utils/jsonEqual';
 import { getAllSelectablePaths, toggleFolderSelection as toggleFolderSelectionPure } from '../utils/folderSelection';
 
 export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToast, onIndexChanged }) => {
@@ -14,7 +15,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
     try {
       const res = await fetch(`${API_BASE}/index/folders`);
       const data = await res.json();
-      setIndexedFolders(data.folders || []);
+      setIndexedFolders(keepIfEqual(data.folders || []));
     } catch (err) {
       console.error(err);
     } finally {
@@ -22,7 +23,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
     }
   }, [activeModel]);
 
-  const handleReindexFolder = async (folder_path) => {
+  const handleReindexFolder = useCallback(async (folder_path) => {
     try {
       const res = await fetch(`${API_BASE}/index/folder/reindex`, {
         method: 'POST',
@@ -47,7 +48,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
       setToast({ message: 'Failed to connect to backend for re-indexing.', type: 'error' });
       fetchIndexedFolders(true);
     }
-  };
+  }, [setToast, fetchIndexedFolders]);
 
   const handleDeleteFolderIndex = async (folder_path) => {
     try {

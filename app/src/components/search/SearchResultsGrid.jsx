@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import { FolderOpen, Loader2, Image as ImageIcon } from 'lucide-react';
 import { VideoResultFolder } from './VideoResultFolder';
 import { SearchResultCard } from './SearchResultCard';
 
-export const SearchResultsGrid = ({ results, uiTheme, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelRef, setSelectedVideoGroup, setSelectedImage }) => {
+export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTheme, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelRef, setSelectedVideoGroup, setSelectedImage }) {
   if (!(results.length > 0 && uiTheme === 'modern')) return null;
 
   return (
@@ -75,4 +76,4 @@ export const SearchResultsGrid = ({ results, uiTheme, videoGroups, imageResults,
       )}
     </div>
   );
-};
+});

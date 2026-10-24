@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { API_BASE } from '../config';
 import { annotateDuplicates, groupVideoResults, getImageResults } from '../utils/searchResults';
 import { useProgressiveList } from './useProgressiveList';
@@ -114,7 +114,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     }
   };
 
-  const handleCloseSearchResults = () => {
+  const handleCloseSearchResults = useCallback(() => {
     lastTextSearchBody.current = null;
     setShowSearchResults(false);
     setResults([]);
@@ -122,7 +122,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     setHasSearched(false);
     setImageSearchContext(null);
     onClose?.();
-  };
+  }, [onClose]);
 
   const handleClearImageSearch = () => {
     lastTextSearchBody.current = null;

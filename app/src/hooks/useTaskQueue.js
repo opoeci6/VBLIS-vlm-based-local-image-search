@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { keepIfEqual } from '../utils/jsonEqual';
 
 export const useTaskQueue = (API_BASE, setToast) => {
   const [activeTask, setActiveTask] = useState(null);
@@ -19,9 +20,9 @@ export const useTaskQueue = (API_BASE, setToast) => {
       const res = await fetch(`${API_BASE}/queue`);
       if (!res.ok) return;
       const data = await res.json();
-      setActiveTask(data.active_task);
-      setPendingTasks(data.pending_tasks || []);
-      setHistory(data.history || []);
+      setActiveTask(keepIfEqual(data.active_task));
+      setPendingTasks(keepIfEqual(data.pending_tasks || []));
+      setHistory(keepIfEqual(data.history || []));
       setWorkerState(data.worker_state || 'running');
       setPendingCount(data.pending_count || 0);
       setHistoryCount(data.history_count || 0);
@@ -38,7 +39,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
             reason: rawMismatch.reason || ''
           }
         : null;
-      setModelMismatch(normalizedMismatch);
+      setModelMismatch(keepIfEqual(normalizedMismatch));
       setActiveModel(data.active_model || null);
 
       // Toast when an active task completes

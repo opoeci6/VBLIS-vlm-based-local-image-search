@@ -340,4 +340,16 @@ describe('useMediaSearch', () => {
       expect(result.current.hasSearched).toBe(false);
     });
   });
+
+  describe('handler identity', () => {
+    it('keeps handleCloseSearchResults stable across re-renders when onClose is stable', () => {
+      const setToast = vi.fn();
+      const onClose = vi.fn();
+      const { result, rerender } = renderHook(() => useMediaSearch({ setToast, onSearchStart: vi.fn(), onClose }));
+      const handler = result.current.handleCloseSearchResults;
+      rerender();
+      act(() => result.current.setQuery('typing'));
+      expect(result.current.handleCloseSearchResults).toBe(handler);
+    });
+  });
 });

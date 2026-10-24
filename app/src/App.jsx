@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import TitleBar from './TitleBar';
 import { API_BASE } from './config';
 import { cn } from './utils/cn';
@@ -41,6 +41,11 @@ function App() {
   const { theme, setTheme, uiTheme, setUiTheme } = useThemePreferences();
   const { toast, setToast } = useToast();
   const queue = useTaskQueue(API_BASE, setToast);
+  // Stable so the memoized results modal does not re-render on unrelated App commits.
+  const handleSearchResultsClosed = useCallback(() => {
+    setSelectedImage(null);
+    setSelectedVideoGroup(null);
+  }, []);
   const {
     query,
     setQuery,
@@ -69,10 +74,7 @@ function App() {
   } = useMediaSearch({
     setToast,
     onSearchStart: () => setIsFoldersExpanded(false),
-    onClose: () => {
-      setSelectedImage(null);
-      setSelectedVideoGroup(null);
-    }
+    onClose: handleSearchResultsClosed
   });
   const { status, setStatus, showErrorAlert, setShowErrorAlert, isCancellingIndexing, handleCancelIndexing } = useBackendStatus({ setToast });
   const {

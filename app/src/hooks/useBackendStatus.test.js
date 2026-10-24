@@ -174,4 +174,53 @@ describe('useBackendStatus', () => {
     await act(async () => { await result.current.handleCancelIndexing(); });
     expect(setToast).toHaveBeenCalledWith({ message: 'Failed to cancel indexing.', type: 'error' });
   });
+
+  describe('poll state identity', () => {
+    // Fresh deep copy per response, like a real network body.
+    const setupFreshFetch = (initial) => {
+      const state = { payload: initial };
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => JSON.parse(JSON.stringify(state.payload)) })));
+      return state;
+    };
+
+    it('keeps the same status reference when a poll returns an equal payload', async () => {
+      setupFreshFetch({ ...baseStatus, failed_files: [{ path: '/x', error: 'bad' }] });
+      const { result } = renderHook(() => useBackendStatus({ setToast: vi.fn() }));
+      await flush();
+      const first = result.current.status;
+      expect(first.failed_files).toEqual([{ path: '/x', error: 'bad' }]);
+
+      await tick(1500);
+      await tick(1500);
+      expect(result.current.status).toBe(first);
+    });
+
+    it('returns a new reference with the new data when the payload changes', async () => {
+      const state = setupFreshFetch({ ...baseStatus, percent: 10 });
+      const { result } = renderHook(() => useBackendStatus({ setToast: vi.fn() }));
+      await flush();
+      const first = result.current.status;
+
+      state.payload = { ...baseStatus, percent: 20 };
+      await tick(1500);
+      expect(result.current.status).not.toBe(first);
+      expect(result.current.status.percent).toBe(20);
+    });
+
+    it('compares against the current state so local updates are overwritten by an equal poll', async () => {
+      setupFreshFetch({ ...baseStatus, is_downloading: false, download_error: 'old' });
+      const { result } = renderHook(() => useBackendStatus({ setToast: vi.fn() }));
+      await flush();
+      expect(result.current.status.is_downloading).toBe(false);
+
+      act(() => {
+        result.current.setStatus(prev => ({ ...prev, is_downloading: true, download_error: null }));
+      });
+      expect(result.current.status.is_downloading).toBe(true);
+
+      await tick(1500);
+      expect(result.current.status.is_downloading).toBe(false);
+      expect(result.current.status.download_error).toBe('old');
+    });
+  });
 });

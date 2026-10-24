@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config';
+import { keepIfEqual } from '../utils/jsonEqual';
 
 export const useFolderContents = ({ activeModel, lastTaskId, setToast, refreshFolders }) => {
   const [showFolderContents, setShowFolderContents] = useState(false);
@@ -29,7 +30,7 @@ export const useFolderContents = ({ activeModel, lastTaskId, setToast, refreshFo
         throw new Error(data.detail || 'Failed to browse folder contents.');
       }
 
-      setFolderContents(data);
+      setFolderContents(keepIfEqual(data));
     } catch (err) {
       console.error(err);
       if (!silent) {
@@ -46,12 +47,12 @@ export const useFolderContents = ({ activeModel, lastTaskId, setToast, refreshFo
     }
   }, [setToast, refreshFolders]);
 
-  const handleCloseFolderContents = () => {
+  const handleCloseFolderContents = useCallback(() => {
     setShowFolderContents(false);
     setBrowsingFolder(null);
     setFolderContents(null);
     setFolderVisibleLimit(60);
-  };
+  }, []);
 
   // 1. Task completions: refresh the open Folder Contents modal live
   useEffect(() => {

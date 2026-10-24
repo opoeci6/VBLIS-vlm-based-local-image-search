@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { API_BASE } from '../config';
+import { keepIfEqual } from '../utils/jsonEqual';
 
 export const useBackendStatus = ({ setToast }) => {
   const [status, setStatus] = useState({
@@ -39,7 +40,7 @@ export const useBackendStatus = ({ setToast }) => {
       try {
         const res = await fetch(`${API_BASE}/status`);
         const data = await res.json();
-        if (mounted) setStatus(data);
+        if (mounted) setStatus(keepIfEqual(data));
       } catch { /* backend not reachable yet; ignore */ }
     };
 

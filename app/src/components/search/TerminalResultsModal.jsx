@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import { Search, FolderOpen, Loader2, Image as ImageIcon, X } from 'lucide-react';
 import { VideoResultFolder } from './VideoResultFolder';
 import { SearchResultCard } from './SearchResultCard';
 
-export const TerminalResultsModal = ({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage }) => {
+export const TerminalResultsModal = memo(function TerminalResultsModal({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage }) {
   if (!(showSearchResults && results.length > 0 && uiTheme === 'terminal')) return null;
 
   return (
@@ -96,4 +97,4 @@ export const TerminalResultsModal = ({ showSearchResults, results, uiTheme, hand
       </div>
     </div>
   );
-};
+});

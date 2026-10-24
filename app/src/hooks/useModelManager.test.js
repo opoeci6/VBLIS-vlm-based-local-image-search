@@ -233,4 +233,58 @@ describe('useModelManager', () => {
       expect(setToast).not.toHaveBeenCalled();
     });
   });
+
+  describe('poll state identity', () => {
+    const fresh = (body) => ({ ok: true, json: async () => JSON.parse(JSON.stringify(body)) });
+    const setupFreshFetch = () => {
+      const payloads = { models: modelsPayload, gpu: gpuPayload };
+      const fetchMock = vi.fn(async (url) => {
+        if (url === `${API}/models`) return fresh(payloads.models);
+        if (url === `${API}/settings/gpu`) return fresh(payloads.gpu);
+        throw new Error(`unexpected fetch ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      return payloads;
+    };
+
+    it('keeps models and gpuSettings references across polls with equal payloads', async () => {
+      setupFreshFetch();
+      const { result } = render();
+      await flush();
+      const { models, gpuSettings } = result.current;
+      expect(models).toEqual(modelsPayload);
+      expect(gpuSettings).toEqual(gpuPayload);
+
+      await tick(1500);
+      await tick(1500);
+      expect(result.current.models).toBe(models);
+      expect(result.current.gpuSettings).toBe(gpuSettings);
+    });
+
+    it('returns new references with the new data when the payloads change', async () => {
+      const payloads = setupFreshFetch();
+      const { result } = render();
+      await flush();
+      const { models, gpuSettings } = result.current;
+
+      payloads.models = { active_model: 'org/model-b', models: [{ name: 'org/model-b' }] };
+      payloads.gpu = { ...gpuPayload, use_gpu: true };
+      await tick(1500);
+      expect(result.current.models).not.toBe(models);
+      expect(result.current.models.active_model).toBe('org/model-b');
+      expect(result.current.gpuSettings).not.toBe(gpuSettings);
+      expect(result.current.gpuSettings.use_gpu).toBe(true);
+    });
+
+    it('keeps the models reference when the post-download refresh returns an equal payload', async () => {
+      setupFreshFetch();
+      const { result, rerender, setStatus, setToast, queue } = render({ status: { ...idleStatus, is_downloading: true } });
+      await flush();
+      const models = result.current.models;
+
+      rerender({ status: idleStatus, setStatus, queue, setToast, onSwitchStart: vi.fn() });
+      await flush();
+      expect(result.current.models).toBe(models);
+    });
+  });
 });

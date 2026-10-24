@@ -284,4 +284,45 @@ describe('useIndexedFolders', () => {
       expect(setToast).toHaveBeenCalledWith({ message: 'Error: busy', type: 'error' });
     });
   });
+
+  describe('poll state identity', () => {
+    const useFreshResponses = () => {
+      routes[`GET ${API}/index/folders`] = () => jsonResponse(JSON.parse(JSON.stringify(foldersPayload)));
+    };
+
+    it('keeps indexedFolders and allSelectableFolderPaths across a silent re-fetch with an equal payload', async () => {
+      useFreshResponses();
+      const { result } = render();
+      await flush();
+      const { indexedFolders, allSelectableFolderPaths } = result.current;
+      expect(indexedFolders).toEqual(foldersPayload.folders);
+
+      await act(async () => { await result.current.fetchIndexedFolders(true); });
+      expect(listCalls()).toHaveLength(2);
+      expect(result.current.indexedFolders).toBe(indexedFolders);
+      expect(result.current.allSelectableFolderPaths).toBe(allSelectableFolderPaths);
+    });
+
+    it('returns new references when the payload changes', async () => {
+      useFreshResponses();
+      const { result } = render();
+      await flush();
+      const { indexedFolders, allSelectableFolderPaths } = result.current;
+
+      routes[`GET ${API}/index/folders`] = () => jsonResponse({ folders: [{ path: '/b' }] });
+      await act(async () => { await result.current.fetchIndexedFolders(true); });
+      expect(result.current.indexedFolders).not.toBe(indexedFolders);
+      expect(result.current.indexedFolders).toEqual([{ path: '/b' }]);
+      expect(result.current.allSelectableFolderPaths).not.toBe(allSelectableFolderPaths);
+    });
+
+    it('keeps handleReindexFolder stable across re-renders', async () => {
+      useFreshResponses();
+      const { result, rerender } = render();
+      await flush();
+      const handler = result.current.handleReindexFolder;
+      rerender(baseProps());
+      expect(result.current.handleReindexFolder).toBe(handler);
+    });
+  });
 });

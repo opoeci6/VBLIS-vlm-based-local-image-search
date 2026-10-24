@@ -1,3 +1,4 @@
+import { Profiler } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from './App';
@@ -73,7 +74,8 @@ const searchPayload = {
   ],
 };
 
-const json = (body) => ({ ok: true, json: async () => body });
+// Fresh deep copy per call, like a real network response (a shared instance would hide re-render churn).
+const json = (body) => ({ ok: true, json: async () => JSON.parse(JSON.stringify(body)) });
 
 describe('App (smoke)', () => {
   let fetchMock;
@@ -230,6 +232,26 @@ describe('App (smoke)', () => {
     const deleteCall = fetchMock.mock.calls.find(([url]) => String(url) === `${API}/index/folder/delete`);
     expect(JSON.parse(deleteCall[1].body)).toEqual({ folder_path: '/photos' });
   });
+
+  it('makes no React commits while idle with unchanged poll responses', async () => {
+    let commits = 0;
+    render(
+      <Profiler id="app" onRender={() => { commits += 1; }}>
+        <App />
+      </Profiler>
+    );
+    await screen.findByText('Ready to Search');
+    // Let the first full poll round (1.5 s interval) land so every state has settled.
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    commits = 0;
+    const statusCallsBefore = fetchMock.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/status').length;
+    await new Promise(resolve => setTimeout(resolve, 6000));
+    const statusCallsAfter = fetchMock.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/status').length;
+
+    expect(statusCallsAfter - statusCallsBefore).toBeGreaterThanOrEqual(3);
+    expect(commits).toBe(0);
+  }, 20000);
 
   it('opens settings from the model pill', async () => {
     render(<App />);

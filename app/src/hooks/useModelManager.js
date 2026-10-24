@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { API_BASE } from '../config';
+import { keepIfEqual } from '../utils/jsonEqual';
 
 export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchStart }) => {
   const [modelLoadError, setModelLoadError] = useState(null);
@@ -41,7 +42,7 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         const res = await fetch(`${API_BASE}/models`);
         const data = await res.json();
         if (mounted) {
-          setModels(data);
+          setModels(keepIfEqual(data));
           setBackendReady(true);
         }
         return true;
@@ -55,7 +56,7 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         const res = await fetch(`${API_BASE}/settings/gpu`);
         if (!res.ok) throw new Error("Failed to fetch GPU settings");
         const data = await res.json();
-        if (mounted) setGpuSettings(data);
+        if (mounted) setGpuSettings(keepIfEqual(data));
       } catch (e) {
         console.error("GPU Settings Fetch Error:", e);
       }
@@ -83,7 +84,7 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         try {
           const res = await fetch(`${API_BASE}/models`);
           const data = await res.json();
-          if (mounted) setModels(data);
+          if (mounted) setModels(keepIfEqual(data));
         } catch { /* backend not reachable yet; ignore */ }
       };
       fetchModels();

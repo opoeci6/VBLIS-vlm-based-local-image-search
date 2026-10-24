@@ -1,9 +1,10 @@
+import { memo } from 'react';
 import { FolderOpen } from 'lucide-react';
 import { FolderItemThumbnail } from './FolderItemThumbnail';
 import { cn } from '../../utils/cn';
 import { formatBytes } from '../../utils/formatters';
 
-export const FolderContentRow = ({ item, uiTheme, setSelectedImage, setToast }) => {
+export const FolderContentRow = memo(function FolderContentRow({ item, uiTheme, setSelectedImage, setToast }) {
   const isMissing = item.exists_on_disk === false;
 
   return (
@@ -112,4 +113,4 @@ export const FolderContentRow = ({ item, uiTheme, setSelectedImage, setToast }) 
       </div>
     </div>
   );
-};
+});

@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import { FolderOpen, Loader2, AlertTriangle, X, RefreshCw } from 'lucide-react';
 import { FolderContentRow } from './FolderContentRow';
 import { cn } from '../../utils/cn';
 
-export const FolderContentsModal = ({ showFolderContents, browsingFolder, folderContents, isFetchingFolderContents, isCleaningGhostRecords, setIsCleaningGhostRecords, folderVisibleLimit, setFolderVisibleLimit, handleCloseFolderContents, handleReindexFolder, setSelectedImage, setToast, uiTheme }) => {
+export const FolderContentsModal = memo(function FolderContentsModal({ showFolderContents, browsingFolder, folderContents, isFetchingFolderContents, isCleaningGhostRecords, setIsCleaningGhostRecords, folderVisibleLimit, setFolderVisibleLimit, handleCloseFolderContents, handleReindexFolder, setSelectedImage, setToast, uiTheme }) {
   if (!(showFolderContents && browsingFolder)) return null;
 
   return (
@@ -138,4 +139,4 @@ export const FolderContentsModal = ({ showFolderContents, browsingFolder, folder
         </div>
       </div>
   );
-};
+});
