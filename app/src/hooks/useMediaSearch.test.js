@@ -185,6 +185,109 @@ describe('useMediaSearch', () => {
     });
   });
 
+  describe('refreshSearch', () => {
+    const refresh = (result) => act(async () => {
+      await result.current.refreshSearch();
+    });
+
+    it('re-POSTs the original request body, replaces results and keeps the query and hasSearched', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg'), imageHit('/b.jpg', { embedding: [0, 1] })] }));
+      const { result } = render();
+      await submit(result, 'cats');
+      await runSearch(result);
+      expect(result.current.results).toHaveLength(2);
+      const originalBody = fetchMock.mock.calls[0][1].body;
+
+      await submit(result, 'dogs');
+      act(() => { result.current.setMinScore(0.6); result.current.setMaxResults(5); });
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b.jpg', { embedding: [0, 1] })] }));
+      await refresh(result);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const [url, init] = fetchMock.mock.calls[1];
+      expect(url).toBe(`${API}/search`);
+      expect(init.method).toBe('POST');
+      expect(init.body).toBe(originalBody);
+      expect(JSON.parse(init.body)).toEqual({ query: 'cats', top_k: 50, min_score: 0.2 });
+
+      expect(result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
+      result.current.results.forEach(r => expect(r).not.toHaveProperty('embedding'));
+      expect(result.current.hasSearched).toBe(true);
+      expect(result.current.query).toBe('dogs');
+      expect(result.current.showSearchResults).toBe(true);
+      expect(result.current.isSearching).toBe(false);
+    });
+
+    it('does not call onSearchStart or reset the visible count', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ results: [imageHit('/a.jpg')] }));
+      const { result, onSearchStart } = render();
+      await submit(result, 'cats');
+      await runSearch(result);
+      act(() => result.current.setVisibleResultsCount(240));
+      expect(onSearchStart).toHaveBeenCalledTimes(1);
+
+      await refresh(result);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(onSearchStart).toHaveBeenCalledTimes(1);
+      expect(result.current.visibleResultsCount).toBe(240);
+    });
+
+    it('clears results and the image context without fetching after an image search', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ results: [imageHit('/a.jpg')] }));
+      const { result } = render();
+      await submit(result, 'cats');
+      await runSearch(result);
+      await act(async () => {
+        await result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' }));
+      });
+      expect(result.current.imageSearchContext).toBe('cat.png');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      await refresh(result);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(result.current.results).toEqual([]);
+      expect(result.current.imageSearchContext).toBeNull();
+      expect(result.current.hasSearched).toBe(false);
+    });
+
+    it('does nothing but leave the results empty when no search has run', async () => {
+      const { result } = render();
+      await refresh(result);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.current.results).toEqual([]);
+      expect(result.current.hasSearched).toBe(false);
+      expect(result.current.isSearching).toBe(false);
+    });
+
+    it('does not re-run a search that was reset', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ results: [imageHit('/a.jpg')] }));
+      const { result } = render();
+      await submit(result, 'cats');
+      await runSearch(result);
+      act(() => result.current.handleCloseSearchResults());
+      await refresh(result);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.current.results).toEqual([]);
+    });
+
+    it('leaves results empty, hasSearched true and isSearching false when the re-search fails', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')] }));
+      const { result } = render();
+      await submit(result, 'cats');
+      await runSearch(result);
+
+      fetchMock.mockRejectedValueOnce(new Error('down'));
+      await refresh(result);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(console.error).toHaveBeenCalled();
+      expect(result.current.results).toEqual([]);
+      expect(result.current.hasSearched).toBe(true);
+      expect(result.current.isSearching).toBe(false);
+    });
+  });
+
   describe('resets', () => {
     const withResults = async () => {
       fetchMock.mockResolvedValue(jsonResponse({ results: [imageHit('/a.jpg')] }));

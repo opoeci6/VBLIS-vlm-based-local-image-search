@@ -28,7 +28,25 @@ export const annotateDuplicates = (dataResults) => {
   // 2. Pairwise Cosine Similarity for Visual Duplicates (Threshold >= 0.985)
   // Run full pairwise on top candidate results (up to 800) to keep JS thread non-blocking for 4k+ sets
   const VISUAL_THRESHOLD = 0.985;
-  const visualGroups = []; // Array of Sets of indices
+  // Union-find over result indices so that similarity chains merge into one group
+  const parent = new Map(); // index -> parent index; only indices in a similar pair are present
+  const findRoot = (x) => {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root);
+    while (parent.get(x) !== root) {
+      const next = parent.get(x);
+      parent.set(x, root);
+      x = next;
+    }
+    return root;
+  };
+  const union = (a, b) => {
+    if (!parent.has(a)) parent.set(a, a);
+    if (!parent.has(b)) parent.set(b, b);
+    const rootA = findRoot(a);
+    const rootB = findRoot(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
   const maxVisualLimit = Math.min(results.length, 800);
 
   for (let i = 0; i < maxVisualLimit; i++) {
@@ -44,13 +62,7 @@ export const annotateDuplicates = (dataResults) => {
 
       const sim = vectorDot(itemA.embedding, itemB.embedding);
       if (sim >= VISUAL_THRESHOLD) {
-        let targetGroup = visualGroups.find(g => g.has(i) || g.has(j));
-        if (!targetGroup) {
-          targetGroup = new Set();
-          visualGroups.push(targetGroup);
-        }
-        targetGroup.add(i);
-        targetGroup.add(j);
+        union(i, j);
       }
     }
   }
@@ -66,11 +78,20 @@ export const annotateDuplicates = (dataResults) => {
     exactIdx++;
   });
 
+  // Connected components, ordered by smallest member index (Map preserves insertion order
+  // and indices are visited ascending, so each component is created at its smallest member).
+  const componentsByRoot = new Map();
+  Array.from(parent.keys()).sort((a, b) => a - b).forEach(idx => {
+    const root = findRoot(idx);
+    if (!componentsByRoot.has(root)) componentsByRoot.set(root, []);
+    componentsByRoot.get(root).push(idx);
+  });
+  const visualGroups = Array.from(componentsByRoot.values());
+
   const visualColorMap = new Map();
   const visualPathsMap = new Map();
-  visualGroups.forEach((gSet, gIdx) => {
+  visualGroups.forEach((indices, gIdx) => {
     const color = visualColors[gIdx % visualColors.length];
-    const indices = Array.from(gSet);
     const paths = indices.map(idx => results[idx].path);
     indices.forEach(idx => {
       visualColorMap.set(idx, color);

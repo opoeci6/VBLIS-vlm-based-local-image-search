@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { API_BASE } from '../config';
 import { annotateDuplicates, groupVideoResults, getImageResults } from '../utils/searchResults';
 import { useProgressiveList } from './useProgressiveList';
@@ -13,6 +13,8 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   const [maxResults, setMaxResults] = useState(50);
   const [visibleResultsCount, setVisibleResultsCount] = useState(80);
   const [imageSearchContext, setImageSearchContext] = useState(null);
+  // Request body of the last submitted text search, so it can be re-run after the index changes.
+  const lastTextSearchBody = useRef(null);
 
   const imageResults = useMemo(
     () => getImageResults(results),
@@ -33,10 +35,21 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
 
   const videoGroups = useMemo(() => groupVideoResults(results), [results]);
 
+  const postTextSearch = async (body) => {
+    const res = await fetch(`${API_BASE}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    setResults(annotateDuplicates(data.results));
+  };
+
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) {
       if (hasSearched && !imageSearchContext) {
+        lastTextSearchBody.current = null;
         setResults([]);
         setHasSearched(false);
         setQuery('');
@@ -49,14 +62,10 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     setHasSearched(true);
     setImageSearchContext(null);
     setVisibleResultsCount(80);
+    const body = { query, top_k: parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults), min_score: parseFloat(minScore) };
+    lastTextSearchBody.current = body;
     try {
-      const res = await fetch(`${API_BASE}/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, top_k: parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults), min_score: parseFloat(minScore) })
-      });
-      const data = await res.json();
-      setResults(annotateDuplicates(data.results));
+      await postTextSearch(body);
       setShowSearchResults(true);
     } catch (err) {
       console.error(err);
@@ -71,6 +80,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
       return;
     }
 
+    lastTextSearchBody.current = null;
     onSearchStart?.();
     setIsSearching(true);
     setHasSearched(true);
@@ -105,6 +115,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   };
 
   const handleCloseSearchResults = () => {
+    lastTextSearchBody.current = null;
     setShowSearchResults(false);
     setResults([]);
     setQuery('');
@@ -114,15 +125,36 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   };
 
   const handleClearImageSearch = () => {
+    lastTextSearchBody.current = null;
     setImageSearchContext(null);
     setResults([]);
     setHasSearched(false);
   };
 
   const clearResults = () => {
+    lastTextSearchBody.current = null;
     setResults([]);
     setHasSearched(false);
     setImageSearchContext(null);
+  };
+
+  // Re-run the last text search (same request body) after the index changed, so stale hits
+  // disappear. Image searches cannot be re-run and are cleared instead.
+  const refreshSearch = async () => {
+    const body = lastTextSearchBody.current;
+    if (imageSearchContext || !body || !hasSearched) {
+      clearResults();
+      return;
+    }
+    setResults([]);
+    setIsSearching(true);
+    try {
+      await postTextSearch(body);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   const resetSearch = () => {
@@ -154,6 +186,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     handleCloseSearchResults,
     handleClearImageSearch,
     clearResults,
+    refreshSearch,
     resetSearch
   };
 };

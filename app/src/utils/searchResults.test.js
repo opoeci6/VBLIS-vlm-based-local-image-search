@@ -62,6 +62,40 @@ describe('annotateDuplicates', () => {
     expect(below[1].duplicateType).toBeNull();
   });
 
+  it('merges visual groups transitively when a later pair bridges two groups', () => {
+    const at = (deg) => {
+      const t = (deg * Math.PI) / 180;
+      return [Math.cos(t), Math.sin(t)];
+    };
+    // Pairs 9 degrees apart are similar (cos ~0.9877); 18 and 27 degrees apart are not.
+    // Pair loop order: {0,3}, then {1,2}, then the bridge (2,3).
+    const out = annotateDuplicates([
+      img('/a.jpg', { hash: 'h0', embedding: at(0) }),
+      img('/b.jpg', { hash: 'h1', embedding: at(27) }),
+      img('/c.jpg', { hash: 'h2', embedding: at(18) }),
+      img('/d.jpg', { hash: 'h3', embedding: at(9) }),
+    ]);
+    out.forEach(item => expect(item.duplicateType).toBe('visual'));
+    expect(new Set(out.map(item => item.dupeColor)).size).toBe(1);
+    const all = ['/a.jpg', '/b.jpg', '/c.jpg', '/d.jpg'];
+    out.forEach(item => {
+      expect([...item.otherPaths].sort()).toEqual(all.filter(p => p !== item.path));
+    });
+  });
+
+  it('orders visual groups by smallest member index for color assignment', () => {
+    const out = annotateDuplicates([
+      img('/a.jpg', { embedding: [1, 0] }),
+      img('/b.jpg', { embedding: [0, 1] }),
+      img('/c.jpg', { embedding: [1, 0] }),
+      img('/d.jpg', { embedding: [0, 1] }),
+    ]);
+    expect(out[0].dupeColor).toBe('#f59e0b');
+    expect(out[2].dupeColor).toBe('#f59e0b');
+    expect(out[1].dupeColor).toBe('#10b981');
+    expect(out[3].dupeColor).toBe('#10b981');
+  });
+
   it('never tags videos, even with the same hash or embedding', () => {
     const video = (path) => ({ path, media_type: 'video', hash: 'hv', embedding: BASE, score: 0.9 });
     const out = annotateDuplicates([

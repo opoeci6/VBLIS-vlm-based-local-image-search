@@ -64,7 +64,7 @@ function App() {
     handleImageDrop,
     handleCloseSearchResults,
     handleClearImageSearch,
-    clearResults,
+    refreshSearch,
     resetSearch
   } = useMediaSearch({
     setToast,
@@ -135,7 +135,7 @@ function App() {
     lastTaskId: status.last_task_id,
     isExpanded: isFoldersExpanded,
     setToast,
-    onIndexChanged: clearResults
+    onIndexChanged: refreshSearch
   });
   const {
     showFolderContents,

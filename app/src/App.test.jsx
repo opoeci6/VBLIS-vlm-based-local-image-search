@@ -197,6 +197,40 @@ describe('App (smoke)', () => {
     expect(localStorage.getItem('ui_theme_style')).toBe('terminal');
   });
 
+  it('re-runs the last text search with the same body after deleting an indexed folder', async () => {
+    const defaultImpl = fetchMock.getMockImplementation();
+    const searchBodies = [];
+    const afterDeleteResults = { results: [searchPayload.results[0]] };
+    fetchMock.mockImplementation(async (url, init) => {
+      const { pathname } = new URL(String(url));
+      const method = init?.method || 'GET';
+      if (pathname === '/search' && method === 'POST') {
+        searchBodies.push(init.body);
+        return json(searchBodies.length === 1 ? searchPayload : afterDeleteResults);
+      }
+      if (pathname === '/index/folder/delete' && method === 'POST') return json({ status: 'ok' });
+      return defaultImpl(url, init);
+    });
+
+    render(<App />);
+    await screen.findByText('Ready to Search');
+    fireEvent.change(screen.getByPlaceholderText(/Search images/), { target: { value: 'cats' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    await waitFor(() => expect(screen.getAllByAltText('Result')).toHaveLength(2));
+    expect(searchBodies).toHaveLength(1);
+
+    fireEvent.click(screen.getByTitle('Expand folders'));
+    fireEvent.click(await screen.findByTitle('Delete entire folder tree from index'));
+
+    await waitFor(() => expect(searchBodies).toHaveLength(2));
+    expect(searchBodies[1]).toBe(searchBodies[0]);
+    await waitFor(() => expect(screen.getAllByAltText('Result')).toHaveLength(1));
+    expect(screen.queryByText('Ready to Search')).toBeNull();
+    expect(screen.getByTitle('Collapse folders').getAttribute('aria-expanded')).toBe('true');
+    const deleteCall = fetchMock.mock.calls.find(([url]) => String(url) === `${API}/index/folder/delete`);
+    expect(JSON.parse(deleteCall[1].body)).toEqual({ folder_path: '/photos' });
+  });
+
   it('opens settings from the model pill', async () => {
     render(<App />);
     await screen.findByText('Ready to Search');
