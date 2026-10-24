@@ -19,6 +19,47 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 let win;
 let pythonProcess;
 
+// One instance only: a second one would start a second backend on the same data folder
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+}
+
+// Folder where the backend keeps models, the index and caches (VBLIS_DATA_DIR, see api/paths.py).
+// Dev leaves it unset so the backend keeps using api/. Installed builds (NSIS puts an uninstaller
+// next to the exe) use a per-user folder outside the install directory that updates replace;
+// the portable build keeps its data in a folder beside the exe so it stays self-contained.
+// Must match "build.productName" in package.json, which names the exe and the NSIS uninstaller.
+// app.getName() can't be used: Electron only reads a top-level productName, so it returns "app".
+const PRODUCT_NAME = 'VBLIS';
+
+function isSameOrInside(child, parent) {
+  const relative = path.relative(parent, child);
+  return !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function resolveDataDir() {
+  if (process.env.VBLIS_DATA_DIR) return process.env.VBLIS_DATA_DIR;
+  if (!app.isPackaged) return null;
+
+  const exeDir = path.dirname(process.execPath);
+  const isInstalled = fs.existsSync(path.join(exeDir, `Uninstall ${PRODUCT_NAME}.exe`));
+  if (isInstalled) {
+    const localAppData = process.env.LOCALAPPDATA || app.getPath('appData');
+    const dataDir = path.join(localAppData, PRODUCT_NAME);
+    // Installed straight into that folder: keep the data out of the directory updates replace
+    return isSameOrInside(dataDir, exeDir) ? path.join(localAppData, `${PRODUCT_NAME}-data`) : dataDir;
+  }
+  return path.join(exeDir, `${PRODUCT_NAME}-data`);
+}
+
 function startPythonBackend() {
   const isProd = app.isPackaged;
   // If packaged, the python exe is alongside the app or in Resources
@@ -34,11 +75,14 @@ function startPythonBackend() {
 
   const args = isProd ? [] : [scriptPath];
   const cwd = path.dirname(pythonPath);
-  
-  console.log('Starting Python backend...', pythonPath, args, 'cwd:', cwd);
-  pythonProcess = spawn(pythonPath, args, { 
+  const dataDir = resolveDataDir();
+  const env = dataDir ? { ...process.env, VBLIS_DATA_DIR: dataDir } : process.env;
+
+  console.log('Starting Python backend...', pythonPath, args, 'cwd:', cwd, 'data:', dataDir || '(api folder)');
+  pythonProcess = spawn(pythonPath, args, {
     cwd: cwd,
-    stdio: ['ignore', 'pipe', 'pipe'] 
+    env: env,
+    stdio: ['ignore', 'pipe', 'pipe']
   });
   
   pythonProcess.stdout?.on('data', (data) => {
@@ -99,6 +143,9 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(() => {
+  // A second instance is quitting; don't let it start another backend
+  if (!hasSingleInstanceLock) return;
+
   protocol.registerFileProtocol('local', (request, callback) => {
     // request.url is "local://C:/Users..." or "local://d:/..."
     const filePath = decodeURIComponent(request.url.replace('local://', ''));

@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 import os
+import sys
 import io
 import struct
 import pathlib
@@ -15,6 +16,12 @@ import shutil
 import hashlib
 from PIL import Image, ImageOps
 import pillow_heif
+
+# Electron reads our stdout/stderr pipes as UTF-8, but they default to the ANSI code page, so
+# printing a path it can't encode would raise. The frozen build ignores PYTHONUTF8/PYTHONIOENCODING.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 pillow_heif.register_heif_opener()
 
@@ -76,6 +83,16 @@ def _apply_exif_orientation(img: Image.Image, exif_bytes: bytes) -> Image.Image:
 
 # Ensure we load the .env from the data root (see paths.py), and strictly enforce HF_HOME
 import paths
+# Packaged builds only: move data an older build kept in the install folder (before anything opens it)
+try:
+    _migration = paths.migrate_legacy_data()
+except paths.MigrationLockedError as e:
+    sys.exit(f"[DataMigration] {e}; not starting.")
+if "failed" in _migration.values():
+    # Starting now would create fresh, empty state next to the half-migrated data; exit so the
+    # next launch retries the move instead of shadowing the old copy forever
+    failed = ", ".join(name for name, outcome in _migration.items() if outcome == "failed")
+    sys.exit(f"[DataMigration] Could not move {failed} into {paths.DATA_ROOT}; not starting.")
 load_dotenv(paths.ENV_FILE, override=True)
 os.environ["HF_HOME"] = str(paths.MODELS_DIR)
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "30"
