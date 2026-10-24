@@ -124,6 +124,7 @@ from indexer import (
     get_cache_stats, safe_clear_cache
 )
 from task_queue import TaskQueueManager, TaskType, TaskStatus, WorkerState
+from thumbnail_cache import get_or_create_thumbnail, save_jpeg_thumbnail
 
 from contextlib import asynccontextmanager
 
@@ -766,17 +767,15 @@ def serve_image(
             stat = os.stat(path)
             cache_path = get_video_frame_cache_path(path, timestamp, VIDEO_CACHE_DIR, stat)
 
-            if size == "thumbnail" and cache_path.exists():
-                return FileResponse(cache_path)
+            if size == "thumbnail":
+                def render_frame_thumbnail(fp):
+                    frame = extract_video_frame(path, timestamp)
+                    save_jpeg_thumbnail(frame, fp)
+                    frame.close()
+
+                return FileResponse(get_or_create_thumbnail(cache_path, render_frame_thumbnail))
 
             frame = extract_video_frame(path, timestamp)
-            if size == "thumbnail":
-                VIDEO_CACHE_DIR.mkdir(exist_ok=True)
-                frame.thumbnail((480, 480))
-                frame.convert("RGB").save(cache_path, format="JPEG", quality=78, optimize=True)
-                frame.close()
-                return FileResponse(cache_path)
-
             buffer = io.BytesIO()
             frame.convert("RGB").save(buffer, format="JPEG", quality=90)
             frame.close()
@@ -790,19 +789,8 @@ def serve_image(
         file_hash = compute_hash(path)
         cache_path = IMAGE_CACHE_DIR / f"{file_hash}_thumb.jpg"
         legacy_path = CACHE_DIR / f"{file_hash}_thumb.jpg"
-        
-        if cache_path.exists():
-            return FileResponse(cache_path)
-        if legacy_path.exists():
-            try:
-                IMAGE_CACHE_DIR.mkdir(exist_ok=True)
-                legacy_path.replace(cache_path)
-                return FileResponse(cache_path)
-            except Exception:
-                return FileResponse(legacy_path)
-            
-        # Not in cache, need to generate
-        try:
+
+        def render_image_thumbnail(fp):
             if is_heic:
                 heif_file = pillow_heif.open_heif(path)
                 img = Image.frombytes(
@@ -817,12 +805,10 @@ def serve_image(
             else:
                 img = Image.open(path)
                 img = ImageOps.exif_transpose(img)
-            
-            # Generate thumbnail
-            IMAGE_CACHE_DIR.mkdir(exist_ok=True)
-            img.thumbnail((480, 480))
-            img.convert("RGB").save(cache_path, format="JPEG", quality=78, optimize=True)
-            return FileResponse(cache_path)
+            save_jpeg_thumbnail(img, fp)
+
+        try:
+            return FileResponse(get_or_create_thumbnail(cache_path, render_image_thumbnail, legacy_path))
         except Exception as e:
             # Fallback to full image if thumbnail generation fails, but log it
             print(f"Thumbnail generation failed: {e}")

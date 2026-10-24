@@ -11,6 +11,10 @@ from av.codec.hwaccel import hwdevices_available, HWAccel
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from model_manager import ModelManager
 import pathlib
+from functools import partial
+from thumbnail_cache import (
+    TEMP_FILE_GLOB, get_or_create_thumbnail, is_thumbnail_cached, save_jpeg_thumbnail
+)
 
 pillow_heif.register_heif_opener()
 try:
@@ -202,7 +206,7 @@ def safe_clear_cache(target: str = "all") -> dict:
             print(f"Safety violation: {dir_path} is outside {CACHE_DIR}")
             continue
 
-        for item in dir_path.glob("*.jpg"):
+        for item in [*dir_path.glob("*.jpg"), *dir_path.glob(TEMP_FILE_GLOB)]:
             if item.is_file():
                 try:
                     if len(item.name) >= 32:
@@ -262,10 +266,9 @@ def save_video_frame_thumbnail(filepath: str, timestamp_seconds: float, image: I
     try:
         VIDEO_CACHE_DIR.mkdir(exist_ok=True)
         out_path = get_video_frame_cache_path(filepath, timestamp_seconds, VIDEO_CACHE_DIR, stat)
-        if not out_path.exists():
+        if not is_thumbnail_cached(out_path):
             thumb = image.copy()
-            thumb.thumbnail((480, 480))
-            thumb.convert("RGB").save(out_path, format="JPEG", quality=78, optimize=True)
+            get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, thumb))
             thumb.close()
     except Exception as e:
         print(f"Failed to cache index-time video thumbnail for {filepath} at {timestamp_seconds}s: {e}")
@@ -335,7 +338,7 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
     uncached_ts = []
     for ts in timestamps:
         p = get_video_frame_cache_path(filepath, ts, cache_dir, stat)
-        if not p.exists():
+        if not is_thumbnail_cached(p):
             uncached_ts.append(float(ts))
         elif on_frame_saved:
             on_frame_saved(ts)
@@ -369,12 +372,11 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
                 while ts_idx < num_ts and frame_ts >= sorted_ts[ts_idx] - 0.05:
                     target_ts = sorted_ts[ts_idx]
                     out_path = get_video_frame_cache_path(filepath, target_ts, cache_dir, stat)
-                    if not out_path.exists():
+                    if not is_thumbnail_cached(out_path):
                         bgr_arr = frame.to_ndarray(format="bgr24")
                         rgb_arr = cv2.cvtColor(bgr_arr, cv2.COLOR_BGR2RGB)
                         pil_img = Image.fromarray(rgb_arr)
-                        pil_img.thumbnail((480, 480))
-                        pil_img.convert("RGB").save(out_path, format="JPEG", quality=78, optimize=True)
+                        get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, pil_img))
                         pil_img.close()
                     if on_frame_saved:
                         on_frame_saved(target_ts)
@@ -388,12 +390,11 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
             while ts_idx < num_ts and last_frame is not None:
                 target_ts = sorted_ts[ts_idx]
                 out_path = get_video_frame_cache_path(filepath, target_ts, cache_dir, stat)
-                if not out_path.exists():
+                if not is_thumbnail_cached(out_path):
                     bgr_arr = last_frame.to_ndarray(format="bgr24")
                     rgb_arr = cv2.cvtColor(bgr_arr, cv2.COLOR_BGR2RGB)
                     pil_img = Image.fromarray(rgb_arr)
-                    pil_img.thumbnail((480, 480))
-                    pil_img.convert("RGB").save(out_path, format="JPEG", quality=78, optimize=True)
+                    get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, pil_img))
                     pil_img.close()
                 if on_frame_saved:
                     on_frame_saved(target_ts)
@@ -411,14 +412,13 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
         try:
             for ts in remaining_ts:
                 out_path = get_video_frame_cache_path(filepath, ts, cache_dir, stat)
-                if not out_path.exists():
+                if not is_thumbnail_cached(out_path):
                     capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, ts) * 1000.0)
                     success, frame = capture.read()
                     if success and frame is not None:
                         rgb_arr = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                         pil_img = Image.fromarray(rgb_arr)
-                        pil_img.thumbnail((480, 480))
-                        pil_img.convert("RGB").save(out_path, format="JPEG", quality=78, optimize=True)
+                        get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, pil_img))
                         pil_img.close()
                 if on_frame_saved:
                     on_frame_saved(ts)
