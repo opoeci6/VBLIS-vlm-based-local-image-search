@@ -11,7 +11,9 @@ from av.codec.hwaccel import hwdevices_available, HWAccel
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from model_manager import ModelManager
 import pathlib
+import threading
 import paths
+from security import is_within
 from functools import partial
 from thumbnail_cache import (
     TEMP_FILE_GLOB, get_or_create_thumbnail, is_thumbnail_cached, save_jpeg_thumbnail
@@ -586,6 +588,8 @@ class Indexer:
         self.client = chromadb.PersistentClient(path=self.db_path)
         self.collection = None
         self.selected_folders_by_collection = {}
+        self._roots_synced_collections = set()
+        self._roots_sync_lock = threading.Lock()
         self.data_dir = pathlib.Path(data_dir if data_dir is not None else paths.DATA_DIR)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = pathlib.Path(cache_dir if cache_dir is not None else paths.CACHE_DIR)
@@ -668,6 +672,56 @@ class Indexer:
 
         existing.add(norm_new)
         self._save_selected_folders()
+
+    def is_path_in_indexed_folders(self, path: str) -> bool:
+        """True when path lies in a folder indexed under any collection (used to restrict file-serving endpoints)."""
+        def check():
+            roots = [r for folders in list(self.selected_folders_by_collection.values()) for r in list(folders)]
+            return is_within(path, roots)
+
+        if check():
+            return True
+        # Older indexes can hold records whose folders were never written to indexed_folders.json
+        # (only get_indexed_folders back-fills them), so do that once per collection on a miss.
+        # Concurrent misses (a grid of thumbnails) wait for that back-fill instead of failing early.
+        collection = self.collection
+        if collection is None:
+            return False
+        with self._roots_sync_lock:
+            if collection.name in self._roots_synced_collections:
+                return check()
+            # A failed back-fill is not remembered, so the next miss retries it
+            if self._record_unlisted_record_folders(collection):
+                self._roots_synced_collections.add(collection.name)
+        return check()
+
+    def _record_unlisted_record_folders(self, collection) -> bool:
+        """Add the topmost folders of records outside every selected folder to the selected folders.
+        Works on the given collection (not self.collection, which a model switch may change). Returns
+        False if it failed."""
+        try:
+            results = collection.get(include=["metadatas"])
+            selected_folders = self.selected_folders_by_collection.setdefault(collection.name, set())
+            roots = list(selected_folders)
+            unlisted_parents = set()
+            for meta in (results or {}).get("metadatas") or []:
+                if meta and "path" in meta:
+                    p = os.path.abspath(os.path.normpath(meta["path"]))
+                    if not is_within(p, roots):
+                        unlisted_parents.add(os.path.dirname(p))
+            added = False
+            kept = []
+            for parent in sorted(unlisted_parents, key=lambda x: len(x)):
+                if not any(parent.lower().startswith(top.lower() + os.sep) for top in kept):
+                    kept.append(parent)
+                    selected_folders.add(parent)
+                    added = True
+            if added:
+                self._save_selected_folders()
+            return True
+        except Exception as e:
+            print(f"[Warning] Failed to record folders of unlisted index records: {e}")
+            return False
 
     def _remove_selected_folder(self, folder_path: str):
         if not self.collection:
@@ -756,7 +810,9 @@ class Indexer:
                 has_items = any(p.lower() == sf_lower or p.lower().startswith(sf_lower + os.sep) for p in db_paths)
                 if has_items:
                     active_folders.add(sf_norm)
-                else:
+                elif not os.path.isdir(sf_norm):
+                    # Keep a selected folder that exists but has no records yet (its index task just
+                    # started), or /image would 403 its files until the first batch lands
                     selected_folders.discard(sf)
 
             # 2. For any db_paths not covered by active selected folders, find their topmost common roots

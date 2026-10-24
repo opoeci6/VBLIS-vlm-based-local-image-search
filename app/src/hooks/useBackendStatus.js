@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
+import { apiFetch } from '../utils/api';
 
 export const useBackendStatus = ({ setToast }) => {
   const [status, setStatus] = useState({
@@ -38,7 +39,7 @@ export const useBackendStatus = ({ setToast }) => {
 
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`${API_BASE}/status`);
+        const res = await apiFetch(`${API_BASE}/status`);
         const data = await res.json();
         if (mounted) setStatus(keepIfEqual(data));
       } catch { /* backend not reachable yet; ignore */ }
@@ -91,7 +92,7 @@ export const useBackendStatus = ({ setToast }) => {
     if (isCancellingIndexing) return;
     setIsCancellingIndexing(true);
     try {
-      await fetch(`${API_BASE}/index/cancel`, { method: 'POST' });
+      await apiFetch(`${API_BASE}/index/cancel`, { method: 'POST' });
       setToast({ message: "Indexing cancellation requested.", type: 'info' });
     } catch (err) {
       console.error(err);

@@ -30,6 +30,7 @@ import { SearchResultsGrid } from './components/search/SearchResultsGrid';
 import { TerminalResultsModal } from './components/search/TerminalResultsModal';
 import { FolderContentsModal } from './components/folders/FolderContentsModal';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { apiFetch } from './utils/api';
 
 function App() {
   const [isClearing, setIsClearing] = useState(false);
@@ -180,7 +181,7 @@ function App() {
 
     setIsClearing(true);
     try {
-      await fetch(`${API_BASE}/index/clear`, {
+      await apiFetch(`${API_BASE}/index/clear`, {
         method: 'POST'
       });
       // Reset UI cleanly

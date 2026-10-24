@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { keepIfEqual } from '../utils/jsonEqual';
+import { apiFetch } from '../utils/api';
 
 export const useTaskQueue = (API_BASE, setToast) => {
   const [activeTask, setActiveTask] = useState(null);
@@ -17,7 +18,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/queue`);
+      const res = await apiFetch(`${API_BASE}/queue`);
       if (!res.ok) return;
       const data = await res.json();
       setActiveTask(keepIfEqual(data.active_task));
@@ -74,7 +75,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
   const enqueueFolderIndexing = useCallback(async (folderPaths, priority = 'bottom') => {
     if (!folderPaths || folderPaths.length === 0) return null;
     try {
-      const res = await fetch(`${API_BASE}/queue/enqueue`, {
+      const res = await apiFetch(`${API_BASE}/queue/enqueue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -110,7 +111,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const cancelTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/cancel`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/cancel`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: 'Task cancellation requested.', type: 'info' });
@@ -125,7 +126,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const pauseTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/pause`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/pause`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: 'Task paused.', type: 'info' });
@@ -140,7 +141,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const resumeTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/resume`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/resume`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: 'Task resumed.', type: 'success' });
@@ -155,7 +156,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const controlWorker = useCallback(async (action, adoptModel = false) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/control`, {
+      const res = await apiFetch(`${API_BASE}/queue/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, adopt_model: adoptModel })
@@ -185,7 +186,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const moveTask = useCallback(async (taskId, direction) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/move`, {
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction })
@@ -203,7 +204,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
     setPendingTasks(newOrderedTasks);
     try {
       const taskIds = newOrderedTasks.map((t) => t.id);
-      const res = await fetch(`${API_BASE}/queue/reorder`, {
+      const res = await apiFetch(`${API_BASE}/queue/reorder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_ids: taskIds })
@@ -219,7 +220,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const retryTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/retry`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/retry`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: `Re-queued task: ${data.task?.title || ''}`, type: 'success' });
@@ -234,7 +235,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const clearHistory = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/queue/history`, { method: 'DELETE' });
+      const res = await apiFetch(`${API_BASE}/queue/history`, { method: 'DELETE' });
       if (res.ok) {
         setToast?.({ message: 'Cleared task history.', type: 'info' });
         fetchQueue();

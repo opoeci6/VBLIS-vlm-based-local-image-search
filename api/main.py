@@ -1,8 +1,7 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Query, UploadFile, File
 import torch
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
@@ -83,6 +82,7 @@ def _apply_exif_orientation(img: Image.Image, exif_bytes: bytes) -> Image.Image:
 
 # Ensure we load the .env from the data root (see paths.py), and strictly enforce HF_HOME
 import paths
+import security
 # Packaged builds only: move data an older build kept in the install folder (before anything opens it)
 try:
     _migration = paths.migrate_legacy_data()
@@ -93,6 +93,8 @@ if "failed" in _migration.values():
     # next launch retries the move instead of shadowing the old copy forever
     failed = ", ".join(name for name, outcome in _migration.items() if outcome == "failed")
     sys.exit(f"[DataMigration] Could not move {failed} into {paths.DATA_ROOT}; not starting.")
+# The token comes only from the launching process, never from .env (which overrides the environment)
+API_TOKEN = security.resolve_api_token()
 load_dotenv(paths.ENV_FILE, override=True)
 os.environ["HF_HOME"] = str(paths.MODELS_DIR)
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "30"
@@ -133,9 +135,9 @@ def persist_active_model(model_name: str):
     except Exception as e:
         print(f"Failed to persist active model: {e}")
 
-from model_manager import ModelManager
+from model_manager import ModelManager, AVAILABLE_MODELS
 from indexer import (
-    Indexer, VIDEO_EXTENSIONS, extract_video_frame, extract_video_frames_batch,
+    Indexer, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, extract_video_frame, extract_video_frames_batch,
     get_video_frame_cache_path, IMAGE_CACHE_DIR, VIDEO_CACHE_DIR,
     get_cache_stats, safe_clear_cache
 )
@@ -146,6 +148,8 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # uvicorn has configured logging by now; keep ?token= out of its access log
+    security.install_access_log_redaction()
     # Initialize indexer and models gracefully
     print("Starting API backend...")
     active_model = os.getenv("ACTIVE_MODEL", "google/siglip2-base-patch16-224")
@@ -163,14 +167,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Local Image Search API", lifespan=lifespan)
 
-# Allow Electron frontend to access API
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Only clients holding the token (the Electron app passes it via env) may call the API
+security.install(app, API_TOKEN)
 
 model_manager = ModelManager()
 indexer = Indexer(model_manager)
@@ -206,7 +204,7 @@ class BatchFolderRequest(BaseModel):
 class GPUSettingsRequest(BaseModel):
     use_gpu: bool
     batch_size: int = 0
-    precision_mode: str = "auto"
+    precision_mode: Literal["auto", "fp16", "fp32"] = "auto"
 
 class EnqueueTaskRequest(BaseModel):
     type: TaskType
@@ -223,6 +221,18 @@ class MoveTaskRequest(BaseModel):
 
 class ReorderTasksRequest(BaseModel):
     task_ids: List[str]
+
+def require_indexed_path(path: str, extensions=None):
+    """403 unless path is inside an indexed folder (and has an allowed extension, when given).
+    Runs before any existence check so the API can't be used to probe files elsewhere."""
+    if not indexer.is_path_in_indexed_folders(path):
+        raise HTTPException(status_code=403, detail="Path is not inside an indexed folder")
+    if extensions is not None and os.path.splitext(path)[1].lower() not in extensions:
+        raise HTTPException(status_code=403, detail="Unsupported file type")
+
+def require_known_model(model_name: str):
+    if model_name not in AVAILABLE_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
 
 @app.get("/settings/gpu")
 async def get_gpu_settings():
@@ -307,6 +317,8 @@ def search_images(req: SearchQuery):
 
 @app.post("/search/image")
 async def search_images_by_file(file: UploadFile = File(...), top_k: int = 50, min_score: float = 0.15):
+    if file.size is not None and file.size > security.MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Upload too large (max 50 MB)")
     try:
         contents = await file.read()
         img = Image.open(io.BytesIO(contents))
@@ -393,6 +405,7 @@ def get_indexed_folder_contents(
     folder_path: str = Query(...),
     limit: int = Query(50000, ge=1, le=100000)
 ):
+    require_indexed_path(folder_path)
     try:
         return indexer.get_folder_contents(folder_path, limit)
     except ValueError as e:
@@ -555,15 +568,8 @@ def clear_queue_history():
 
 @app.get("/models")
 async def list_models():
-    available = [
-        "google/siglip2-base-patch16-224",
-        "google/siglip2-base-patch16-naflex",
-        "google/siglip2-so400m-patch14-384",
-        "google/siglip2-so400m-patch16-naflex",
-        "openai/clip-vit-base-patch32",
-    ]
     results = []
-    for m in available:
+    for m in AVAILABLE_MODELS:
         status_info = model_manager.downloader.inspect_model_status(m)
         results.append({
             "id": m,
@@ -586,12 +592,21 @@ def cancel_indexing():
 
 @app.post("/models/delete")
 async def delete_model(req: ModelDeleteRequest):
+    require_known_model(req.model_name)
     if (task_queue.active_task and task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED)) or indexer.is_indexing:
         raise HTTPException(status_code=409, detail="Cannot delete model while an indexing or rebuild task is in progress.")
     if model_manager.is_downloading:
         raise HTTPException(status_code=400, detail="Cannot delete model while a download is in progress.")
         
     model_id = req.model_name
+    hub_path = model_manager.downloader.hub_path
+    model_path = model_manager.downloader.get_model_path(model_id)
+    locks_path = hub_path / ".locks" / model_path.name
+    # Defense in depth: never rmtree anything that isn't a direct child of the hub (or its .locks)
+    if (model_path.resolve().parent != hub_path.resolve()
+            or locks_path.resolve().parent != (hub_path / ".locks").resolve()):
+        raise HTTPException(status_code=400, detail=f"Unknown model: {model_id}")
+
     # If the model to delete is currently active, unload it first
     if model_manager.current_model_id == model_id:
         model_manager.unload_model()
@@ -604,17 +619,12 @@ async def delete_model(req: ModelDeleteRequest):
         collection_name = model_id.replace("/", "_").replace("-", "_")
         indexer.delete_collection(collection_name)
 
-    hub_path = paths.HUB_DIR
-    folder_name = f"models--{model_id.replace('/', '--')}"
-    model_path = hub_path / folder_name
-    
     if not model_path.exists():
         raise HTTPException(status_code=404, detail="Model folder not found locally.")
-        
+
     try:
         shutil.rmtree(model_path)
         # Also try to remove locks if any
-        locks_path = hub_path / ".locks" / folder_name
         if locks_path.exists():
             shutil.rmtree(locks_path)
             
@@ -624,6 +634,7 @@ async def delete_model(req: ModelDeleteRequest):
 
 @app.post("/models/download")
 async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTasks):
+    require_known_model(req.model_name)
     if model_manager.is_downloading:
         return {"status": "Error", "message": "A download is already in progress."}
     
@@ -689,6 +700,7 @@ async def cancel_download():
 
 @app.post("/models/switch")
 def switch_model(req: ModelSwitchRequest):
+    require_known_model(req.model_name)
     # Guard: Cannot switch while an active task is running
     if task_queue.active_task and task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED):
         raise HTTPException(
@@ -744,6 +756,7 @@ def clear_image_cache(target: str = Query("all", pattern="^(all|images|videos)$"
 
 @app.post("/video/frames/batch-extract")
 def batch_extract_video_frames(req: VideoBatchExtractRequest):
+    require_indexed_path(req.path, VIDEO_EXTENSIONS)
     if not os.path.isfile(req.path):
         raise HTTPException(status_code=404, detail="Video file not found")
     try:
@@ -771,9 +784,10 @@ def serve_image(
     Supports size='thumbnail' for faster loading in the UI grid.
     Thumbnails are cached on disk in segregated 'cache/images' and 'cache/videos' directories.
     """
+    require_indexed_path(path, IMAGE_EXTENSIONS | VIDEO_EXTENSIONS)
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     ext = os.path.splitext(path)[1].lower()
     is_heic = ext in (".heic", ".heif")
     is_video = ext in VIDEO_EXTENSIONS
@@ -855,4 +869,6 @@ def serve_image(
 if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
+    import parent_watch
+    parent_watch.start()
     uvicorn.run(app, host="127.0.0.1", port=8000)

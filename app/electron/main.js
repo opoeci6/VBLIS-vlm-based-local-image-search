@@ -1,8 +1,9 @@
-import { app, BrowserWindow, protocol, ipcMain, dialog, shell, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,12 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win;
 let pythonProcess;
+
+// Shared secret between this app and its backend: the API is on localhost, so without it any
+// website or local process could call it (read files, delete folders). Dev may reuse
+// VBLIS_API_TOKEN so a plain browser tab on the Vite dev server can share it; packaged builds
+// always use a fresh one.
+const apiToken = (!app.isPackaged && process.env.VBLIS_API_TOKEN) || crypto.randomBytes(32).toString('hex');
 
 // One instance only: a second one would start a second backend on the same data folder
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -76,13 +83,16 @@ function startPythonBackend() {
   const args = isProd ? [] : [scriptPath];
   const cwd = path.dirname(pythonPath);
   const dataDir = resolveDataDir();
-  const env = dataDir ? { ...process.env, VBLIS_DATA_DIR: dataDir } : process.env;
+  // VBLIS_EXIT_WITH_PARENT: the backend exits when its stdin pipe closes, which happens even if
+  // this process crashes. Otherwise it would keep port 8000 with a token no new window knows.
+  const env = { ...process.env, VBLIS_API_TOKEN: apiToken, VBLIS_EXIT_WITH_PARENT: '1' };
+  if (dataDir) env.VBLIS_DATA_DIR = dataDir;
 
   console.log('Starting Python backend...', pythonPath, args, 'cwd:', cwd, 'data:', dataDir || '(api folder)');
   pythonProcess = spawn(pythonPath, args, {
     cwd: cwd,
     env: env,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['pipe', 'pipe', 'pipe']
   });
   
   pythonProcess.stdout?.on('data', (data) => {
@@ -112,6 +122,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: [`--vblis-api-token=${apiToken}`],
     },
   });
 
@@ -145,12 +156,6 @@ app.on('activate', () => {
 app.whenReady().then(() => {
   // A second instance is quitting; don't let it start another backend
   if (!hasSingleInstanceLock) return;
-
-  protocol.registerFileProtocol('local', (request, callback) => {
-    // request.url is "local://C:/Users..." or "local://d:/..."
-    const filePath = decodeURIComponent(request.url.replace('local://', ''));
-    callback({ path: path.normalize(filePath) });
-  });
 
   startPythonBackend();
   createWindow();

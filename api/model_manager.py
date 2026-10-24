@@ -17,6 +17,15 @@ import time
 import threading
 from model_downloader import ModelDownloader
 
+# The only models the API will download, switch to or delete
+AVAILABLE_MODELS = (
+    "google/siglip2-base-patch16-224",
+    "google/siglip2-base-patch16-naflex",
+    "google/siglip2-so400m-patch14-384",
+    "google/siglip2-so400m-patch16-naflex",
+    "openai/clip-vit-base-patch32",
+)
+
 
 class ModelManager:
     def __init__(self, hub_path=None):
