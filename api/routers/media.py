@@ -2,11 +2,10 @@ import io
 import os
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from PIL import Image, ImageOps
 from pydantic import BaseModel
 import app_state
 import paths
-from media_image import IMAGE_EXTENSIONS, compute_file_hash, decode_heif
+from media_image import IMAGE_EXTENSIONS, compute_file_hash, decode_heif, open_image_upright
 from media_video import (
     VIDEO_EXTENSIONS, extract_video_frame, extract_video_frames_batch, get_video_frame_cache_path
 )
@@ -100,12 +99,7 @@ def serve_image(
         legacy_path = paths.CACHE_DIR / f"{file_hash}_thumb.jpg"
 
         def render_image_thumbnail(fp):
-            if is_heic:
-                img = decode_heif(path)
-            else:
-                img = Image.open(path)
-                img = ImageOps.exif_transpose(img)
-            save_jpeg_thumbnail(img, fp)
+            save_jpeg_thumbnail(open_image_upright(path)[0], fp)
 
         try:
             return FileResponse(get_or_create_thumbnail(cache_path, render_image_thumbnail, legacy_path))

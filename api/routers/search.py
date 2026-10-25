@@ -1,9 +1,9 @@
 import io
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from PIL import Image
 from pydantic import BaseModel
 import app_state
 import security
+from media_image import open_image_upright
 
 router = APIRouter()
 
@@ -29,7 +29,7 @@ def search_images_by_file(file: UploadFile = File(...), top_k: int = 50, min_sco
         raise HTTPException(status_code=413, detail="Upload too large (max 50 MB)")
     try:
         contents = file.file.read()
-        img = Image.open(io.BytesIO(contents))
+        img = open_image_upright(io.BytesIO(contents))[0]
         return {"results": app_state.indexer.search_by_image(img, top_k, min_score)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

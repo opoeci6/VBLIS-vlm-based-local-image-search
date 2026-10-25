@@ -1,11 +1,16 @@
 import hashlib
+import os
 import struct
-from PIL import Image
+from PIL import Image, ImageOps
 import pillow_heif
 
 pillow_heif.register_heif_opener()
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif"}
+
+# Bump when the image preprocessing before embedding changes. Image records without "embed_version"
+# (or with a lower one) are version 1 and get re-checked by reindex.
+IMAGE_EMBED_VERSION = 2
 
 # EXIF orientation tag ID
 _EXIF_ORIENTATION_TAG = 0x0112
@@ -62,19 +67,52 @@ def _apply_exif_orientation(img: Image.Image, exif_bytes: bytes) -> Image.Image:
         img = img.transpose(t)
     return img
 
-def decode_heif(path) -> Image.Image:
-    """Decode a HEIC/HEIF file to a PIL image, applying its EXIF orientation."""
-    heif_file = pillow_heif.open_heif(path)
+def _decode_heif_with_orientation(source):
+    """Decode a HEIC/HEIF path or file object. Returns (upright PIL image, EXIF orientation value)."""
+    heif_file = pillow_heif.open_heif(source)
     img = Image.frombytes(
         heif_file.mode,
         heif_file.size,
         heif_file.data,
         "raw",
     )
+    orientation = 1
     exif_bytes = heif_file.info.get("exif", b"")
     if exif_bytes:
+        orientation = _parse_exif_orientation(exif_bytes)
         img = _apply_exif_orientation(img, exif_bytes)
-    return img
+    return img, orientation
+
+def decode_heif(path) -> Image.Image:
+    """Decode a HEIC/HEIF file to a PIL image, applying its EXIF orientation."""
+    return _decode_heif_with_orientation(path)[0]
+
+def _is_heif_source(source) -> bool:
+    if isinstance(source, (str, os.PathLike)):
+        return os.path.splitext(os.fspath(source))[1].lower() in (".heic", ".heif")
+    try:
+        source.seek(0)
+        return pillow_heif.is_supported(source)
+    finally:
+        source.seek(0)
+
+def open_image_upright(source):
+    """Open an image (path or binary file object) with its EXIF orientation applied and pixels loaded.
+    Returns (image, rotated); rotated is True when the orientation needed a rotation or flip."""
+    if _is_heif_source(source):
+        img, orientation = _decode_heif_with_orientation(source)
+        return img, orientation in _ORIENTATION_TRANSFORMS
+    img = Image.open(source)
+    try:
+        if img.getexif().get(_EXIF_ORIENTATION_TAG, 1) in _ORIENTATION_TRANSFORMS:
+            upright = ImageOps.exif_transpose(img)
+            img.close()
+            return upright, True
+        img.load()
+        return img, False
+    except Exception:
+        img.close()
+        raise
 
 def compute_file_hash(filepath, chunk_size=8192):
     hasher = hashlib.sha256()
@@ -85,12 +123,12 @@ def compute_file_hash(filepath, chunk_size=8192):
 
 def process_file_worker(filepath):
     """Worker function for multithreaded CPU preprocessing pool.
-    Calculates SHA-256 hash and pre-loads PIL image in parallel.
+    Calculates SHA-256 hash and pre-loads the upright PIL image in parallel.
+    Returns (filepath, hash, image, error, rotated); rotated is True when EXIF orientation was applied.
     """
     try:
         file_hash = compute_file_hash(filepath)
-        img = Image.open(filepath)
-        img.load()  # Force image decode into CPU memory in thread pool
-        return (filepath, file_hash, img, None)
+        img, rotated = open_image_upright(filepath)  # Decodes into CPU memory in the thread pool
+        return (filepath, file_hash, img, None, rotated)
     except Exception as e:
-        return (filepath, None, None, str(e))
+        return (filepath, None, None, str(e), False)

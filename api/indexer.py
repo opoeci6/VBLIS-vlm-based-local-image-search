@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from model_manager import ModelManager
 import pathlib
 import paths
-from media_image import IMAGE_EXTENSIONS, compute_file_hash, process_file_worker
+from media_image import IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, process_file_worker
 from media_video import (
     VIDEO_EXTENSIONS, VIDEO_SAMPLING_VERSION, VIDEO_ANALYSIS_INTERVAL_SECONDS,
     VIDEO_MAX_SAMPLE_GAP_SECONDS, get_video_signature, save_video_frame_thumbnail,
@@ -492,9 +492,14 @@ class Indexer:
     def _index_image_files(self, files, task_context=None, known=None, label="Indexing"):
         """Embed and store image files in batched chunks (shared by index and reindex).
         known=None (index): files are the pending ones and are all added.
-        known={normalized path: (stored record id, stored hash)} (reindex): a file whose hash is unchanged
-        is skipped, a changed one has its stored record deleted before it is added again.
+        known={normalized path: (stored record id, stored hash, stored metadata)} (reindex): a file whose hash
+        is unchanged is skipped, a changed one has its stored record deleted before it is added again.
+        A record from before IMAGE_EMBED_VERSION (embedded without EXIF orientation) keeps its embedding and
+        only gets its metadata upgraded, unless the file is rotated: then it is embedded again.
+        Returns (records with upgraded metadata, rotated records embedded again).
         """
+        upgraded_count = 0
+        reembedded_count = 0
         batch_size = self.model_manager.get_effective_batch_size()
         max_workers = min(16, max(2, (os.cpu_count() or 4)))
 
@@ -522,7 +527,7 @@ class Indexer:
 
             if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                 # Clean up opened images if cancelled mid-batch
-                for _, _, img, _ in worker_results:
+                for _, _, img, _, _ in worker_results:
                     if img:
                         try:
                             img.close()
@@ -534,7 +539,9 @@ class Indexer:
             # 2. Collect valid items & gather hashes for batched ChromaDB check
             valid_worker_items = []
             chunk_hashes = []
-            for filepath, file_hash, image, err in worker_results:
+            upgrade_ids = []
+            upgrade_metas = []
+            for filepath, file_hash, image, err, rotated in worker_results:
                 if err or not file_hash or not image:
                     print(f"Error preparing {filepath}: {err}")
                     self.error_count += 1
@@ -546,24 +553,41 @@ class Indexer:
                     continue
 
                 if known is not None and filepath in known:
-                    stored_id, stored_hash = known[filepath]
+                    stored_id, stored_hash, stored_meta = known[filepath]
                     # If already in DB with same hash, skip
                     if stored_hash == file_hash:
-                        try:
-                            image.close()
-                        except Exception:
-                            pass
-                        self.indexed_files += 1
-                        if task_context:
-                            task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
-                        continue
+                        outdated = stored_meta.get("embed_version", 1) < IMAGE_EMBED_VERSION
+                        if not (outdated and rotated):
+                            if outdated:
+                                # Same pixels as when it was embedded, so only the version mark is missing
+                                upgrade_ids.append(stored_id)
+                                upgrade_metas.append({**stored_meta, "embed_version": IMAGE_EMBED_VERSION})
+                            try:
+                                image.close()
+                            except Exception:
+                                pass
+                            self.indexed_files += 1
+                            if task_context:
+                                task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
+                            continue
+                        # Embedded sideways before orientation was applied: handled like a changed file
+                        reembedded_count += 1
                     # If filepath exists in DB but hash differs, delete the stored entry first
                     try:
                         self.collection.delete(ids=[stored_id])
                     except Exception:
                         pass
-                valid_worker_items.append((filepath, file_hash, image))
+                valid_worker_items.append((filepath, file_hash, image, rotated))
                 chunk_hashes.append(file_hash)
+
+            if upgrade_ids:
+                try:
+                    self.collection.update(ids=upgrade_ids, metadatas=upgrade_metas)
+                    upgraded_count += len(upgrade_ids)
+                except Exception as e:
+                    print(f"Error upgrading index records during {label.lower()}: {e}")
+                    if task_context:
+                        task_context.add_error(f"Index record upgrade failed: {e}")
 
             if not valid_worker_items:
                 continue
@@ -580,7 +604,10 @@ class Indexer:
                     if db_hits and db_hits.get("metadatas"):
                         for meta, emb in zip(db_hits["metadatas"], db_hits["embeddings"]):
                             if meta and "hash" in meta and emb is not None and len(emb) > 0:
-                                existing_hash_map[meta["hash"]] = emb
+                                current = meta.get("embed_version", 1) >= IMAGE_EMBED_VERSION
+                                # Several records can share a hash: prefer one embedded the current way
+                                if meta["hash"] not in existing_hash_map or (current and not existing_hash_map[meta["hash"]][1]):
+                                    existing_hash_map[meta["hash"]] = (emb, current)
                 except Exception:
                     pass
 
@@ -592,16 +619,17 @@ class Indexer:
             if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                 break
 
-            for filepath, file_hash, image in valid_worker_items:
+            for filepath, file_hash, image, rotated in valid_worker_items:
                 if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
                     break
 
-                if file_hash in existing_hash_map:
+                # A stored embedding made without orientation is only right for a file that is not rotated
+                if file_hash in existing_hash_map and (existing_hash_map[file_hash][1] or not rotated):
                     try:
-                        embedding = existing_hash_map[file_hash]
+                        embedding = existing_hash_map[file_hash][0]
                         self.collection.add(
                             embeddings=[embedding],
-                            metadatas=[{"path": filepath, "hash": file_hash, "media_type": "image"}],
+                            metadatas=[{"path": filepath, "hash": file_hash, "media_type": "image", "embed_version": IMAGE_EMBED_VERSION}],
                             ids=[filepath]
                         )
                     except Exception as e:
@@ -618,7 +646,7 @@ class Indexer:
                             task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
                 else:
                     valid_images.append(image)
-                    valid_metas.append({"path": filepath, "hash": file_hash, "media_type": "image"})
+                    valid_metas.append({"path": filepath, "hash": file_hash, "media_type": "image", "embed_version": IMAGE_EMBED_VERSION})
                     valid_ids.append(filepath)
 
             if self.cancel_requested or (task_context and not task_context.check_paused_or_cancelled()):
@@ -666,6 +694,8 @@ class Indexer:
                             img.close()
                         except Exception:
                             pass
+
+        return upgraded_count, reembedded_count
 
     def batch_index_folders(self, folder_paths: list[str], task_context=None):
         if self.is_indexing and task_context is None:
@@ -777,11 +807,12 @@ class Indexer:
                                 "id": results["ids"][i],
                                 "path": db_path,
                                 "hash": meta.get("hash"),
-                                "media_type": meta.get("media_type", "image")
+                                "media_type": meta.get("media_type", "image"),
+                                "meta": dict(meta)
                             })
 
             db_image_entries = [e for e in db_entries if e["media_type"] != "video"]
-            known = {e["path"]: (e["id"], e["hash"]) for e in db_image_entries}
+            known = {e["path"]: (e["id"], e["hash"], e["meta"]) for e in db_image_entries}
             stale_entries = [e for e in db_entries if not os.path.exists(e["path"])]
             stale_source_paths = {e["path"] for e in stale_entries}
             existing_video_entries = self._get_existing_video_entries(results)
@@ -804,7 +835,14 @@ class Indexer:
                 task_context.update_progress(self.indexed_files, self.total_files, "Processing updated files...")
             
             # 4. Add or update files from disk in batched chunks
-            self._index_image_files(disk_files, task_context=task_context, known=known, label="Re-indexing")
+            upgraded_count, reembedded_count = self._index_image_files(
+                disk_files, task_context=task_context, known=known, label="Re-indexing"
+            )
+            if upgraded_count or reembedded_count:
+                print(
+                    f"Re-index of {directory}: {upgraded_count} records upgraded without re-embedding, "
+                    f"{reembedded_count} rotated images embedded again with their orientation applied"
+                )
 
             if not self.cancel_requested and not (task_context and task_context.cancel_requested):
                 self._index_video_files(disk_video_files, existing_video_entries, task_context=task_context)
