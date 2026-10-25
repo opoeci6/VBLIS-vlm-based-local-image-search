@@ -161,13 +161,18 @@ app.whenReady().then(() => {
   createWindow();
   
   // IPC handlers
+  // Since Electron 43 dialogs open in Downloads unless told otherwise: start where the last pick
+  // was made (the folder containing it), else in Pictures
+  let lastDialogDirectory = null;
   ipcMain.handle('dialog:openDirectory', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      defaultPath: lastDialogDirectory || app.getPath('pictures'),
       properties: ['openDirectory', 'multiSelections']
     });
     if (canceled) {
       return null;
     } else {
+      lastDialogDirectory = path.dirname(filePaths[0]);
       return filePaths;
     }
   });
