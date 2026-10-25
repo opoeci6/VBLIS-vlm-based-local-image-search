@@ -18,10 +18,9 @@ API_TOKEN_HEADER = "X-VBLIS-Token"
 # <img src> can't send headers, so GET /image alone also accepts ?token=
 QUERY_TOKEN_PATHS = frozenset({"/image"})
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
-# Any localhost port is the Vite dev server. "null" is a hedge for a file:// renderer without
-# Electron's file-protocol privileges (an opaque origin; with the default privileges file:// pages
-# are exempt from CORS and don't need it). Harmless: the token is still required.
-CORS_ORIGIN_REGEX = r"^(null|http://(localhost|127\.0\.0\.1)(:\d+)?)$"
+# app://vblis is the packaged renderer (app/electron/main.js); any localhost port is the Vite dev
+# server. The token is required either way.
+CORS_ORIGIN_REGEX = r"^(app://vblis|http://(localhost|127\.0\.0\.1)(:\d+)?)$"
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Multipart framing added on top of the file itself
 UPLOAD_OVERHEAD_BYTES = 1024 * 1024
