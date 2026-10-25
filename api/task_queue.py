@@ -712,6 +712,8 @@ class TaskQueueManager:
 
         try:
             print(f"[TaskQueue] Starting task {task.id} ({task.type.value}): '{task.title}'")
+            # A cancel from an earlier run must not abort this one (not every task type resets it itself)
+            self.indexer.cancel_requested = False
             if task.type == TaskType.INDEX_FOLDERS:
                 folder_paths = task.payload.get("folder_paths", [])
                 self.indexer.batch_index_folders(folder_paths, task_context=task)

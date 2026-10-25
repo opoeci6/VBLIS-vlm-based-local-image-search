@@ -22,7 +22,7 @@ def require_known_model(model_name: str):
         raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
 
 @router.get("/models")
-async def list_models():
+def list_models():
     results = []
     for m in AVAILABLE_MODELS:
         status_info = app_state.model_manager.downloader.inspect_model_status(m)
@@ -39,7 +39,7 @@ async def list_models():
     }
 
 @router.post("/models/delete")
-async def delete_model(req: ModelDeleteRequest):
+def delete_model(req: ModelDeleteRequest):
     require_known_model(req.model_name)
     if (app_state.task_queue.active_task and app_state.task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED)) or app_state.indexer.is_indexing:
         raise HTTPException(status_code=409, detail="Cannot delete model while an indexing or rebuild task is in progress.")

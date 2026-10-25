@@ -13,8 +13,7 @@ class GPUSettingsRequest(BaseModel):
     precision_mode: Literal["auto", "fp16", "fp32"] = "auto"
 
 @router.get("/settings/gpu")
-async def get_gpu_settings():
-    print(f"GPU settings requested: {app_state.model_manager.use_gpu}, {torch.cuda.is_available()}")
+def get_gpu_settings():
     return {
         "use_gpu": app_state.model_manager.use_gpu,
         "cuda_available": torch.cuda.is_available(),
@@ -30,7 +29,7 @@ async def get_gpu_settings():
     }
 
 @router.post("/settings/gpu")
-async def set_gpu_settings(req: GPUSettingsRequest):
+def set_gpu_settings(req: GPUSettingsRequest):
     print(f"Set GPU settings requested: GPU={req.use_gpu}, Batch={req.batch_size}, Precision={req.precision_mode}")
     result = app_state.model_manager.set_device(req.use_gpu)
     app_state.model_manager.batch_size = max(0, req.batch_size)
@@ -44,7 +43,7 @@ async def set_gpu_settings(req: GPUSettingsRequest):
     if result["status"] == "error":
         raise HTTPException(status_code=500, detail=result["message"])
     
-    res_dict = await get_gpu_settings()
+    res_dict = get_gpu_settings()
     res_dict["status"] = "success"
     res_dict["message"] = result["message"]
     return res_dict

@@ -1,6 +1,7 @@
 import os
 import hashlib
 import pathlib
+import threading
 from PIL import Image
 import cv2
 import av
@@ -44,56 +45,105 @@ def get_video_signature(filepath):
     ))
     return f"{stat.st_mtime_ns}:{stat.st_size}:{sampling_signature}"
 
-def open_video_cascade(filepath):
-    """Open video using a 3-stage cascading hardware acceleration pipeline:
-    Stage 1: iGPU priority (D3D11VA / QSV) - preserves dGPU VRAM for AI models.
-    Stage 2: dGPU secondary (CUDA / DXVA2 / D3D12VA / AMF) - discrete GPU hardware decode.
-    Stage 3: CPU software decoding (libavcodec) - universal safety net for exotic/old codecs.
-    """
+# Hardware decode state shared by every decoding thread, guarded by _hw_lock.
+# _preferred_decoder is the last hardware target that worked (CPU is never stored here, so hardware is
+# always tried first again). A target that has never worked and failed _HW_MAX_FAILURES times is skipped
+# for the rest of the process; one that has worked once is never skipped, its failures are codec-specific.
+_HW_MAX_FAILURES = 3
+_hw_lock = threading.Lock()
+_preferred_decoder = None
+_hw_successes = set()
+_hw_failures = {}
+
+def _is_hw_skipped(target):
+    with _hw_lock:
+        return target not in _hw_successes and _hw_failures.get(target, 0) >= _HW_MAX_FAILURES
+
+def _record_hw_success(target):
+    global _preferred_decoder
+    with _hw_lock:
+        _hw_successes.add(target)
+        _preferred_decoder = target
+
+def _record_hw_failure(target):
+    with _hw_lock:
+        _hw_failures[target] = _hw_failures.get(target, 0) + 1
+
+def _close_quietly(container):
     try:
-        available_hw = set(hwdevices_available())
+        container.close()
     except Exception:
-        available_hw = set()
+        pass
 
-    # Stage 1: iGPU priority (D3D11VA, QSV)
-    for target in ["d3d11va", "qsv"]:
-        if target in available_hw:
-            try:
-                hw = HWAccel(target)
-                container = av.open(filepath, hwaccel=hw)
-                if container.streams.video:
-                    stream = container.streams.video[0]
-                    # Verify decoder works by decoding first frame
-                    for frame in container.decode(stream):
-                        container.seek(0)
-                        return container, stream, f"hw-{target} (iGPU priority)"
-                    container.close()
-            except Exception:
-                pass
+def _open_hardware(filepath, target, label):
+    """Open with one hardware target; return (container, stream, label) or None, closing a failed container."""
+    container = None
+    try:
+        hw = HWAccel(target)
+        container = av.open(filepath, hwaccel=hw)
+        if container.streams.video:
+            stream = container.streams.video[0]
+            # Verify decoder works by decoding first frame
+            for frame in container.decode(stream):
+                container.seek(0)
+                return container, stream, label
+    except Exception:
+        pass
+    if container is not None:
+        _close_quietly(container)
+    return None
 
-    # Stage 2: dGPU secondary (CUDA, DXVA2, D3D12VA, AMF)
-    for target in ["cuda", "dxva2", "d3d12va", "amf"]:
-        if target in available_hw:
-            try:
-                hw = HWAccel(target)
-                container = av.open(filepath, hwaccel=hw)
-                if container.streams.video:
-                    stream = container.streams.video[0]
-                    for frame in container.decode(stream):
-                        container.seek(0)
-                        return container, stream, f"hw-{target} (dGPU secondary)"
-                    container.close()
-            except Exception:
-                pass
-
-    # Stage 3: Universal CPU Software Decoding Fallback
+def _open_cpu(filepath):
+    """Open with CPU software decoding; return (container, stream, label) or None when there is no video stream.
+    Raises ValueError when the file cannot be opened."""
+    container = None
     try:
         container = av.open(filepath)
         if container.streams.video:
             stream = container.streams.video[0]
             return container, stream, "cpu-software (fallback)"
     except Exception as e:
+        if container is not None:
+            _close_quietly(container)
         raise ValueError(f"Video could not be opened: {e}")
+    _close_quietly(container)
+    return None
+
+def open_video_cascade(filepath):
+    """Open video using a 3-stage cascading hardware acceleration pipeline:
+    Stage 1: iGPU priority (D3D11VA / QSV) - preserves dGPU VRAM for AI models.
+    Stage 2: dGPU secondary (CUDA / DXVA2 / D3D12VA / AMF) - discrete GPU hardware decode.
+    Stage 3: CPU software decoding (libavcodec) - universal safety net for exotic/old codecs.
+    The hardware target that last worked is tried first, then the stages in order; targets that never
+    worked on this machine are skipped after repeated failures.
+    """
+    try:
+        available_hw = set(hwdevices_available())
+    except Exception:
+        available_hw = set()
+
+    candidates = []
+    for target in ["d3d11va", "qsv"]:
+        if target in available_hw:
+            candidates.append((target, f"hw-{target} (iGPU priority)"))
+    for target in ["cuda", "dxva2", "d3d12va", "amf"]:
+        if target in available_hw:
+            candidates.append((target, f"hw-{target} (dGPU secondary)"))
+
+    preferred = _preferred_decoder
+    candidates.sort(key=lambda candidate: candidate[0] != preferred)  # stable: stage order otherwise
+
+    for target, label in candidates:
+        if _is_hw_skipped(target):
+            continue
+        opened = _open_hardware(filepath, target, label)
+        if opened is not None:
+            _record_hw_success(target)
+            return opened
+        _record_hw_failure(target)
+
+    # Stage 3: Universal CPU Software Decoding Fallback
+    return _open_cpu(filepath)
 
 def get_video_frame_cache_path(filepath: str, timestamp_seconds: float, cache_dir: pathlib.Path = None, stat=None) -> pathlib.Path:
     if stat is None:
@@ -102,15 +152,22 @@ def get_video_frame_cache_path(filepath: str, timestamp_seconds: float, cache_di
         f"{os.path.abspath(filepath)}:{stat.st_mtime_ns}:{stat.st_size}:{float(timestamp_seconds):.3f}".encode("utf-8")
     ).hexdigest()
     
-    target_path = VIDEO_CACHE_DIR / f"{cache_key}_video_frame.jpg"
+    if cache_dir is None:
+        cache_dir = VIDEO_CACHE_DIR
+        legacy_dir = CACHE_DIR
+    else:
+        cache_dir = pathlib.Path(cache_dir)
+        legacy_dir = cache_dir.parent
+
+    target_path = cache_dir / f"{cache_key}_video_frame.jpg"
     if target_path.exists():
         return target_path
 
     # Check legacy path in root cache dir and migrate if found
-    legacy_path = CACHE_DIR / f"{cache_key}_video_frame.jpg"
+    legacy_path = legacy_dir / f"{cache_key}_video_frame.jpg"
     if legacy_path.exists():
         try:
-            VIDEO_CACHE_DIR.mkdir(exist_ok=True)
+            cache_dir.mkdir(parents=True, exist_ok=True)
             legacy_path.replace(target_path)
             return target_path
         except Exception:
@@ -121,8 +178,9 @@ def get_video_frame_cache_path(filepath: str, timestamp_seconds: float, cache_di
 def save_video_frame_thumbnail(filepath: str, timestamp_seconds: float, image: Image.Image, cache_dir: pathlib.Path = None, stat=None):
     """Save a 480x480 thumbnail directly from an in-memory PIL image into videos cache without extra decoding."""
     try:
-        VIDEO_CACHE_DIR.mkdir(exist_ok=True)
-        out_path = get_video_frame_cache_path(filepath, timestamp_seconds, VIDEO_CACHE_DIR, stat)
+        cache_dir = VIDEO_CACHE_DIR if cache_dir is None else pathlib.Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        out_path = get_video_frame_cache_path(filepath, timestamp_seconds, cache_dir, stat)
         if not is_thumbnail_cached(out_path):
             thumb = image.copy()
             get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, thumb))

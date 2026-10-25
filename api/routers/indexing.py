@@ -58,16 +58,17 @@ def delete_folder_index(req: FolderDeleteRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/index/folder/reindex")
-async def reindex_folder(req: FolderDeleteRequest):
-    if not os.path.isdir(req.folder_path):
+def reindex_folder(req: FolderDeleteRequest):
+    folder_path = os.path.abspath(os.path.normpath(req.folder_path))
+    if not os.path.isdir(folder_path):
         raise HTTPException(status_code=400, detail="Invalid directory path.")
 
     t = app_state.task_queue.enqueue(
         TaskType.REINDEX_FOLDER,
-        {"folder_path": req.folder_path},
-        title=f"Reindex: {os.path.basename(os.path.normpath(req.folder_path)) or req.folder_path}"
+        {"folder_path": folder_path},
+        title=f"Reindex: {os.path.basename(folder_path) or folder_path}"
     )
-    return {"status": "queued", "task_id": t.id, "target": req.folder_path}
+    return {"status": "queued", "task_id": t.id, "target": folder_path}
 
 @router.post("/index/folders/batch-delete")
 def batch_delete_folders(req: BatchFolderRequest):
@@ -78,8 +79,9 @@ def batch_delete_folders(req: BatchFolderRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/index/folders/batch-reindex")
-async def batch_reindex_folders(req: BatchFolderRequest):
-    valid_dirs = [d for d in req.folder_paths if os.path.isdir(d)]
+def batch_reindex_folders(req: BatchFolderRequest):
+    canonical = [os.path.abspath(os.path.normpath(p)) for p in req.folder_paths]
+    valid_dirs = [d for d in canonical if os.path.isdir(d)]
     if not valid_dirs:
         raise HTTPException(status_code=400, detail="No valid directory paths provided.")
     enqueued = []
@@ -87,13 +89,13 @@ async def batch_reindex_folders(req: BatchFolderRequest):
         t = app_state.task_queue.enqueue(
             TaskType.REINDEX_FOLDER,
             {"folder_path": d},
-            title=f"Reindex: {os.path.basename(os.path.normpath(d)) or d}"
+            title=f"Reindex: {os.path.basename(d) or d}"
         )
         enqueued.append(t.to_dict())
     return {"status": "queued", "tasks": enqueued, "message": f"Enqueued {len(enqueued)} folder(s) for re-indexing."}
 
 @router.get("/status")
-async def get_status():
+def get_status():
     status = app_state.indexer.get_status()
     # Augment with queue status
     queue_snap = app_state.task_queue.get_snapshot()

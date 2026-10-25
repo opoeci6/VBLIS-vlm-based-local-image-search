@@ -33,7 +33,7 @@ def enqueue_task_endpoint(req: EnqueueTaskRequest):
     if not task_queue_module.is_supported_task_type(req.type):
         raise HTTPException(status_code=400, detail=f"Unsupported task type: {req.type.value}")
     if req.type == TaskType.INDEX_FOLDERS and "folder_paths" in req.payload:
-        paths = req.payload["folder_paths"]
+        paths = [os.path.abspath(os.path.normpath(p)) for p in req.payload["folder_paths"]]
         added_tasks = []
         duplicates = []
         for p in paths:
@@ -55,7 +55,14 @@ def enqueue_task_endpoint(req: EnqueueTaskRequest):
             "message": f"Enqueued {len(added_tasks)} task(s)." + (f" ({len(duplicates)} duplicate(s) skipped)" if duplicates else "")
         }
 
-    task = app_state.task_queue.enqueue(req.type, req.payload, title=req.title, priority=req.priority)
+    payload = dict(req.payload)
+    if isinstance(payload.get("folder_path"), str):
+        payload["folder_path"] = os.path.abspath(os.path.normpath(payload["folder_path"]))
+    if isinstance(payload.get("folder_paths"), list):
+        payload["folder_paths"] = [
+            os.path.abspath(os.path.normpath(p)) if isinstance(p, str) else p for p in payload["folder_paths"]
+        ]
+    task = app_state.task_queue.enqueue(req.type, payload, title=req.title, priority=req.priority)
     return {
         "status": "queued",
         "task": task.to_dict(),

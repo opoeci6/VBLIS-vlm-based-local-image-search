@@ -45,7 +45,7 @@ def batch_extract_video_frames(req: VideoBatchExtractRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/video/thumbnails/regenerate")
-async def regenerate_video_thumbnails():
+def regenerate_video_thumbnails():
     t = app_state.task_queue.enqueue(
         TaskType.REBUILD_VIDEO_THUMBNAILS,
         {},

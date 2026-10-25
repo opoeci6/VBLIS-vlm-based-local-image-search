@@ -355,7 +355,7 @@ class ModelManager:
 
             active_precision = self.get_active_precision()
             if active_precision == "fp16" and self.use_gpu:
-                with torch.cuda.amp.autocast(dtype=torch.float16):
+                with torch.autocast("cuda", dtype=torch.float16):
                     image_features = model.get_image_features(**inputs)
             else:
                 image_features = model.get_image_features(**inputs)

@@ -162,6 +162,7 @@ class FolderRegistry:
 
             # 1. Start with persisted selected folders for this collection
             selected_folders = self.selected(collection.name)
+            selected_before = set(selected_folders)
             active_folders = set()
 
             for sf in list(selected_folders):
@@ -205,7 +206,9 @@ class FolderRegistry:
                 if not any(f_lower.startswith(top.lower() + os.sep) for top in final_root_folders):
                     final_root_folders.add(f)
 
-            self.save()
+            # This runs on every poll, so only rewrite indexed_folders.json when the selection changed
+            if selected_folders != selected_before:
+                self.save()
 
             # 4. Build hierarchical tree with subfolders and file counts for each root folder
             output = []

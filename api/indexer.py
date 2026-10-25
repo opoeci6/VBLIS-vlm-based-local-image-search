@@ -14,8 +14,40 @@ from media_video import (
     extract_video_frames_batch, iter_video_frames
 )
 from folder_registry import FolderRegistry
+from collection_cache import CachedCollection
 
 paths.ensure_dirs()
+
+# How many leading search results carry their embedding for the frontend's visual-duplicate detection.
+# Must match maxVisualLimit in app/src/utils/searchResults.js.
+DUPLICATE_CHECK_LIMIT = 800
+
+class _FileExistenceCache:
+    """os.path.isfile answered from one directory listing per directory (one stat per file is far slower
+    on Windows). Meant to live for a single search, so listings are never reused across searches."""
+
+    def __init__(self):
+        # normcased directory -> set of normcased file names; None means "listing failed, ask isfile"
+        self._listings = {}
+
+    def _list_directory(self, directory):
+        try:
+            with os.scandir(directory or ".") as entries:
+                return {os.path.normcase(entry.name) for entry in entries if entry.is_file()}
+        except (FileNotFoundError, NotADirectoryError):
+            return set()
+        except OSError:
+            return None
+
+    def isfile(self, path):
+        directory, name = os.path.split(path)
+        key = os.path.normcase(directory)
+        if key not in self._listings:
+            self._listings[key] = self._list_directory(directory)
+        names = self._listings[key]
+        if names is None:
+            return os.path.isfile(path)
+        return os.path.normcase(name) in names
 
 class Indexer:
     def __init__(self, model_manager: ModelManager, db_path=None, data_dir=None, cache_dir=None):
@@ -30,6 +62,7 @@ class Indexer:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = pathlib.Path(cache_dir if cache_dir is not None else paths.CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.video_cache_dir = self.cache_dir / "videos"
         self.folders = FolderRegistry(self.data_dir, self.cache_dir)
         
         # Connect to the collection matching the loaded VLM
@@ -75,10 +108,10 @@ class Indexer:
 
     def switch_collection(self, collection_name: str):
         print(f"Switching to Chroma collection: {collection_name}")
-        self.collection = self.client.get_or_create_collection(
+        self.collection = CachedCollection(self.client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"}
-        )
+        ))
         
     def _ensure_collection(self):
         """Ensure the collection is initialized before use."""
@@ -238,7 +271,7 @@ class Indexer:
                     break
 
                 # Save 480x480 thumbnail at indexing time for instant 0ms search lookup
-                save_video_frame_thumbnail(normalized_path, timestamp, image, self.cache_dir, stat)
+                save_video_frame_thumbnail(normalized_path, timestamp, image, self.video_cache_dir, stat)
 
                 timestamp_ms = int(round(timestamp * 1000))
                 record_id = f"video:{source_key}:{timestamp_ms}"
@@ -441,7 +474,7 @@ class Indexer:
                                 os.path.basename(filepath)
                             )
 
-                    extract_video_frames_batch(filepath, timestamps, self.cache_dir, on_frame_saved=on_frame_done)
+                    extract_video_frames_batch(filepath, timestamps, self.video_cache_dir, on_frame_saved=on_frame_done)
 
             return {
                 "status": "success",
@@ -668,11 +701,17 @@ class Indexer:
             
             # Get existing IDs (paths) to avoid redundant work
             existing_results = self.collection.get(include=["metadatas"])
-            existing_ids = set(existing_results["ids"]) if existing_results and "ids" in existing_results else set()
+            # Compared by normalized path so the same file reached through a differently written folder
+            # path (slashes, "." segments, drive-letter case) is not indexed twice
+            existing_paths = set()
+            if existing_results:
+                for meta in existing_results.get("metadatas") or []:
+                    if meta and meta.get("path") and meta.get("media_type", "image") != "video":
+                        existing_paths.add(os.path.normcase(os.path.normpath(meta["path"])))
             existing_video_entries = self._get_existing_video_entries(existing_results)
             
             # Filter out already indexed files
-            pending_files = [f for f in files_to_index if f not in existing_ids]
+            pending_files = [f for f in files_to_index if os.path.normcase(os.path.normpath(f)) not in existing_paths]
             self.indexed_files = len(files_to_index) - len(pending_files)
             if task_context:
                 task_context.update_progress(self.indexed_files, self.total_files, "Indexing items...")
@@ -784,6 +823,10 @@ class Indexer:
 
     def run_maintenance(self):
         """Perform database maintenance: VACUUM the SQLite database and return space saved."""
+        if self.is_indexing or self.is_rebuilding_video_thumbnails:
+            # A second sqlite connection could race the writer Chroma uses while indexing
+            return {"status": "skipped", "message": "Maintenance skipped while indexing is in progress."}
+
         sqlite_file = os.path.join(self.db_path, "chroma.sqlite3")
         
         if not os.path.exists(sqlite_file):
@@ -841,48 +884,84 @@ class Indexer:
         return self._do_search(query_embedding, top_k, min_score)
 
     def _do_search(self, query_embedding, top_k, min_score):
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["metadatas", "distances", "embeddings"]
-        )
-        
-        if not results["metadatas"] or not results["metadatas"][0]:
+        if top_k < 1:
             return []
-            
-        embeddings_list = results["embeddings"][0] if results.get("embeddings") and len(results["embeddings"]) > 0 else []
+        total = self.collection.count()
+        if total == 0:
+            return []
+
+        # Query without embeddings and walk the ranking: records whose file is gone are skipped so they
+        # cannot crowd out existing results, and the walk stops at the first score under min_score
+        # (scores are sorted descending). If missing files left fewer than top_k results from a full
+        # batch, query again with a larger n (the HNSW order can shift slightly, so start from scratch).
+        n = min(top_k, total)
+        file_exists = _FileExistenceCache()  # shared by the re-query passes
+        while True:
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n,
+                include=["metadatas", "distances"]
+            )
+            raw_ids = results["ids"][0] if results.get("ids") else []
+            raw_metas = results["metadatas"][0] if results.get("metadatas") else []
+            raw_dists = results["distances"][0] if results.get("distances") else []
+
+            found = []
+            cut_off = False
+            for record_id, meta, dist in zip(raw_ids, raw_metas, raw_dists):
+                score = 1.0 - (dist / 2.0)
+                if score < min_score:
+                    cut_off = True
+                    break
+                filepath = meta.get("path") if meta else None
+                if not filepath or not file_exists.isfile(filepath):
+                    continue
+                found.append((record_id, meta, score))
+                if len(found) >= top_k:
+                    break
+
+            if len(found) >= top_k or cut_off or len(raw_ids) < n or n >= total:
+                break
+            n = min(n * 2, total)
+
+        # Embeddings are only needed for the results the frontend runs duplicate detection on
+        embeddings_by_id = {}
+        head_ids = [record_id for record_id, _, _ in found[:DUPLICATE_CHECK_LIMIT]]
+        if head_ids:
+            fetched = self.collection.get(ids=head_ids, include=["embeddings"])
+            fetched_embeddings = fetched.get("embeddings")
+            if fetched_embeddings is not None:
+                for record_id, emb in zip(fetched["ids"], fetched_embeddings):
+                    embeddings_by_id[record_id] = emb
 
         formatted_results = []
-        for i, (meta, dist) in enumerate(zip(results["metadatas"][0], results["distances"][0])):
-            score = 1.0 - (dist / 2.0)
-            
-            if score >= min_score:
-                filepath = meta.get("path") if meta else None
-                file_hash = meta.get("hash") if meta else None
-                
-                # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
-                if not file_hash and filepath and os.path.isfile(filepath):
-                    try:
-                        file_hash = compute_file_hash(filepath)
-                    except Exception:
-                        pass
+        for record_id, meta, score in found:
+            filepath = meta.get("path")
+            file_hash = meta.get("hash")
 
-                emb = embeddings_list[i] if i < len(embeddings_list) else None
-                if hasattr(emb, "tolist"):
-                    emb = emb.tolist()
-                elif isinstance(emb, (list, tuple)):
-                    emb = [float(x) for x in emb]
+            # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
+            if not file_hash:
+                try:
+                    file_hash = compute_file_hash(filepath)
+                except Exception:
+                    pass
 
-                formatted_results.append({
-                    "id": results["ids"][0][i],
-                    "path": filepath,
-                    "hash": file_hash,
-                    "media_type": meta.get("media_type", "image") if meta else "image",
-                    "timestamp_seconds": meta.get("timestamp_seconds") if meta else None,
-                    "scene_id": meta.get("scene_id") if meta else None,
-                    "sampling_reason": meta.get("sampling_reason") if meta else None,
-                    "score": float(score),
-                    "embedding": emb
-                })
-            
+            emb = embeddings_by_id.get(record_id)
+            if hasattr(emb, "tolist"):
+                emb = emb.tolist()
+            elif isinstance(emb, (list, tuple)):
+                emb = [float(x) for x in emb]
+
+            formatted_results.append({
+                "id": record_id,
+                "path": filepath,
+                "hash": file_hash,
+                "media_type": meta.get("media_type", "image"),
+                "timestamp_seconds": meta.get("timestamp_seconds"),
+                "scene_id": meta.get("scene_id"),
+                "sampling_reason": meta.get("sampling_reason"),
+                "score": float(score),
+                "embedding": emb
+            })
+
         return formatted_results
