@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
-import { fileURLToPath } from 'node:url';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net } from 'electron';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -16,6 +16,19 @@ export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron');
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST;
+
+// The built renderer is served from app://vblis instead of file://. It gets a real origin, which
+// the backend's CORS rule names (api/security.py), and file:// pages lose the extra file access
+// Electron gives them by default (grantFileProtocolExtraPrivileges fuse, package.json).
+const APP_SCHEME = 'app';
+const APP_HOST = 'vblis';
+const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
+
+// Must be called before the app is ready. "standard" parses app:// URLs like http (an origin,
+// relative URLs, localStorage); "secure" makes it a secure context, like https.
+protocol.registerSchemesAsPrivileged([
+  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 
 let win;
 let pythonProcess;
@@ -65,6 +78,29 @@ function resolveDataDir() {
     return isSameOrInside(dataDir, exeDir) ? path.join(localAppData, `${PRODUCT_NAME}-data`) : dataDir;
   }
   return path.join(exeDir, `${PRODUCT_NAME}-data`);
+}
+
+const notFound = () => new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } });
+
+// Serves app://vblis/<path> from RENDERER_DIST and nothing outside it
+function registerAppProtocol() {
+  protocol.handle(APP_SCHEME, async (request) => {
+    const { host, pathname } = new URL(request.url);
+    if (host !== APP_HOST) return notFound();
+    let filePath;
+    try {
+      filePath = path.resolve(RENDERER_DIST, `.${decodeURIComponent(pathname)}`);
+    } catch {
+      return notFound(); // malformed %-escape
+    }
+    if (filePath.includes('\0') || !isSameOrInside(filePath, RENDERER_DIST)) return notFound();
+    try {
+      if (!(await fs.promises.stat(filePath)).isFile()) return notFound();
+    } catch {
+      return notFound();
+    }
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
 }
 
 function startPythonBackend() {
@@ -133,7 +169,7 @@ function createWindow() {
     win.loadURL(VITE_DEV_SERVER_URL);
     // win.webContents.openDevTools();
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    win.loadURL(`${APP_ORIGIN}/index.html`);
   }
 }
 
@@ -157,6 +193,7 @@ app.whenReady().then(() => {
   // A second instance is quitting; don't let it start another backend
   if (!hasSingleInstanceLock) return;
 
+  registerAppProtocol();
   startPythonBackend();
   createWindow();
   

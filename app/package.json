@@ -63,6 +63,15 @@
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
+    },
     "extraResources": [
       {
         "from": "../api/dist/api",
