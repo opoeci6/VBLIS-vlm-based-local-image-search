@@ -54,19 +54,20 @@ jobs:
           Write-Host "Syncing app/package.json version to $cleanVer"
           npm --prefix app version $cleanVer --no-git-tag-version --allow-same-version
 
-      # Step 3: Set up Python 3.10 environment
-      - name: Set up Python 3.10
+      # Step 3: Set up Python 3.11 environment (the version the backend is developed and tested on)
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
           cache: "pip"
           cache-dependency-path: api/requirements.txt
 
-      # Step 4: Set up Node.js environment
+      # Step 4: Set up Node.js environment (latest 22.x, not the runner's cached one: Electron 45 needs >= 22.12)
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          check-latest: true
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
@@ -78,7 +79,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cu124
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install "pyinstaller>=6,<7"
 
       # Step 6: Build Python backend executable with PyInstaller
       - name: Build Python Backend with PyInstaller
