@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, session } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -11,7 +11,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, '..');
 
 // 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
-export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
+// Packaged builds ignore it: the window trusts that page and hands it the API token
+export const VITE_DEV_SERVER_URL = app.isPackaged ? undefined : process.env['VITE_DEV_SERVER_URL'];
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron');
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
@@ -29,6 +30,56 @@ const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 protocol.registerSchemesAsPrivileged([
   { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
+
+// The backend (api/main.py, app/src/config.js)
+const API_ORIGIN = 'http://127.0.0.1:8000';
+
+// Sent with every app:// response. Dev doesn't get it: the Vite dev server needs inline scripts
+// and eval. Thumbnails and API calls go to the local backend only.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  `img-src 'self' data: blob: ${API_ORIGIN}`,
+  `connect-src ${API_ORIGIN}`,
+  "font-src 'self' data:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+// Parsed once, so a malformed dev URL fails at startup instead of inside a navigation check
+const DEV_SERVER_ORIGIN = VITE_DEV_SERVER_URL ? new URL(VITE_DEV_SERVER_URL).origin : null;
+
+// Our own pages: app://vblis in builds, the Vite dev server in dev. Node's URL gives custom
+// schemes an opaque origin ("null"), so app:// is matched by protocol and host, and an opaque
+// origin never matches the dev server.
+function isTrustedUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (DEV_SERVER_ORIGIN) return parsed.origin !== 'null' && parsed.origin === DEV_SERVER_ORIGIN;
+  return parsed.protocol === `${APP_SCHEME}:` && parsed.host === APP_HOST;
+}
+
+// The preload hands the API token to whatever page runs in the window, so the window only ever
+// shows our own pages: no popups, no navigating elsewhere (a link, a redirect, a dropped file),
+// no <webview>.
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const blockForeignNavigation = (event) => {
+    if (isTrustedUrl(event.url)) return;
+    event.preventDefault();
+    console.warn(`[Security] Blocked navigation to ${event.url}`);
+  };
+  contents.on('will-navigate', blockForeignNavigation);
+  contents.on('will-redirect', blockForeignNavigation);
+  contents.on('will-attach-webview', (event) => event.preventDefault());
+});
 
 let win;
 let pythonProcess;
@@ -99,7 +150,40 @@ function registerAppProtocol() {
     } catch {
       return notFound();
     }
-    return net.fetch(pathToFileURL(filePath).toString());
+    const response = await net.fetch(pathToFileURL(filePath).toString());
+    const headers = new Headers(response.headers);
+    headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  });
+}
+
+// Electron grants every permission request by default. The app needs none (camera, notifications,
+// clipboard, devices...), so all are denied.
+function denyAllPermissions() {
+  const ses = session.defaultSession;
+  ses.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    console.warn(`[Security] Denied permission "${permission}" for ${details.requestingUrl}`);
+    callback(false);
+  });
+  ses.setPermissionCheckHandler(() => false);
+  ses.setDevicePermissionHandler(() => false);
+}
+
+// IPC is only for our own page (isTrustedUrl), not for anything else that ends up in the window
+function isTrustedSender(event) {
+  return !!event.senderFrame && isTrustedUrl(event.senderFrame.url);
+}
+
+function handleTrusted(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!isTrustedSender(event)) throw new Error(`Blocked IPC "${channel}" from an untrusted page`);
+    return handler(event, ...args);
+  });
+}
+
+function onTrusted(channel, listener) {
+  ipcMain.on(channel, (event, ...args) => {
+    if (isTrustedSender(event)) listener(event, ...args);
   });
 }
 
@@ -158,6 +242,9 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Electron's defaults, set explicitly
+      sandbox: true,
+      webSecurity: true,
       additionalArguments: [`--vblis-api-token=${apiToken}`],
     },
   });
@@ -194,14 +281,15 @@ app.whenReady().then(() => {
   if (!hasSingleInstanceLock) return;
 
   registerAppProtocol();
+  denyAllPermissions();
   startPythonBackend();
   createWindow();
   
-  // IPC handlers
+  // IPC handlers: only our own page may call them (handleTrusted/onTrusted)
   // Since Electron 43 dialogs open in Downloads unless told otherwise: start where the last pick
   // was made (the folder containing it), else in Pictures
   let lastDialogDirectory = null;
-  ipcMain.handle('dialog:openDirectory', async () => {
+  handleTrusted('dialog:openDirectory', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
       defaultPath: lastDialogDirectory || app.getPath('pictures'),
       properties: ['openDirectory', 'multiSelections']
@@ -214,7 +302,7 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('shell:openInExplorer', (event, filePath) => {
+  handleTrusted('shell:openInExplorer', (event, filePath) => {
     if (fs.existsSync(filePath)) {
       shell.showItemInFolder(filePath);
       return { success: true };
@@ -223,7 +311,7 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('fs:isDirectory', (event, filePath) => {
+  handleTrusted('fs:isDirectory', (event, filePath) => {
     try {
       return fs.existsSync(filePath) && fs.statSync(filePath).isDirectory();
     } catch {
@@ -232,11 +320,11 @@ app.whenReady().then(() => {
   });
 
   // Window Controls
-  ipcMain.on('window:minimize', () => {
+  onTrusted('window:minimize', () => {
     win.minimize();
   });
 
-  ipcMain.on('window:maximize', () => {
+  onTrusted('window:maximize', () => {
     if (win.isMaximized()) {
       win.unmaximize();
     } else {
@@ -244,7 +332,7 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.on('window:close', () => {
+  onTrusted('window:close', () => {
     win.close();
   });
 });

@@ -61,7 +61,8 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/main.js",
+      "dist-electron/preload.mjs"
     ],
     "electronFuses": {
       "runAsNode": false,
