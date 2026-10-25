@@ -28,6 +28,26 @@ describe('getMediaPreviewUrl', () => {
     const url = getMediaPreviewUrl(API, { path: '/v/a.mp4', media_type: 'video', timestamp_seconds: 0 }, 'full');
     expect(url).toBe(`${API}/image?path=%2Fv%2Fa.mp4&size=full&timestamp=0`);
   });
+
+  describe('with an API token', () => {
+    beforeEach(() => {
+      window.electronAPI = { apiToken: 'tok/1' };
+    });
+
+    afterEach(() => {
+      delete window.electronAPI;
+    });
+
+    it('appends the token as the last query parameter for an image', () => {
+      const url = getMediaPreviewUrl(API, { path: '/x/a.jpg', media_type: 'image' }, 'full');
+      expect(url).toBe(`${API}/image?path=%2Fx%2Fa.jpg&size=full&token=tok%2F1`);
+    });
+
+    it('appends the token after the timestamp for a video frame', () => {
+      const url = getMediaPreviewUrl(API, { path: '/v/a.mp4', media_type: 'video', timestamp_seconds: 12.5 });
+      expect(url).toBe(`${API}/image?path=%2Fv%2Fa.mp4&size=thumbnail&timestamp=12.5&token=tok%2F1`);
+    });
+  });
 });
 
 describe('prewarmVideoGroup', () => {

@@ -1,8 +1,9 @@
-import { app, BrowserWindow, protocol, ipcMain, dialog, shell, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +20,53 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 let win;
 let pythonProcess;
 
+// Shared secret between this app and its backend: the API is on localhost, so without it any
+// website or local process could call it (read files, delete folders). Dev may reuse
+// VBLIS_API_TOKEN so a plain browser tab on the Vite dev server can share it; packaged builds
+// always use a fresh one.
+const apiToken = (!app.isPackaged && process.env.VBLIS_API_TOKEN) || crypto.randomBytes(32).toString('hex');
+
+// One instance only: a second one would start a second backend on the same data folder
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+}
+
+// Folder where the backend keeps models, the index and caches (VBLIS_DATA_DIR, see api/paths.py).
+// Dev leaves it unset so the backend keeps using api/. Installed builds (NSIS puts an uninstaller
+// next to the exe) use a per-user folder outside the install directory that updates replace;
+// the portable build keeps its data in a folder beside the exe so it stays self-contained.
+// Must match "build.productName" in package.json, which names the exe and the NSIS uninstaller.
+// app.getName() can't be used: Electron only reads a top-level productName, so it returns "app".
+const PRODUCT_NAME = 'VBLIS';
+
+function isSameOrInside(child, parent) {
+  const relative = path.relative(parent, child);
+  return !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function resolveDataDir() {
+  if (process.env.VBLIS_DATA_DIR) return process.env.VBLIS_DATA_DIR;
+  if (!app.isPackaged) return null;
+
+  const exeDir = path.dirname(process.execPath);
+  const isInstalled = fs.existsSync(path.join(exeDir, `Uninstall ${PRODUCT_NAME}.exe`));
+  if (isInstalled) {
+    const localAppData = process.env.LOCALAPPDATA || app.getPath('appData');
+    const dataDir = path.join(localAppData, PRODUCT_NAME);
+    // Installed straight into that folder: keep the data out of the directory updates replace
+    return isSameOrInside(dataDir, exeDir) ? path.join(localAppData, `${PRODUCT_NAME}-data`) : dataDir;
+  }
+  return path.join(exeDir, `${PRODUCT_NAME}-data`);
+}
+
 function startPythonBackend() {
   const isProd = app.isPackaged;
   // If packaged, the python exe is alongside the app or in Resources
@@ -34,11 +82,17 @@ function startPythonBackend() {
 
   const args = isProd ? [] : [scriptPath];
   const cwd = path.dirname(pythonPath);
-  
-  console.log('Starting Python backend...', pythonPath, args, 'cwd:', cwd);
-  pythonProcess = spawn(pythonPath, args, { 
+  const dataDir = resolveDataDir();
+  // VBLIS_EXIT_WITH_PARENT: the backend exits when its stdin pipe closes, which happens even if
+  // this process crashes. Otherwise it would keep port 8000 with a token no new window knows.
+  const env = { ...process.env, VBLIS_API_TOKEN: apiToken, VBLIS_EXIT_WITH_PARENT: '1' };
+  if (dataDir) env.VBLIS_DATA_DIR = dataDir;
+
+  console.log('Starting Python backend...', pythonPath, args, 'cwd:', cwd, 'data:', dataDir || '(api folder)');
+  pythonProcess = spawn(pythonPath, args, {
     cwd: cwd,
-    stdio: ['ignore', 'pipe', 'pipe'] 
+    env: env,
+    stdio: ['pipe', 'pipe', 'pipe']
   });
   
   pythonProcess.stdout?.on('data', (data) => {
@@ -68,6 +122,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: [`--vblis-api-token=${apiToken}`],
     },
   });
 
@@ -99,11 +154,8 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(() => {
-  protocol.registerFileProtocol('local', (request, callback) => {
-    // request.url is "local://C:/Users..." or "local://d:/..."
-    const filePath = decodeURIComponent(request.url.replace('local://', ''));
-    callback({ path: path.normalize(filePath) });
-  });
+  // A second instance is quitting; don't let it start another backend
+  if (!hasSingleInstanceLock) return;
 
   startPythonBackend();
   createWindow();

@@ -2,10 +2,11 @@ import os
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+import paths
+
 # Ensure HF_HOME is configured to local models directory before importing transformers
-_api_dir = Path(__file__).parent.resolve()
 if "HF_HOME" not in os.environ:
-    os.environ["HF_HOME"] = str(_api_dir / "models")
+    os.environ["HF_HOME"] = str(paths.MODELS_DIR)
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import torch
@@ -16,9 +17,18 @@ import time
 import threading
 from model_downloader import ModelDownloader
 
+# The only models the API will download, switch to or delete
+AVAILABLE_MODELS = (
+    "google/siglip2-base-patch16-224",
+    "google/siglip2-base-patch16-naflex",
+    "google/siglip2-so400m-patch14-384",
+    "google/siglip2-so400m-patch16-naflex",
+    "openai/clip-vit-base-patch32",
+)
+
 
 class ModelManager:
-    def __init__(self):
+    def __init__(self, hub_path=None):
         self.current_model_id = None
         self.processor = None
         self.model = None
@@ -37,8 +47,8 @@ class ModelManager:
             
         self.precision_mode = os.getenv("PRECISION_MODE", "auto").lower()
         
-        api_dir = Path(__file__).parent.resolve()
-        hub_path = api_dir / "models" / "hub"
+        if hub_path is None:
+            hub_path = paths.HUB_DIR
         self.downloader = ModelDownloader(hub_path)
         
         print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Available: {cuda_available}, Configured Batch: {self.batch_size}, Precision Mode: {self.precision_mode})")
@@ -345,7 +355,7 @@ class ModelManager:
 
             active_precision = self.get_active_precision()
             if active_precision == "fp16" and self.use_gpu:
-                with torch.cuda.amp.autocast(dtype=torch.float16):
+                with torch.autocast("cuda", dtype=torch.float16):
                     image_features = model.get_image_features(**inputs)
             else:
                 image_features = model.get_image_features(**inputs)

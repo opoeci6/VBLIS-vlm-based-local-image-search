@@ -38,6 +38,20 @@ export default [
     },
   },
   {
+    // Raw fetch skips the API token header; apiFetch adds it
+    files: ['src/**/*.{js,jsx}'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'fetch', message: 'Use apiFetch from src/utils/api.js, it adds the API token.' },
+      ],
+    },
+  },
+  {
+    files: ['src/utils/api.js', '**/*.test.{js,jsx}', 'src/test/setup.js'],
+    rules: { 'no-restricted-globals': 'off' },
+  },
+  {
     files: ['electron/**/*.{js,mjs}', '*.config.js'],
     languageOptions: {
       globals: globals.node,

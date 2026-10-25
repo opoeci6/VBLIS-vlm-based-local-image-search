@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useCallback } from 'react';
 import { API_BASE } from '../config';
 import { annotateDuplicates, groupVideoResults, getImageResults } from '../utils/searchResults';
 import { useProgressiveList } from './useProgressiveList';
+import { apiFetch } from '../utils/api';
 
 export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   const [query, setQuery] = useState('');
@@ -36,7 +37,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   const videoGroups = useMemo(() => groupVideoResults(results), [results]);
 
   const postTextSearch = async (body) => {
-    const res = await fetch(`${API_BASE}/search`, {
+    const res = await apiFetch(`${API_BASE}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -97,7 +98,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
       url.searchParams.append('top_k', parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults));
       url.searchParams.append('min_score', parseFloat(minScore));
 
-      const res = await fetch(url.toString(), {
+      const res = await apiFetch(url.toString(), {
         method: 'POST',
         body: formData
       });

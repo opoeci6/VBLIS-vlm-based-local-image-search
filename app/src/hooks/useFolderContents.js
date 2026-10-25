@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
+import { apiFetch } from '../utils/api';
 
 export const useFolderContents = ({ activeModel, lastTaskId, setToast, refreshFolders }) => {
   const [showFolderContents, setShowFolderContents] = useState(false);
@@ -23,7 +24,7 @@ export const useFolderContents = ({ activeModel, lastTaskId, setToast, refreshFo
     try {
       const url = new URL(`${API_BASE}/index/folder/contents`);
       url.searchParams.set('folder_path', folder.path);
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       const data = await res.json();
 
       if (!res.ok) {
