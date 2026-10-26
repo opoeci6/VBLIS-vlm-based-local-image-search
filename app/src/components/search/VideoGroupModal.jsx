@@ -1,9 +1,24 @@
-import { FolderOpen, X } from 'lucide-react';
+import { useState } from 'react';
+import { FolderOpen, Images, Loader2, X } from 'lucide-react';
 import { VideoFrameCard } from './VideoFrameCard';
+import { useProgressiveList } from '../../hooks/useProgressiveList';
 import { cn } from '../../utils/cn';
 import { formatScorePercent, isSimilarityKind } from '../../utils/scoreLabel';
 
-export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, setSelectedImage, setToast, uiTheme }) => {
+const INITIAL_VISIBLE_FRAMES = 60;
+
+export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, setSelectedImage, setToast, uiTheme, onFindMoreFrames, isFindingMoreFrames = false, canFindMoreFrames = false }) => {
+  // A video can have hundreds of matching frames, so the grid grows as the user scrolls.
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FRAMES);
+  const [countPath, setCountPath] = useState(selectedVideoGroup?.path ?? null);
+  const groupPath = selectedVideoGroup?.path ?? null;
+  if (groupPath !== countPath) {
+    setCountPath(groupPath);
+    setVisibleCount(INITIAL_VISIBLE_FRAMES);
+  }
+  const frames = selectedVideoGroup?.frames ?? [];
+  const { sentinelRef } = useProgressiveList({ items: frames, visibleCount, setVisibleCount });
+
   if (!(selectedVideoGroup)) return null;
 
   return (
@@ -38,7 +53,9 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
                 "px-2.5 py-1",
                 uiTheme === 'modern' ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-100 dark:border-indigo-500/20" : "border border-white text-white"
               )}>
-                {selectedVideoGroup.frames.length} RETURNED FRAME{selectedVideoGroup.frames.length === 1 ? '' : 'S'}
+                {selectedVideoGroup.isExpanded
+                  ? `${selectedVideoGroup.frames.length} MATCHING OF ${selectedVideoGroup.totalFrames ?? selectedVideoGroup.frames.length}`
+                  : `${selectedVideoGroup.frames.length} RETURNED FRAME${selectedVideoGroup.frames.length === 1 ? '' : 'S'}`}
               </span>
               <span className={cn(
                 "px-2.5 py-1",
@@ -48,6 +65,21 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
               </span>
             </div>
           </div>
+          {canFindMoreFrames && !selectedVideoGroup.isExpanded && (
+            <button
+              onClick={() => onFindMoreFrames?.(selectedVideoGroup.path)}
+              disabled={isFindingMoreFrames}
+              className={cn(
+                "flex flex-shrink-0 items-center gap-2 px-4 py-2.5 font-bold text-xs transition-all disabled:cursor-wait disabled:opacity-60",
+                uiTheme === 'modern'
+                  ? "bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl border border-gray-200 dark:border-neutral-700"
+                  : "border border-white text-white"
+              )}
+            >
+              {isFindingMoreFrames ? <Loader2 className="w-4 h-4 animate-spin" /> : <Images className="w-4 h-4" />}
+              {isFindingMoreFrames ? 'Finding frames\u2026' : 'Find more frames'}
+            </button>
+          )}
           {window.electronAPI && (
             <button
               onClick={async () => {
@@ -83,7 +115,7 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
 
         <div className="custom-scrollbar overflow-y-auto p-5">
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {selectedVideoGroup.frames.map((frame, index) => (
+            {frames.slice(0, visibleCount).map((frame, index) => (
               <VideoFrameCard
                 key={frame.id || `${frame.path}:${frame.timestamp_seconds || 0}:${index}`}
                 frame={frame}
@@ -95,6 +127,7 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
               />
             ))}
           </div>
+          {frames.length > visibleCount && <div ref={sentinelRef} className="h-8" />}
         </div>
       </div>
     </div>

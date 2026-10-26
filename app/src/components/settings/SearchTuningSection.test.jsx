@@ -18,7 +18,9 @@ describe('SearchTuningSection', () => {
     expect(screen.getByText('Minimum Similarity')).toBeTruthy();
     expect(screen.getByText('72%')).toBeTruthy();
     expect(screen.getByText('Maximum Display Results')).toBeTruthy();
-    expect(screen.getByText('120 Images')).toBeTruthy();
+    expect(screen.getByText('120 Results')).toBeTruthy();
+    expect(screen.getByText(/Each video counts as one result/)).toBeTruthy();
+    expect(screen.getByText(/Higher numbers may consume more system memory/)).toBeTruthy();
     expect(screen.queryByText(/Warning: Unlimited/)).toBeNull();
   });
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import TitleBar from './TitleBar';
 import { API_BASE } from './config';
 import { cn } from './utils/cn';
@@ -35,7 +35,9 @@ import { apiFetch } from './utils/api';
 function App() {
   const [isClearing, setIsClearing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
-  const [selectedVideoGroup, setSelectedVideoGroup] = useState(null);
+  // Only the path is kept; the open group is derived from the live videoGroups below so it
+  // picks up frames added by "Find more frames" and closes if its group disappears.
+  const [selectedVideoPath, setSelectedVideoPath] = useState(null);
   const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
@@ -43,9 +45,12 @@ function App() {
   const { toast, setToast } = useToast();
   const queue = useTaskQueue(API_BASE, setToast);
   // Stable so the memoized results modal does not re-render on unrelated App commits.
+  const setSelectedVideoGroup = useCallback((group) => {
+    setSelectedVideoPath(group ? group.path : null);
+  }, []);
   const handleSearchResultsClosed = useCallback(() => {
     setSelectedImage(null);
-    setSelectedVideoGroup(null);
+    setSelectedVideoPath(null);
   }, []);
   const {
     query,
@@ -66,6 +71,9 @@ function App() {
     imageResults,
     visibleImageResults,
     videoGroups,
+    expandVideo,
+    expandingVideoPath,
+    canExpandVideos,
     sentinelRef,
     sentinelTerminalRef,
     handleSearch,
@@ -79,6 +87,10 @@ function App() {
     onSearchStart: () => setIsFoldersExpanded(false),
     onClose: handleSearchResultsClosed
   });
+  const selectedVideoGroup = useMemo(
+    () => (selectedVideoPath ? videoGroups.find(group => group.path === selectedVideoPath) || null : null),
+    [selectedVideoPath, videoGroups]
+  );
   const { status, setStatus, showErrorAlert, setShowErrorAlert, isCancellingIndexing, handleCancelIndexing } = useBackendStatus({ setToast });
   const {
     modelLoadError,
@@ -276,7 +288,7 @@ function App() {
       <ModelDownloadBanner status={status} pendingModel={pendingModel} handleCancelDownload={handleCancelDownload} />
 
       {/* Returned video frames grouped by their source video */}
-      <VideoGroupModal selectedVideoGroup={selectedVideoGroup} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
+      <VideoGroupModal selectedVideoGroup={selectedVideoGroup} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} onFindMoreFrames={expandVideo} isFindingMoreFrames={Boolean(selectedVideoPath) && expandingVideoPath === selectedVideoPath} canFindMoreFrames={canExpandVideos} />
 
       {/* Lightbox Modal */}
       <MediaLightbox selectedImage={selectedImage} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />

@@ -36,6 +36,13 @@ describe('VideoResultFolder', () => {
     expect(screen.getByText(/2 returned frames/)).toBeTruthy();
   });
 
+  it('calls the frames matching once the group was expanded', () => {
+    const group = { ...makeGroup(), isExpanded: true, totalFrames: 9 };
+    render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText(/2 matching frames/)).toBeTruthy();
+    expect(screen.queryByText(/returned/)).toBeNull();
+  });
+
   it('floors the best score instead of rounding it up', () => {
     const group = { ...makeGroup(), bestScore: 0.9999 };
     render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} />);

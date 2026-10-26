@@ -6,6 +6,9 @@ import { SearchResultCard } from './SearchResultCard';
 export const TerminalResultsModal = memo(function TerminalResultsModal({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage }) {
   if (!(showSearchResults && results.length > 0 && uiTheme === 'terminal')) return null;
 
+  // Counted like Max Results: every image once, every video once (not its frames).
+  const matchCount = imageResults.length + videoGroups.length;
+
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 p-6 animate-in fade-in duration-200"
@@ -24,7 +27,7 @@ export const TerminalResultsModal = memo(function TerminalResultsModal({ showSea
             </p>
           </div>
           <span className="border border-white px-3 py-2 text-sm font-bold">
-            {results.length} MATCH{results.length === 1 ? '' : 'ES'}
+            {matchCount} MATCH{matchCount === 1 ? '' : 'ES'}
           </span>
           <button
             onClick={handleCloseSearchResults}

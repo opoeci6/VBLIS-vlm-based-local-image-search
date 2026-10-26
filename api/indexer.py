@@ -1,5 +1,7 @@
 import os
 import hashlib
+import math
+import numpy as np
 from PIL import Image
 import chromadb
 import sqlite3
@@ -23,6 +25,9 @@ from media_video import (
 from folder_registry import FolderRegistry
 from collection_cache import CachedCollection
 from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY, make_scorer
+from search_session import (
+    SearchSession, SearchSessions, SearchSessionExpired, EXPIRED_MESSAGE, MODEL_CHANGED_MESSAGE
+)
 
 paths.ensure_dirs()
 
@@ -30,10 +35,20 @@ paths.ensure_dirs()
 # Must match maxVisualLimit in app/src/utils/searchResults.js.
 DUPLICATE_CHECK_LIMIT = 800
 
-# A search asks Chroma for at least this many candidates. A text query sits far from every image embedding,
-# so the HNSW graph finds its true best matches only when it searches wide: measured in round S on 27k
-# records, a request for 50 found 30 of the true top 50 on average and 1000 found 44 (in about 30 ms).
-SEARCH_CANDIDATES = 1000
+# A search asks Chroma for at least this many candidates (distances only). A text query sits far from every
+# image embedding, so the HNSW graph finds its true best matches only when it searches wide: measured in round S
+# on 27k records, a request for 50 found 30 of the true top 50 on average and 1000 found 44. With the drive of
+# 77% of the records unplugged, the live top 50 was found 45.9/50 at 1000 candidates and 48.7/50 at 2000, for
+# about 9 ms more (a query that returns distances only is cheap; reading metadata is not, see _walk_ranking).
+SEARCH_CANDIDATES = 2000
+
+# One video fills one result slot of the top_k; this many of its best frames come with it
+VIDEO_FRAMES_PER_RESULT = 50
+
+# Metadata of the candidates is read in rank order, as lazily as possible: at least this many ids per read
+# (more when top_k is large) and at most METADATA_GET_MAX ids per Chroma get call.
+METADATA_CHUNK = 256
+METADATA_GET_MAX = 4000
 
 class _FileExistenceCache:
     """os.path.isfile answered from one directory listing per directory (one stat per file is far slower
@@ -61,6 +76,91 @@ class _FileExistenceCache:
         if names is None:
             return os.path.isfile(path)
         return os.path.normcase(name) in names
+
+def _is_video(meta):
+    # Image records written before video support have no media_type
+    return meta.get("media_type", "image") == "video"
+
+def _read_metadatas(collection, ids, metas_by_id):
+    """Adds the metadata of the ids not in metas_by_id yet. An id that Chroma no longer has (deleted
+    meanwhile) maps to an empty dict, so it is skipped and never asked for again."""
+    wanted = [record_id for record_id in ids if record_id not in metas_by_id]
+    for start in range(0, len(wanted), METADATA_GET_MAX):
+        part = wanted[start:start + METADATA_GET_MAX]
+        fetched = collection.get(ids=part, include=["metadatas"])
+        # Mapped by id: the order of a get result is not guaranteed
+        for record_id, meta in zip(fetched.get("ids") or [], fetched.get("metadatas") or []):
+            metas_by_id[record_id] = meta or {}
+        for record_id in part:
+            metas_by_id.setdefault(record_id, {})
+
+def _walk_ranking(collection, ids, scores, cut, top_k, metas_by_id, file_exists):
+    """Walks the first `cut` ranked ids and returns (found, items); found is a flat list of
+    (record_id, metadata, score) in rank order. Records without a path or whose file is gone are skipped.
+    An image is one item, a video is one item however many of its frames match (its first frame creates it,
+    later frames join it up to VIDEO_FRAMES_PER_RESULT); `items` counts toward top_k.
+
+    Metadata is read chunk by chunk and the walk stops at the end of the chunk in which top_k is reached.
+    The rest of that chunk is still walked, but only for the frames of videos already included."""
+    found = []
+    items = 0
+    frames_by_video = {}  # normcased video path -> frames kept
+    pos = 0
+    while pos < cut and items < top_k:
+        end = pos + min(cut - pos, max(METADATA_CHUNK, 2 * (top_k - items)))
+        _read_metadatas(collection, ids[pos:end], metas_by_id)
+        for i in range(pos, end):
+            meta = metas_by_id.get(ids[i])
+            path = meta.get("path") if meta else None
+            if not path:
+                continue
+            if _is_video(meta):
+                key = os.path.normcase(path)
+                kept = frames_by_video.get(key)
+                if kept is None:
+                    if items >= top_k or not file_exists.isfile(path):
+                        continue
+                    items += 1
+                    kept = 0
+                elif kept >= VIDEO_FRAMES_PER_RESULT:
+                    continue
+                frames_by_video[key] = kept + 1
+            else:
+                if items >= top_k or not file_exists.isfile(path):
+                    continue
+                items += 1
+            found.append((ids[i], meta, scores[i]))
+        pos = end
+    return found, items
+
+def _format_search_result(record_id, meta, score, score_kind, embedding=None):
+    filepath = meta.get("path")
+    file_hash = meta.get("hash")
+
+    # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
+    if not file_hash:
+        try:
+            file_hash = compute_file_hash(filepath)
+        except Exception:
+            pass
+
+    if hasattr(embedding, "tolist"):
+        embedding = embedding.tolist()
+    elif isinstance(embedding, (list, tuple)):
+        embedding = [float(x) for x in embedding]
+
+    return {
+        "id": record_id,
+        "path": filepath,
+        "hash": file_hash,
+        "media_type": meta.get("media_type", "image"),
+        "timestamp_seconds": meta.get("timestamp_seconds"),
+        "scene_id": meta.get("scene_id"),
+        "sampling_reason": meta.get("sampling_reason"),
+        "score": float(score),
+        "score_kind": score_kind,
+        "embedding": embedding
+    }
 
 def _walk_file_entries(top):
     """os.walk(top) order (top-down, a directory's files before its subdirectories, symlinked directories not
@@ -203,6 +303,7 @@ class Indexer:
         self.model_manager = model_manager
         self.client = chromadb.PersistentClient(path=self.db_path)
         self.collection = None
+        self.search_sessions = SearchSessions()
         self.data_dir = pathlib.Path(data_dir if data_dir is not None else paths.DATA_DIR)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = pathlib.Path(cache_dir if cache_dir is not None else paths.CACHE_DIR)
@@ -1205,25 +1306,103 @@ class Indexer:
                 break
             self.reindex_directory(path, task_context=task_context)
 
-    def search(self, query: str, top_k: int = 50, min_score: float = DEFAULT_TEXT_MIN_SCORE):
+    def run_text_search(self, query: str, top_k: int = 50, min_score: float = DEFAULT_TEXT_MIN_SCORE):
+        """Results plus a query ref, with which the same query can be re-run or a video expanded."""
         collection = self._search_collection()
         if collection.count() == 0:
-            return []
+            return {"results": [], "query_ref": None}
 
         q = self.model_manager.embed_text_query(query)
         self._check_query_collection(collection, q.model_id)
         scorer = make_scorer("text", q.score_params, min_score)
-        return self._do_search(collection, q.embedding, top_k, scorer)
+        results = self._do_search(collection, q.embedding, top_k, scorer)
+        return {"results": results, "query_ref": self._store_session(collection, "text", q.embedding, q.score_params, query)}
 
-    def search_by_image(self, image: Image.Image, top_k: int = 50, min_score: float = DEFAULT_IMAGE_MIN_SIMILARITY):
+    def run_image_search(self, image: Image.Image, top_k: int = 50, min_score: float = DEFAULT_IMAGE_MIN_SIMILARITY):
         collection = self._search_collection()
         if collection.count() == 0:
-            return []
+            return {"results": [], "query_ref": None}
 
         q = self.model_manager.embed_image_query(image)
         self._check_query_collection(collection, q.model_id)
         scorer = make_scorer("image", None, min_score)
-        return self._do_search(collection, q.embedding, top_k, scorer)
+        results = self._do_search(collection, q.embedding, top_k, scorer)
+        return {"results": results, "query_ref": self._store_session(collection, "image", q.embedding, None, None)}
+
+    def search(self, query: str, top_k: int = 50, min_score: float = DEFAULT_TEXT_MIN_SCORE):
+        return self.run_text_search(query, top_k, min_score)["results"]
+
+    def search_by_image(self, image: Image.Image, top_k: int = 50, min_score: float = DEFAULT_IMAGE_MIN_SIMILARITY):
+        return self.run_image_search(image, top_k, min_score)["results"]
+
+    def _store_session(self, collection, kind, embedding, score_params, query):
+        return self.search_sessions.put(SearchSession(
+            collection_name=collection.name, kind=kind, embedding=[float(x) for x in embedding],
+            score_params=score_params, query=query
+        ))
+
+    def _session_for(self, collection, query_ref):
+        """The session of a query ref; None when the ref is unknown. A session of another collection
+        (the active model changed) raises, as its embedding cannot be compared to this collection."""
+        session = self.search_sessions.get(query_ref)
+        if session is not None and session.collection_name != collection.name:
+            raise SearchSessionExpired(MODEL_CHANGED_MESSAGE)
+        return session
+
+    def rerun_search(self, query_ref: str, top_k: int, min_score: float):
+        """The search of a query ref again with another top_k / min_score, without embedding the query again."""
+        collection = self._search_collection()
+        session = self._session_for(collection, query_ref)
+        if session is None:
+            raise SearchSessionExpired(EXPIRED_MESSAGE)
+        scorer = make_scorer(session.kind, session.score_params, min_score)
+        return {"results": self._do_search(collection, session.embedding, top_k, scorer), "query_ref": query_ref}
+
+    def expand_video(self, path: str, min_score=None, query_ref=None, query=None):
+        """Every frame of one video that matches a search, best first. The query comes from the ref; when the
+        ref is unknown a text `query` is embedded instead (and gets a new ref)."""
+        collection = self._search_collection()
+        session = self._session_for(collection, query_ref)
+        if session is not None:
+            ref = query_ref
+        elif query is not None and query.strip():
+            q = self.model_manager.embed_text_query(query)
+            self._check_query_collection(collection, q.model_id)
+            session = SearchSession(collection.name, "text", [float(x) for x in q.embedding], q.score_params, query)
+            ref = self.search_sessions.put(session)
+        else:
+            raise SearchSessionExpired(EXPIRED_MESSAGE)
+
+        if min_score is None:
+            min_score = DEFAULT_TEXT_MIN_SCORE if session.kind == "text" else DEFAULT_IMAGE_MIN_SIMILARITY
+        scorer = make_scorer(session.kind, session.score_params, min_score)
+
+        fetched = collection.get(where={"path": path}, include=["metadatas", "embeddings"])
+        embeddings = fetched.get("embeddings")
+        rows = []
+        if embeddings is not None:
+            rows = [(record_id, meta, emb) for record_id, meta, emb
+                    in zip(fetched.get("ids") or [], fetched.get("metadatas") or [], embeddings)
+                    if meta and _is_video(meta)]
+        result = {"path": path, "frames": [], "total_frames": len(rows), "query_ref": ref}
+        # Only a path the index knows is looked up on disk
+        if not rows or not os.path.isfile(path):
+            result["total_frames"] = 0
+            return result
+
+        frame_embeddings = np.asarray([emb for _, _, emb in rows], dtype=np.float64)
+        query_embedding = np.asarray(session.embedding, dtype=np.float64)
+        norms = np.linalg.norm(frame_embeddings, axis=1) * np.linalg.norm(query_embedding)
+        dots = frame_embeddings @ query_embedding
+        cosines = np.divide(dots, norms, out=np.zeros_like(dots), where=norms > 0)
+        scored = []
+        for (record_id, meta, _), cos in zip(rows, cosines):
+            score = scorer.score(float(cos))
+            if score >= scorer.min_score:
+                scored.append((record_id, meta, score))
+        scored.sort(key=lambda item: (-item[2], item[1].get("timestamp_seconds") or 0.0))
+        result["frames"] = [_format_search_result(record_id, meta, score, scorer.kind) for record_id, meta, score in scored]
+        return result
 
     def _search_collection(self):
         if not self.collection:
@@ -1245,43 +1424,40 @@ class Indexer:
         if total == 0:
             return []
 
-        # Query without embeddings and walk the ranking: records whose file is gone are skipped so they
-        # cannot crowd out existing results, and the walk stops at the first score under min_score
-        # (scores are sorted descending). If missing files left fewer than top_k results from a full
-        # batch, query again with a larger n (the HNSW order can shift slightly, so start from scratch).
+        # Query for distances only and read metadata lazily (see _walk_ranking): fetching it for every
+        # candidate would dominate the search time, and most records of a library on an unplugged drive are
+        # skipped anyway. Scores fall with the rank, so ids from the first one under min_score on are never
+        # looked at. If missing files left fewer than top_k items from a full batch, query again with a
+        # larger n (the HNSW order can shift slightly, so start from scratch; known metadata is kept).
         n = min(max(top_k, SEARCH_CANDIDATES), total)
         file_exists = _FileExistenceCache()  # shared by the re-query passes
+        metas_by_id = {}
         while True:
             results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n,
-                include=["metadatas", "distances"]
+                include=["distances"]
             )
             raw_ids = results["ids"][0] if results.get("ids") else []
-            raw_metas = results["metadatas"][0] if results.get("metadatas") else []
             raw_dists = results["distances"][0] if results.get("distances") else []
+            ids = list(raw_ids)[:len(raw_dists)]
+            scores = [scorer.score(1.0 - dist) for dist in raw_dists[:len(ids)]]
+            cut = next((i for i, score in enumerate(scores) if score < scorer.min_score), len(scores))
 
-            found = []
-            cut_off = False
-            for record_id, meta, dist in zip(raw_ids, raw_metas, raw_dists):
-                score = scorer.score(1.0 - dist)
-                if score < scorer.min_score:
-                    cut_off = True
-                    break
-                filepath = meta.get("path") if meta else None
-                if not filepath or not file_exists.isfile(filepath):
-                    continue
-                found.append((record_id, meta, score))
-                if len(found) >= top_k:
-                    break
+            found, items = _walk_ranking(collection, ids, scores, cut, top_k, metas_by_id, file_exists)
 
-            if len(found) >= top_k or cut_off or len(raw_ids) < n or n >= total:
+            if items >= top_k or cut < len(ids) or len(ids) < n or n >= total:
                 break
-            n = min(n * 2, total)
+            n = min(total, max(2 * n, math.ceil(1.25 * n * top_k / max(items, 1))), 8 * n)
 
-        # Embeddings are only needed for the results the frontend runs duplicate detection on
+        # Embeddings are only needed for the images the frontend runs duplicate detection on
         embeddings_by_id = {}
-        head_ids = [record_id for record_id, _, _ in found[:DUPLICATE_CHECK_LIMIT]]
+        head_ids = []
+        for record_id, meta, _ in found:
+            if not _is_video(meta):
+                head_ids.append(record_id)
+                if len(head_ids) >= DUPLICATE_CHECK_LIMIT:
+                    break
         if head_ids:
             fetched = collection.get(ids=head_ids, include=["embeddings"])
             fetched_embeddings = fetched.get("embeddings")
@@ -1289,35 +1465,7 @@ class Indexer:
                 for record_id, emb in zip(fetched["ids"], fetched_embeddings):
                     embeddings_by_id[record_id] = emb
 
-        formatted_results = []
-        for record_id, meta, score in found:
-            filepath = meta.get("path")
-            file_hash = meta.get("hash")
-
-            # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
-            if not file_hash:
-                try:
-                    file_hash = compute_file_hash(filepath)
-                except Exception:
-                    pass
-
-            emb = embeddings_by_id.get(record_id)
-            if hasattr(emb, "tolist"):
-                emb = emb.tolist()
-            elif isinstance(emb, (list, tuple)):
-                emb = [float(x) for x in emb]
-
-            formatted_results.append({
-                "id": record_id,
-                "path": filepath,
-                "hash": file_hash,
-                "media_type": meta.get("media_type", "image"),
-                "timestamp_seconds": meta.get("timestamp_seconds"),
-                "scene_id": meta.get("scene_id"),
-                "sampling_reason": meta.get("sampling_reason"),
-                "score": float(score),
-                "score_kind": scorer.kind,
-                "embedding": emb
-            })
-
-        return formatted_results
+        return [
+            _format_search_result(record_id, meta, score, scorer.kind, embeddings_by_id.get(record_id))
+            for record_id, meta, score in found
+        ]

@@ -233,6 +233,90 @@ describe('App (smoke)', () => {
     expect(JSON.parse(deleteCall[1].body)).toEqual({ folder_path: '/photos' });
   });
 
+  describe('Find more frames', () => {
+    const videoFrame = (i, score) => ({
+      id: `clip-${i}`, path: '/videos/clip.mp4', media_type: 'video', score, timestamp_seconds: i * 10,
+    });
+    const videoSearchPayload = {
+      results: [videoFrame(0, 0.9), videoFrame(1, 0.8)],
+      query_ref: 'ref-1',
+    };
+    const videoFramesPayload = {
+      path: '/videos/clip.mp4',
+      frames: [0, 1, 2, 3, 4].map(i => videoFrame(i, 0.9 - i * 0.1)),
+      total_frames: 5,
+      query_ref: 'ref-1',
+    };
+
+    const searchForVideo = async () => {
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      fireEvent.change(screen.getByPlaceholderText(/Search images/), { target: { value: 'cats' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+      return screen.findByText('clip.mp4');
+    };
+
+    const mockVideoBackend = (videoResponse) => {
+      const defaultImpl = fetchMock.getMockImplementation();
+      const videoBodies = [];
+      fetchMock.mockImplementation(async (url, init) => {
+        const { pathname } = new URL(String(url));
+        const method = init?.method || 'GET';
+        if (pathname === '/search' && method === 'POST') return json(videoSearchPayload);
+        if (pathname === '/search/video' && method === 'POST') {
+          videoBodies.push(JSON.parse(init.body));
+          return videoResponse();
+        }
+        return defaultImpl(url, init);
+      });
+      return videoBodies;
+    };
+
+    it('shows the merged frames in the open modal after expanding', async () => {
+      const videoBodies = mockVideoBackend(() => json(videoFramesPayload));
+      fireEvent.click(await searchForVideo());
+
+      expect(await screen.findByText('2 RETURNED FRAMES')).toBeTruthy();
+      expect(screen.getAllByText(/^FRAME \d+$/)).toHaveLength(2);
+
+      fireEvent.click(screen.getByRole('button', { name: /Find more frames/ }));
+
+      expect(await screen.findByText('5 MATCHING OF 5')).toBeTruthy();
+      expect(screen.getAllByText(/^FRAME \d+$/)).toHaveLength(5);
+      expect(screen.queryByRole('button', { name: /Find more frames|Finding frames/ })).toBeNull();
+      expect(videoBodies).toEqual([{ query_ref: 'ref-1', path: '/videos/clip.mp4', min_score: 0.1, query: 'cats' }]);
+    });
+
+    it('keeps the modal open and the button usable after a failed expansion', async () => {
+      mockVideoBackend(() => ({ ok: false, status: 410, json: async () => ({ detail: 'expired' }) }));
+      fireEvent.click(await searchForVideo());
+      fireEvent.click(await screen.findByRole('button', { name: /Find more frames/ }));
+
+      expect(await screen.findByText('This search has expired. Please search again.')).toBeTruthy();
+      expect(screen.getByText('2 RETURNED FRAMES')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Find more frames/ }).disabled).toBe(false);
+    });
+
+    it('closes the modal when a new search no longer contains the video', async () => {
+      mockVideoBackend(() => json(videoFramesPayload));
+      fireEvent.click(await searchForVideo());
+      expect(await screen.findByText('2 RETURNED FRAMES')).toBeTruthy();
+
+      const defaultImpl = fetchMock.getMockImplementation();
+      fetchMock.mockImplementation(async (url, init) => {
+        const { pathname } = new URL(String(url));
+        if (pathname === '/search' && (init?.method || 'GET') === 'POST') return json(searchPayload);
+        return defaultImpl(url, init);
+      });
+      fireEvent.change(screen.getByPlaceholderText(/Search images/), { target: { value: 'dogs' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+      await waitFor(() => expect(screen.getAllByAltText('Result')).toHaveLength(2));
+      expect(screen.queryByText('2 RETURNED FRAMES')).toBeNull();
+      expect(screen.queryByLabelText('Close video results')).toBeNull();
+    });
+  });
+
   it('makes no React commits while idle with unchanged poll responses', async () => {
     let commits = 0;
     render(

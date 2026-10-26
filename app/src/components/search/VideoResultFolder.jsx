@@ -75,7 +75,7 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
             {group.name}
           </p>
           <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">
-            {group.frames.length} returned frame{group.frames.length === 1 ? '' : 's'}
+            {group.frames.length} {group.isExpanded ? 'matching' : 'returned'} frame{group.frames.length === 1 ? '' : 's'}
           </p>
         </div>
         <ChevronRight className={cn(

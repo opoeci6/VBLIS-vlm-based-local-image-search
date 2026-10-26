@@ -6,9 +6,11 @@ const makeImages = (n) => Array.from({ length: n }, (_, i) => ({
   path: `/pics/img${i}.jpg`, media_type: 'image', score: 0.5, id: `img${i}`,
 }));
 
-const makeGroup = (name) => {
-  const frame = { path: `/videos/${name}`, media_type: 'video', score: 0.9, timestamp_seconds: 3 };
-  return { path: `/videos/${name}`, name, frames: [frame], bestScore: 0.9, bestFrame: frame };
+const makeGroup = (name, frameCount = 1) => {
+  const frames = Array.from({ length: frameCount }, (_, i) => (
+    { path: `/videos/${name}`, media_type: 'video', score: 0.9 - i * 0.01, timestamp_seconds: 3 + i }
+  ));
+  return { path: `/videos/${name}`, name, frames, bestScore: 0.9, bestFrame: frames[0] };
 };
 
 const makeProps = (overrides = {}) => {
@@ -71,6 +73,19 @@ describe('TerminalResultsModal', () => {
     expect(screen.getByText('1 MATCH')).toBeTruthy();
     rerender(<TerminalResultsModal {...makeProps({ imageResults: makeImages(2) })} />);
     expect(screen.getByText('2 MATCHES')).toBeTruthy();
+  });
+
+  it('counts each video once, not its frames', () => {
+    render(<TerminalResultsModal {...makeProps({
+      imageResults: makeImages(1),
+      videoGroups: [makeGroup('a.mp4', 5), makeGroup('b.mp4', 3)],
+    })} />);
+    expect(screen.getByText('3 MATCHES')).toBeTruthy();
+  });
+
+  it('shows a singular match for a single video with several frames', () => {
+    render(<TerminalResultsModal {...makeProps({ imageResults: [], visibleImageResults: [], videoGroups: [makeGroup('a.mp4', 4)] })} />);
+    expect(screen.getByText('1 MATCH')).toBeTruthy();
   });
 
   it('renders video groups and image cards, with headers only when both exist', () => {

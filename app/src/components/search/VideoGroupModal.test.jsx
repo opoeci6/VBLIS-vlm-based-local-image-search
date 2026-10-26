@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { VideoGroupModal } from './VideoGroupModal';
 
 const makeGroup = () => {
@@ -11,6 +11,13 @@ const makeGroup = () => {
   return { path, name: 'clip.mp4', frames, bestScore: 0.87, bestFrame: frames[0] };
 };
 
+const makeBigGroup = (count, path = '/videos/big.mp4') => {
+  const frames = Array.from({ length: count }, (_, i) => (
+    { path, media_type: 'video', score: 0.9 - i * 0.001, timestamp_seconds: i, id: `${path}:${i}` }
+  ));
+  return { path, name: 'big.mp4', frames, bestScore: 0.9, bestFrame: frames[0], totalFrames: null, isExpanded: false };
+};
+
 const renderModal = (overrides = {}) => {
   const props = {
     selectedVideoGroup: makeGroup(),
@@ -18,10 +25,15 @@ const renderModal = (overrides = {}) => {
     setSelectedImage: vi.fn(),
     setToast: vi.fn(),
     uiTheme: 'modern',
+    onFindMoreFrames: vi.fn(),
+    isFindingMoreFrames: false,
+    canFindMoreFrames: true,
     ...overrides,
   };
   return { props, ...render(<VideoGroupModal {...props} />) };
 };
+
+const renderedFrames = () => screen.queryAllByText(/^FRAME \d+$/);
 
 describe('VideoGroupModal', () => {
   afterEach(() => {
@@ -84,6 +96,134 @@ describe('VideoGroupModal', () => {
     const { props } = renderModal();
     fireEvent.click(screen.getByText('FRAME 2'));
     expect(props.setSelectedImage).toHaveBeenCalledWith(props.selectedVideoGroup.frames[1]);
+  });
+
+  describe('Find more frames', () => {
+    it('is shown without Electron and calls onFindMoreFrames with the video path', () => {
+      const { props } = renderModal();
+      expect(window.electronAPI).toBeUndefined();
+      fireEvent.click(screen.getByRole('button', { name: /Find more frames/ }));
+      expect(props.onFindMoreFrames).toHaveBeenCalledTimes(1);
+      expect(props.onFindMoreFrames).toHaveBeenCalledWith('/videos/clip.mp4');
+    });
+
+    it('sits next to Show in Explorer in Electron', () => {
+      window.electronAPI = { openInExplorer: vi.fn() };
+      renderModal();
+      expect(screen.getByRole('button', { name: /Find more frames/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Show in Explorer/ })).toBeTruthy();
+    });
+
+    it('is disabled with a spinner while loading', () => {
+      const { props } = renderModal({ isFindingMoreFrames: true });
+      const button = screen.getByRole('button', { name: /Finding frames/ });
+      expect(button.textContent).toBe('Finding frames…');
+      expect(button.disabled).toBe(true);
+      expect(button.querySelector('.animate-spin')).toBeTruthy();
+      expect(screen.queryByText('Find more frames')).toBeNull();
+      fireEvent.click(button);
+      expect(props.onFindMoreFrames).not.toHaveBeenCalled();
+    });
+
+    it('is enabled without a spinner when idle', () => {
+      renderModal();
+      const button = screen.getByRole('button', { name: /Find more frames/ });
+      expect(button.disabled).toBe(false);
+      expect(button.querySelector('.animate-spin')).toBeNull();
+    });
+
+    it('is hidden once the group is expanded', () => {
+      renderModal({ selectedVideoGroup: { ...makeGroup(), isExpanded: true, totalFrames: 40 } });
+      expect(screen.queryByRole('button', { name: /Find more frames|Finding frames/ })).toBeNull();
+    });
+
+    it('is hidden when finding more frames is not possible', () => {
+      renderModal({ canFindMoreFrames: false });
+      expect(screen.queryByRole('button', { name: /Find more frames|Finding frames/ })).toBeNull();
+    });
+
+    it.each(['modern', 'terminal'])('renders in the %s theme', (uiTheme) => {
+      renderModal({ uiTheme });
+      expect(screen.getByRole('button', { name: /Find more frames/ })).toBeTruthy();
+    });
+
+    it('shows the matching-of-total badge once expanded', () => {
+      renderModal({ selectedVideoGroup: { ...makeGroup(), isExpanded: true, totalFrames: 765 } });
+      expect(screen.getByText('2 MATCHING OF 765')).toBeTruthy();
+      expect(screen.queryByText(/RETURNED FRAME/)).toBeNull();
+    });
+  });
+
+  describe('progressive rendering', () => {
+    let observers;
+
+    beforeEach(() => {
+      observers = [];
+      vi.stubGlobal('IntersectionObserver', class {
+        constructor(callback) {
+          this.callback = callback;
+          this.observed = [];
+          observers.push(this);
+        }
+        observe(node) { this.observed.push(node); }
+        disconnect() {}
+      });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const scrollToBottom = () => {
+      const observer = observers[observers.length - 1];
+      act(() => observer.callback([{ isIntersecting: true }]));
+    };
+
+    it('renders only the first 60 frames of a large group', () => {
+      renderModal({ selectedVideoGroup: makeBigGroup(200) });
+      expect(renderedFrames()).toHaveLength(60);
+      expect(screen.getByText('FRAME 60')).toBeTruthy();
+      expect(screen.queryByText('FRAME 61')).toBeNull();
+      expect(screen.getByText('200 RETURNED FRAMES')).toBeTruthy();
+    });
+
+    it('renders everything for a small group and needs no sentinel', () => {
+      renderModal({ selectedVideoGroup: makeBigGroup(60) });
+      expect(renderedFrames()).toHaveLength(60);
+      expect(observers).toHaveLength(0);
+    });
+
+    it('adds 80 frames when the sentinel scrolls into view', () => {
+      renderModal({ selectedVideoGroup: makeBigGroup(200) });
+      expect(observers.length).toBeGreaterThan(0);
+      expect(observers[observers.length - 1].observed.length).toBe(1);
+
+      scrollToBottom();
+      expect(renderedFrames()).toHaveLength(140);
+      scrollToBottom();
+      expect(renderedFrames()).toHaveLength(200);
+    });
+
+    it('resets to 60 frames when another video is opened', () => {
+      const first = makeBigGroup(200, '/videos/one.mp4');
+      const { props, rerender } = renderModal({ selectedVideoGroup: first });
+      scrollToBottom();
+      expect(renderedFrames()).toHaveLength(140);
+
+      rerender(<VideoGroupModal {...props} selectedVideoGroup={makeBigGroup(200, '/videos/two.mp4')} />);
+      expect(renderedFrames()).toHaveLength(60);
+    });
+
+    it('keeps the scroll position when the same video gains frames', () => {
+      const { props, rerender } = renderModal({ selectedVideoGroup: makeBigGroup(100) });
+      scrollToBottom();
+      expect(renderedFrames()).toHaveLength(100);
+
+      const expanded = { ...makeBigGroup(300), isExpanded: true, totalFrames: 300 };
+      rerender(<VideoGroupModal {...props} selectedVideoGroup={expanded} />);
+      expect(renderedFrames()).toHaveLength(100);
+      expect(screen.getByText('300 MATCHING OF 300')).toBeTruthy();
+    });
   });
 
   describe('Show in Explorer', () => {
