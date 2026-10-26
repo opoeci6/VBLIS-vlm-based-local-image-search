@@ -31,9 +31,13 @@ def get_gpu_settings():
 @router.post("/settings/gpu")
 def set_gpu_settings(req: GPUSettingsRequest):
     print(f"Set GPU settings requested: GPU={req.use_gpu}, Batch={req.batch_size}, Precision={req.precision_mode}")
+    # Set before set_device, so a device switch already reloads the model with the new precision
+    app_state.model_manager.precision_mode = req.precision_mode.lower()
     result = app_state.model_manager.set_device(req.use_gpu)
     app_state.model_manager.batch_size = max(0, req.batch_size)
-    app_state.model_manager.precision_mode = req.precision_mode.lower()
+    precision_result = app_state.model_manager.set_precision_mode(req.precision_mode.lower())
+    if result["status"] != "error" and precision_result["status"] == "error":
+        result = precision_result
     
     # Persist settings to .env
     settings_store.persist_gpu_settings(

@@ -234,7 +234,9 @@ class ModelManager:
 
                 print(f"Loading processor and model weights from: {load_target}")
                 self.processor = AutoProcessor.from_pretrained(load_target, use_fast=False, local_files_only=True)
-                self.model = AutoModel.from_pretrained(load_target, local_files_only=True).to(self.device)
+                model = AutoModel.from_pretrained(load_target, local_files_only=True)
+                self._match_text_tower_precision(model)
+                self.model = model.to(self.device)
                 self.model.eval()
                 self.current_model_id = model_id
                 print(f"Model {model_id} loaded successfully from {load_target}.")
@@ -247,6 +249,44 @@ class ModelManager:
                 raise
             finally:
                 self.is_loading_model = False
+
+    @staticmethod
+    def _text_tower(model):
+        """The modules that only embed search queries: the text tower, plus CLIP's text projection."""
+        return [m for m in (getattr(model, "text_model", None), getattr(model, "text_projection", None)) if m is not None]
+
+    def _wants_half_text_tower(self) -> bool:
+        return self.use_gpu and self.get_active_precision() == "fp16"
+
+    @classmethod
+    def _text_tower_is_half(cls, model) -> bool:
+        return any(p.dtype == torch.float16 for module in cls._text_tower(model) for p in module.parameters())
+
+    def _match_text_tower_precision(self, model):
+        """Running on the GPU in fp16, the text tower is kept in fp16. It only embeds the search queries (cosine
+        >= 0.999998 against fp32), and the VRAM it frees lets image batches run whole instead of one at a time.
+        The image tower and the stored image embeddings are not affected."""
+        if self._wants_half_text_tower():
+            for module in self._text_tower(model):
+                module.half()
+
+    def set_precision_mode(self, mode: str):
+        """Change the precision preference. A loaded model whose text tower no longer matches it is reloaded
+        (fp16 weights cannot be turned back into the original fp32 ones)."""
+        self.precision_mode = mode
+        model = self.model
+        if model is None or self._text_tower_is_half(model) == self._wants_half_text_tower():
+            return {"status": "success", "message": f"Precision set to {mode}"}
+        active_model = self.current_model_id
+        print(f"Reloading {active_model} for precision {self.get_active_precision()}...")
+        # Reset current_model_id so load_model's early-return guard doesn't skip the reload
+        self.current_model_id = None
+        try:
+            self.load_model(active_model, local_files_only=True)
+        except Exception as e:
+            print(f"Failed to reload model for the new precision: {e}")
+            return {"status": "error", "message": f"Failed to reload model for precision {mode}: {str(e)}"}
+        return {"status": "success", "message": f"Precision set to {mode}"}
 
     def set_device(self, use_gpu: bool):
         """Toggle GPU usage and reload current model if necessary."""
@@ -544,7 +584,11 @@ class ModelManager:
         inputs = {k: v.to(model_device) for k, v in inputs.items()}
         
         print(f"Inference session (Text) on: {model_device}")
-        text_features = model.get_text_features(**inputs)
+        if self._text_tower_is_half(model):
+            with torch.autocast("cuda", dtype=torch.float16):
+                text_features = model.get_text_features(**inputs)
+        else:
+            text_features = model.get_text_features(**inputs)
         
         if hasattr(text_features, "text_embeds"):
             text_features = text_features.text_embeds
@@ -554,6 +598,7 @@ class ModelManager:
         if not isinstance(text_features, torch.Tensor) and isinstance(text_features, (list, tuple)):
             text_features = text_features[0]
 
+        text_features = text_features.float()  # a no-op for an fp32 text tower
         text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
         return text_features.cpu().numpy().flatten().tolist()
 
