@@ -22,12 +22,18 @@ from media_video import (
 )
 from folder_registry import FolderRegistry
 from collection_cache import CachedCollection
+from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY, make_scorer
 
 paths.ensure_dirs()
 
 # How many leading search results carry their embedding for the frontend's visual-duplicate detection.
 # Must match maxVisualLimit in app/src/utils/searchResults.js.
 DUPLICATE_CHECK_LIMIT = 800
+
+# A search asks Chroma for at least this many candidates. A text query sits far from every image embedding,
+# so the HNSW graph finds its true best matches only when it searches wide: measured in round S on 27k
+# records, a request for 50 found 30 of the true top 50 on average and 1000 found 44 (in about 30 ms).
+SEARCH_CANDIDATES = 1000
 
 class _FileExistenceCache:
     """os.path.isfile answered from one directory listing per directory (one stat per file is far slower
@@ -1199,30 +1205,43 @@ class Indexer:
                 break
             self.reindex_directory(path, task_context=task_context)
 
-    def search(self, query: str, top_k: int = 50, min_score: float = 0.2):
-        if not self.collection:
-            self.switch_collection(self.model_manager.get_collection_name())
-            
-        if self.collection.count() == 0:
+    def search(self, query: str, top_k: int = 50, min_score: float = DEFAULT_TEXT_MIN_SCORE):
+        collection = self._search_collection()
+        if collection.count() == 0:
             return []
 
-        query_embedding = self.model_manager.get_text_embedding(query)
-        return self._do_search(query_embedding, top_k, min_score)
+        q = self.model_manager.embed_text_query(query)
+        self._check_query_collection(collection, q.model_id)
+        scorer = make_scorer("text", q.score_params, min_score)
+        return self._do_search(collection, q.embedding, top_k, scorer)
 
-    def search_by_image(self, image: Image.Image, top_k: int = 50, min_score: float = 0.2):
-        if not self.collection:
-            self.switch_collection(self.model_manager.get_collection_name())
-            
-        if self.collection.count() == 0:
+    def search_by_image(self, image: Image.Image, top_k: int = 50, min_score: float = DEFAULT_IMAGE_MIN_SIMILARITY):
+        collection = self._search_collection()
+        if collection.count() == 0:
             return []
 
-        query_embedding = self.model_manager.get_image_embedding(image)
-        return self._do_search(query_embedding, top_k, min_score)
+        q = self.model_manager.embed_image_query(image)
+        self._check_query_collection(collection, q.model_id)
+        scorer = make_scorer("image", None, min_score)
+        return self._do_search(collection, q.embedding, top_k, scorer)
 
-    def _do_search(self, query_embedding, top_k, min_score):
+    def _search_collection(self):
+        if not self.collection:
+            self.switch_collection(self.model_manager.get_collection_name())
+        return self.collection
+
+    @staticmethod
+    def _check_query_collection(collection, query_model_id):
+        """The collection of a search is captured once; it must belong to the model that embedded the query."""
+        if query_model_id is not None:
+            expected = query_model_id.replace("/", "_").replace("-", "_")
+            if collection.name != expected:
+                raise RuntimeError("The active model changed during the search. Please search again.")
+
+    def _do_search(self, collection, query_embedding, top_k, scorer):
         if top_k < 1:
             return []
-        total = self.collection.count()
+        total = collection.count()
         if total == 0:
             return []
 
@@ -1230,10 +1249,10 @@ class Indexer:
         # cannot crowd out existing results, and the walk stops at the first score under min_score
         # (scores are sorted descending). If missing files left fewer than top_k results from a full
         # batch, query again with a larger n (the HNSW order can shift slightly, so start from scratch).
-        n = min(top_k, total)
+        n = min(max(top_k, SEARCH_CANDIDATES), total)
         file_exists = _FileExistenceCache()  # shared by the re-query passes
         while True:
-            results = self.collection.query(
+            results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n,
                 include=["metadatas", "distances"]
@@ -1245,8 +1264,8 @@ class Indexer:
             found = []
             cut_off = False
             for record_id, meta, dist in zip(raw_ids, raw_metas, raw_dists):
-                score = 1.0 - (dist / 2.0)
-                if score < min_score:
+                score = scorer.score(1.0 - dist)
+                if score < scorer.min_score:
                     cut_off = True
                     break
                 filepath = meta.get("path") if meta else None
@@ -1264,7 +1283,7 @@ class Indexer:
         embeddings_by_id = {}
         head_ids = [record_id for record_id, _, _ in found[:DUPLICATE_CHECK_LIMIT]]
         if head_ids:
-            fetched = self.collection.get(ids=head_ids, include=["embeddings"])
+            fetched = collection.get(ids=head_ids, include=["embeddings"])
             fetched_embeddings = fetched.get("embeddings")
             if fetched_embeddings is not None:
                 for record_id, emb in zip(fetched["ids"], fetched_embeddings):
@@ -1297,6 +1316,7 @@ class Indexer:
                 "scene_id": meta.get("scene_id"),
                 "sampling_reason": meta.get("sampling_reason"),
                 "score": float(score),
+                "score_kind": scorer.kind,
                 "embedding": emb
             })
 

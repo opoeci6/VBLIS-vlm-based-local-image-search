@@ -1,6 +1,7 @@
 import { FolderOpen, X } from 'lucide-react';
 import { VideoFrameCard } from './VideoFrameCard';
 import { cn } from '../../utils/cn';
+import { formatScorePercent, isSimilarityKind } from '../../utils/scoreLabel';
 
 export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, setSelectedImage, setToast, uiTheme }) => {
   if (!(selectedVideoGroup)) return null;
@@ -43,7 +44,7 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
                 "px-2.5 py-1",
                 uiTheme === 'modern' ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg border border-emerald-100 dark:border-emerald-500/20" : "border border-white text-emerald-400"
               )}>
-                BEST MATCH {Math.round(selectedVideoGroup.bestScore * 100)}%
+                {isSimilarityKind(selectedVideoGroup.bestFrame?.score_kind) ? 'BEST SIMILARITY' : 'BEST MATCH'} {formatScorePercent(selectedVideoGroup.bestScore)}
               </span>
             </div>
           </div>

@@ -32,6 +32,8 @@ const makeProps = (overrides = {}) => ({
   isDeletingModel: false,
   minScore: 0.2,
   setMinScore: vi.fn(),
+  minSimilarity: 0.7,
+  setMinSimilarity: vi.fn(),
   maxResults: 50,
   setMaxResults: vi.fn(),
   showConfirmClear: false,
@@ -76,6 +78,7 @@ describe('SettingsModal', () => {
       'Hardware Acceleration & Batching',
       'Model Management',
       'Minimum Match Score',
+      'Minimum Similarity',
       'Maximum Display Results',
       'Clear Indexed Database',
       'Thumbnail Cache Management',
@@ -95,5 +98,11 @@ describe('SettingsModal', () => {
     expect(props.setShowConfirmClear).toHaveBeenCalledWith(true);
     fireEvent.click(screen.getByRole('button', { name: /Clear Image Cache/ }));
     expect(props.setShowConfirmClearThumbnails).toHaveBeenCalledWith('images');
+
+    const sliders = document.querySelectorAll('input[type="range"]');
+    fireEvent.change(sliders[0], { target: { value: '0.3' } });
+    expect(props.setMinScore).toHaveBeenCalledWith(0.3);
+    fireEvent.change(sliders[1], { target: { value: '0.8' } });
+    expect(props.setMinSimilarity).toHaveBeenCalledWith(0.8);
   });
 });

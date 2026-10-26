@@ -1,6 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
 
-export const SearchTuningSection = ({ minScore, setMinScore, maxResults, setMaxResults }) => {
+export const SearchTuningSection = ({ minScore, setMinScore, minSimilarity, setMinSimilarity, maxResults, setMaxResults }) => {
   return (
     <>
       <div className="pt-2">
@@ -10,12 +10,26 @@ export const SearchTuningSection = ({ minScore, setMinScore, maxResults, setMaxR
         </div>
         <input
           type="range"
-          min="0.05" max="0.95" step="0.01"
+          min="0.01" max="0.95" step="0.01"
           value={minScore}
           onChange={(e) => setMinScore(parseFloat(e.target.value))}
           className="terminal-range w-full cursor-pointer"
         />
-        <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Filters out vague or low-confidence network results.</p>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Text search: how sure the model must be that a result matches your words.</p>
+      </div>
+      <div className="pt-2">
+        <div className="flex justify-between items-center mb-1">
+          <label className="text-sm font-semibold text-neutral-500 dark:text-neutral-400">Minimum Similarity</label>
+          <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{Math.round(minSimilarity * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          min="0.30" max="0.95" step="0.01"
+          value={minSimilarity}
+          onChange={(e) => setMinSimilarity(parseFloat(e.target.value))}
+          className="terminal-range w-full cursor-pointer"
+        />
+        <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Image search: how visually similar a result must be to the dropped image.</p>
       </div>
       <div className="pt-2">
         <div className="flex justify-between items-center mb-1">

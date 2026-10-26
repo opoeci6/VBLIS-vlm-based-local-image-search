@@ -56,6 +56,8 @@ function App() {
     showSearchResults,
     minScore,
     setMinScore,
+    minSimilarity,
+    setMinSimilarity,
     maxResults,
     setMaxResults,
     visibleResultsCount,
@@ -240,6 +242,8 @@ function App() {
         isDeletingModel={isDeletingModel}
         minScore={minScore}
         setMinScore={setMinScore}
+        minSimilarity={minSimilarity}
+        setMinSimilarity={setMinSimilarity}
         maxResults={maxResults}
         setMaxResults={setMaxResults}
         showConfirmClear={showConfirmClear}

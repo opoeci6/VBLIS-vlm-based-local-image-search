@@ -36,6 +36,12 @@ describe('MediaLightbox', () => {
     expect(screen.getByText('/pics/a.jpg')).toBeTruthy();
   });
 
+  it('labels similarity results as Similarity', () => {
+    renderLightbox(imageResult({ score: 0.846, score_kind: 'similarity' }));
+    expect(screen.getByText('Similarity: 84%')).toBeTruthy();
+    expect(screen.queryByText(/Match Score/)).toBeNull();
+  });
+
   it('shows the name and size (no score) for items opened from folder browsing', () => {
     renderLightbox({ path: '/pics/a.jpg', name: 'a.jpg', size: 1536, media_type: 'image', isBrowsing: true });
     expect(screen.getByText('a.jpg')).toBeTruthy();

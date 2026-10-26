@@ -44,6 +44,15 @@ describe('VideoGroupModal', () => {
     expect(screen.getByText('FRAME 2')).toBeTruthy();
   });
 
+  it('says BEST SIMILARITY when the best frame is a similarity result', () => {
+    const group = makeGroup();
+    group.frames = group.frames.map(f => ({ ...f, score_kind: 'similarity' }));
+    group.bestFrame = group.frames[0];
+    renderModal({ selectedVideoGroup: group });
+    expect(screen.getByText('BEST SIMILARITY 87%')).toBeTruthy();
+    expect(screen.getAllByText(/SIMILAR$/)).toHaveLength(2);
+  });
+
   it('uses the singular for one frame', () => {
     const group = makeGroup();
     group.frames = [group.frames[0]];

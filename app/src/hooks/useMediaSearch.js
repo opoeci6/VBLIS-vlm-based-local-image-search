@@ -10,7 +10,8 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [minScore, setMinScore] = useState(0.20);
+  const [minScore, setMinScore] = useState(0.10);
+  const [minSimilarity, setMinSimilarity] = useState(0.70);
   const [maxResults, setMaxResults] = useState(50);
   const [visibleResultsCount, setVisibleResultsCount] = useState(80);
   const [imageSearchContext, setImageSearchContext] = useState(null);
@@ -96,7 +97,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
       // Our API takes them as query params in the new endpoint if we defined it that way
       const url = new URL(`${API_BASE}/search/image`);
       url.searchParams.append('top_k', parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults));
-      url.searchParams.append('min_score', parseFloat(minScore));
+      url.searchParams.append('min_score', parseFloat(minSimilarity));
 
       const res = await apiFetch(url.toString(), {
         method: 'POST',
@@ -172,6 +173,8 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     showSearchResults,
     minScore,
     setMinScore,
+    minSimilarity,
+    setMinSimilarity,
     maxResults,
     setMaxResults,
     visibleResultsCount,

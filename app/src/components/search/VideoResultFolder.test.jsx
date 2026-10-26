@@ -36,6 +36,12 @@ describe('VideoResultFolder', () => {
     expect(screen.getByText(/2 returned frames/)).toBeTruthy();
   });
 
+  it('floors the best score instead of rounding it up', () => {
+    const group = { ...makeGroup(), bestScore: 0.9999 };
+    render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText(/BEST 99\.9%/)).toBeTruthy();
+  });
+
   it('uses the singular for a single frame', () => {
     const group = makeGroup();
     group.frames = [group.frames[0]];

@@ -28,7 +28,7 @@ Or use the portable version `VBLIS-win-0.0.1.zip`, unzip the zip file and launch
 > [!TIP]
 > VBLIS partially supports search while indexing. You can search while the app is indexing your folders, but the results will be limited to the images that have been indexed so far.
 5. **GPU Settings**: If you have an NVIDIA GPU, ensure GPU acceleration is enabled in the settings for optimal performance.
-6. **Result Filtering**: You can adjust the number of results to display and the minimum matching score in the settings.
+6. **Result Filtering**: In the settings you can adjust how many results to display and two minimums: a **match score** for text searches (with SigLIP models, how sure the model is that a result fits your words) and a **similarity** for image searches (how visually close a result is to the dropped image).
 7. **Model Management**: You can download, switch, and delete models in the settings.
 8. **Index and Cache Management**: You can clear the index and cache in the settings.
 

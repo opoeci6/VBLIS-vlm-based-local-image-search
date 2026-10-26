@@ -52,7 +52,7 @@ describe('useMediaSearch', () => {
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toBe(`${API}/search`);
       expect(init.method).toBe('POST');
-      expect(JSON.parse(init.body)).toEqual({ query: 'a cat', top_k: 50, min_score: 0.2 });
+      expect(JSON.parse(init.body)).toEqual({ query: 'a cat', top_k: 50, min_score: 0.1 });
 
       expect(onSearchStart).toHaveBeenCalledTimes(1);
       expect(result.current.isSearching).toBe(false);
@@ -146,6 +146,18 @@ describe('useMediaSearch', () => {
       expect(setToast).toHaveBeenCalledWith({ message: 'Please drop an image file.', type: 'error' });
     });
 
+    it('sends minSimilarity (not minScore) as min_score for image search', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ results: [] }));
+      const { result } = render();
+      expect(result.current.minSimilarity).toBe(0.7);
+      act(() => { result.current.setMinSimilarity(0.55); result.current.setMinScore(0.3); });
+
+      await act(async () => { await result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' })); });
+
+      const parsed = new URL(fetchMock.mock.calls[0][0]);
+      expect(parsed.searchParams.get('min_score')).toBe('0.55');
+    });
+
     it('POSTs the image to /search/image and records the context', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ results: [imageHit('/a.jpg'), imageHit('/b.jpg')] }));
       const { result, setToast, onSearchStart } = render();
@@ -158,7 +170,7 @@ describe('useMediaSearch', () => {
       const parsed = new URL(url);
       expect(`${parsed.origin}${parsed.pathname}`).toBe(`${API}/search/image`);
       expect(parsed.searchParams.get('top_k')).toBe('50');
-      expect(parsed.searchParams.get('min_score')).toBe('0.2');
+      expect(parsed.searchParams.get('min_score')).toBe('0.7');
       expect(init.method).toBe('POST');
       expect(init.body).toBeInstanceOf(FormData);
       expect(init.body.get('file').name).toBe('cat.png');
@@ -209,7 +221,7 @@ describe('useMediaSearch', () => {
       expect(url).toBe(`${API}/search`);
       expect(init.method).toBe('POST');
       expect(init.body).toBe(originalBody);
-      expect(JSON.parse(init.body)).toEqual({ query: 'cats', top_k: 50, min_score: 0.2 });
+      expect(JSON.parse(init.body)).toEqual({ query: 'cats', top_k: 50, min_score: 0.1 });
 
       expect(result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
       result.current.results.forEach(r => expect(r).not.toHaveProperty('embedding'));
