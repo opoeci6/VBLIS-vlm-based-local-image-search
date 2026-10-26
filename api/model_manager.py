@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, NamedTuple
 
 import paths
 
@@ -17,6 +17,11 @@ import time
 import threading
 from model_downloader import ModelDownloader
 
+try:
+    from transformers.models.siglip2.image_processing_siglip2 import get_image_size_for_max_num_patches
+except ImportError:  # the pre-resize is then simply skipped
+    get_image_size_for_max_num_patches = None
+
 # The only models the API will download, switch to or delete
 AVAILABLE_MODELS = (
     "google/siglip2-base-patch16-224",
@@ -25,6 +30,12 @@ AVAILABLE_MODELS = (
     "google/siglip2-so400m-patch16-naflex",
     "openai/clip-vit-base-patch32",
 )
+
+
+class PreparedImage(NamedTuple):
+    """CPU-side processor output for one image, tagged with the model it was prepared for."""
+    model_id: Optional[str]
+    inputs: Dict[str, Any]
 
 
 class ModelManager:
@@ -223,7 +234,9 @@ class ModelManager:
 
                 print(f"Loading processor and model weights from: {load_target}")
                 self.processor = AutoProcessor.from_pretrained(load_target, use_fast=False, local_files_only=True)
-                self.model = AutoModel.from_pretrained(load_target, local_files_only=True).to(self.device)
+                model = AutoModel.from_pretrained(load_target, local_files_only=True)
+                self._match_text_tower_precision(model)
+                self.model = model.to(self.device)
                 self.model.eval()
                 self.current_model_id = model_id
                 print(f"Model {model_id} loaded successfully from {load_target}.")
@@ -236,6 +249,44 @@ class ModelManager:
                 raise
             finally:
                 self.is_loading_model = False
+
+    @staticmethod
+    def _text_tower(model):
+        """The modules that only embed search queries: the text tower, plus CLIP's text projection."""
+        return [m for m in (getattr(model, "text_model", None), getattr(model, "text_projection", None)) if m is not None]
+
+    def _wants_half_text_tower(self) -> bool:
+        return self.use_gpu and self.get_active_precision() == "fp16"
+
+    @classmethod
+    def _text_tower_is_half(cls, model) -> bool:
+        return any(p.dtype == torch.float16 for module in cls._text_tower(model) for p in module.parameters())
+
+    def _match_text_tower_precision(self, model):
+        """Running on the GPU in fp16, the text tower is kept in fp16. It only embeds the search queries (cosine
+        >= 0.999998 against fp32), and the VRAM it frees lets image batches run whole instead of one at a time.
+        The image tower and the stored image embeddings are not affected."""
+        if self._wants_half_text_tower():
+            for module in self._text_tower(model):
+                module.half()
+
+    def set_precision_mode(self, mode: str):
+        """Change the precision preference. A loaded model whose text tower no longer matches it is reloaded
+        (fp16 weights cannot be turned back into the original fp32 ones)."""
+        self.precision_mode = mode
+        model = self.model
+        if model is None or self._text_tower_is_half(model) == self._wants_half_text_tower():
+            return {"status": "success", "message": f"Precision set to {mode}"}
+        active_model = self.current_model_id
+        print(f"Reloading {active_model} for precision {self.get_active_precision()}...")
+        # Reset current_model_id so load_model's early-return guard doesn't skip the reload
+        self.current_model_id = None
+        try:
+            self.load_model(active_model, local_files_only=True)
+        except Exception as e:
+            print(f"Failed to reload model for the new precision: {e}")
+            return {"status": "error", "message": f"Failed to reload model for precision {mode}: {str(e)}"}
+        return {"status": "success", "message": f"Precision set to {mode}"}
 
     def set_device(self, use_gpu: bool):
         """Toggle GPU usage and reload current model if necessary."""
@@ -293,34 +344,133 @@ class ModelManager:
             return "default_collection"
         return self.current_model_id.replace("/", "_").replace("-", "_")
 
+    def prepare_image(self, image: Image.Image) -> PreparedImage:
+        """Run the (CPU-only) processor for one image. Thread-safe: safe to call from worker threads.
+
+        For naflex processors the image is first resized with PIL to the exact size the processor would
+        pick itself. PIL's resize releases the GIL and the processor's own resize then becomes a plain
+        same-size copy, so the resulting tensors are bit-identical but much cheaper to produce.
+        """
+        # Atomic capture of model id and processor (the model itself is not kept alive by a worker)
+        with self._lock:
+            model_id = self.current_model_id
+            model_loaded = self.model is not None
+            processor = self.processor
+
+        if not model_loaded or processor is None:
+            raise RuntimeError("Model not loaded. Please select and download a model first.")
+
+        rgb = image.convert("RGB") if image.mode != "RGB" else image
+        resized = None
+        try:
+            pre = self._exact_naflex_resize(processor, rgb)
+            if pre is not None:
+                resized, expected_shape = pre
+                inputs = processor(images=[resized], return_tensors="pt")
+                # Belt and braces: the processor must have kept our size (a same-size copy); otherwise it
+                # resized again with other parameters, so redo it on the untouched image.
+                if self._spatial_shape(inputs) != expected_shape:
+                    inputs = processor(images=[rgb], return_tensors="pt")
+            else:
+                inputs = processor(images=[rgb], return_tensors="pt")
+            return PreparedImage(model_id, {k: v for k, v in inputs.items()})
+        finally:
+            # Only close intermediates created here, never the caller's image
+            if resized is not None:
+                resized.close()
+            if rgb is not image:
+                rgb.close()
+
+    @staticmethod
+    def _spatial_shape(inputs) -> Optional[tuple]:
+        try:
+            return tuple(int(v) for v in inputs["spatial_shapes"][0].tolist())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _naflex_params(processor):
+        """(patch_size, max_num_patches, resample) a naflex processor really applies, else None."""
+        image_processor = getattr(processor, "image_processor", None)
+        if not getattr(image_processor, "max_num_patches", None):
+            return None
+        effective = {
+            "patch_size": getattr(image_processor, "patch_size", None),
+            "max_num_patches": image_processor.max_num_patches,
+            "resample": getattr(image_processor, "resample", None),
+            "do_resize": getattr(image_processor, "do_resize", False),
+        }
+        if hasattr(processor, "_merge_kwargs"):
+            # A real ProcessorMixin passes its own defaults (e.g. max_num_patches=256, patch_size=16) to the
+            # image processor, overriding the image processor's own config. Ask it what it will really pass.
+            try:
+                merged = processor._merge_kwargs(
+                    processor.valid_processor_kwargs,
+                    tokenizer_init_kwargs=processor.tokenizer.init_kwargs,
+                )["images_kwargs"]
+            except Exception:
+                return None
+            effective.update({k: merged[k] for k in effective if k in merged})
+        if not effective["do_resize"] or effective["resample"] is None:
+            return None
+        if not effective["patch_size"] or not effective["max_num_patches"]:
+            return None
+        return effective["patch_size"], effective["max_num_patches"], effective["resample"]
+
+    @staticmethod
+    def _exact_naflex_resize(processor, rgb: Image.Image):
+        """PIL pre-resize matching what a naflex processor does itself.
+
+        Returns (resized_image, expected_spatial_shape) or None when not applicable.
+        """
+        if get_image_size_for_max_num_patches is None:
+            return None
+        params = ModelManager._naflex_params(processor)
+        if params is None:
+            return None
+        patch_size, max_num_patches, resample = params
+        width, height = rgb.size
+        target_h, target_w = get_image_size_for_max_num_patches(height, width, patch_size, max_num_patches)
+        # Safety net: only when the target size is a fixed point is the processor's own resize a same-size copy
+        if get_image_size_for_max_num_patches(target_h, target_w, patch_size, max_num_patches) != (target_h, target_w):
+            return None
+        if (target_w, target_h) == rgb.size:
+            return None
+        expected_shape = (target_h // patch_size, target_w // patch_size)
+        return rgb.resize((target_w, target_h), resample=resample), expected_shape
+
     @torch.no_grad()
-    def get_image_embeddings_batch(self, images: list[Image.Image], task_context=None) -> list[list[float]]:
-        if not images:
+    def embed_prepared(self, items: list[PreparedImage], task_context=None) -> list[list[float]]:
+        if not items:
             return []
 
         if task_context and not task_context.check_paused_or_cancelled():
             return []
 
-        # Atomic capture of model and processor
+        # Atomic capture of model
         with self._lock:
             model = self.model
-            processor = self.processor
-            
-        if model is None or processor is None:
+            model_id = self.current_model_id
+
+        if model is None:
             raise RuntimeError("Model not loaded. Please select and download a model first.")
 
+        if any(item.model_id != model_id for item in items):
+            raise RuntimeError("The active model changed while images were being prepared. Please retry.")
+
         # VRAM Guard: Prevent Windows WDDM from spilling dedicated VRAM allocations into System Shared Memory
-        if self.use_gpu and torch.cuda.is_available() and len(images) > 1:
+        run_singly = False
+        if self.use_gpu and torch.cuda.is_available() and len(items) > 1:
             try:
                 free_bytes, total_bytes = torch.cuda.mem_get_info()
                 reserved_bytes = torch.cuda.memory_reserved()
                 allocated_bytes = torch.cuda.memory_allocated()
                 cached_free = max(0, reserved_bytes - allocated_bytes)
                 usable_free = free_bytes + cached_free
-                
+
                 # Windows DWM + Display OS overhead margin: ~850 MB / 15% reserved for display server
                 min_free = max(850 * 1024 * 1024, int(total_bytes * 0.15))
-                
+
                 if free_bytes < min_free or usable_free < min_free:
                     torch.cuda.empty_cache()
                     gc.collect()
@@ -328,28 +478,38 @@ class ModelManager:
                     reserved_bytes = torch.cuda.memory_reserved()
                     allocated_bytes = torch.cuda.memory_allocated()
                     usable_free = free_bytes + max(0, reserved_bytes - allocated_bytes)
-                    
+
                     if free_bytes < min_free or usable_free < min_free:
-                        mid = len(images) // 2
-                        left_len, right_len = mid, len(images) - mid
-                        print(f"[VRAM Guard] OS Free VRAM ({free_bytes / 1024**2:.1f} MB) / Usable ({usable_free / 1024**2:.1f} MB) < threshold ({min_free / 1024**2:.1f} MB). Micro-batching batch_size={len(images)} -> ({left_len}, {right_len})...")
+                        # The free-VRAM condition does not depend on the batch size, so halving would end up
+                        # at batches of 1 anyway (paying a cleanup per split). Go there directly, cleaning once.
+                        print(f"[VRAM Guard] OS Free VRAM ({free_bytes / 1024**2:.1f} MB) / Usable ({usable_free / 1024**2:.1f} MB) < threshold ({min_free / 1024**2:.1f} MB). Micro-batching batch_size={len(items)} -> {len(items)} singles...")
                         self.oom_triggered = True
-                        self.oom_triggered_count += 1
-                        left_embeds = self.get_image_embeddings_batch(images[:mid], task_context=task_context)
-                        if task_context and not task_context.check_paused_or_cancelled():
-                            return left_embeds
-                        right_embeds = self.get_image_embeddings_batch(images[mid:], task_context=task_context)
-                        return left_embeds + right_embeds
+                        self.oom_triggered_count += len(items) - 1
+                        run_singly = True
             except Exception as e:
                 pass
+
+        if run_singly:
+            results: list[list[float]] = []
+            for item in items:
+                if task_context and not task_context.check_paused_or_cancelled():
+                    return results
+                results.extend(self._embed_chunk(model, [item], task_context))
+            return results
 
         if task_context and not task_context.check_paused_or_cancelled():
             return []
 
-        rgb_images = [img.convert("RGB") if img.mode != "RGB" else img for img in images]
+        return self._embed_chunk(model, items, task_context)
 
+    @torch.no_grad()
+    def _embed_chunk(self, model, items: list[PreparedImage], task_context=None) -> list[list[float]]:
+        """Forward one chunk of prepared images; on CUDA OOM, halve recursively (a single item re-raises)."""
         try:
-            inputs = processor(images=rgb_images, return_tensors="pt")
+            if len(items) == 1:
+                inputs = items[0].inputs
+            else:
+                inputs = {k: torch.cat([item.inputs[k] for item in items]) for k in items[0].inputs}
             model_device = next(model.parameters()).device
             inputs = {k: v.to(model_device) for k, v in inputs.items()}
 
@@ -378,18 +538,28 @@ class ModelManager:
                 torch.cuda.empty_cache()
             gc.collect()
 
-            if len(images) > 1:
-                mid = len(images) // 2
-                left_len, right_len = mid, len(images) - mid
-                print(f"[OOM Warning] CUDA Out of memory (batch_size={len(images)}). Flushing cache and micro-batching -> ({left_len}, {right_len})...")
-                left_embeds = self.get_image_embeddings_batch(images[:mid], task_context=task_context)
+            if len(items) > 1:
+                mid = len(items) // 2
+                left_len, right_len = mid, len(items) - mid
+                print(f"[OOM Warning] CUDA Out of memory (batch_size={len(items)}). Flushing cache and micro-batching -> ({left_len}, {right_len})...")
+                left_embeds = self.embed_prepared(items[:mid], task_context=task_context)
                 if task_context and not task_context.check_paused_or_cancelled():
                     return left_embeds
-                right_embeds = self.get_image_embeddings_batch(images[mid:], task_context=task_context)
+                right_embeds = self.embed_prepared(items[mid:], task_context=task_context)
                 return left_embeds + right_embeds
             else:
                 print(f"[OOM Error] CUDA Out of memory on single item (batch_size=1).")
                 raise oom
+
+    @torch.no_grad()
+    def get_image_embeddings_batch(self, images: list[Image.Image], task_context=None) -> list[list[float]]:
+        if not images:
+            return []
+
+        if task_context and not task_context.check_paused_or_cancelled():
+            return []
+
+        return self.embed_prepared([self.prepare_image(img) for img in images], task_context=task_context)
 
     @torch.no_grad()
     def get_image_embedding(self, image: Image.Image, task_context=None) -> list[float]:
@@ -414,7 +584,11 @@ class ModelManager:
         inputs = {k: v.to(model_device) for k, v in inputs.items()}
         
         print(f"Inference session (Text) on: {model_device}")
-        text_features = model.get_text_features(**inputs)
+        if self._text_tower_is_half(model):
+            with torch.autocast("cuda", dtype=torch.float16):
+                text_features = model.get_text_features(**inputs)
+        else:
+            text_features = model.get_text_features(**inputs)
         
         if hasattr(text_features, "text_embeds"):
             text_features = text_features.text_embeds
@@ -424,6 +598,7 @@ class ModelManager:
         if not isinstance(text_features, torch.Tensor) and isinstance(text_features, (list, tuple)):
             text_features = text_features[0]
 
+        text_features = text_features.float()  # a no-op for an fp32 text tower
         text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
         return text_features.cpu().numpy().flatten().tolist()
 

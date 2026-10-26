@@ -59,6 +59,10 @@ def _parse_exif_orientation(exif_bytes: bytes) -> int:
         pass
     return 1
 
+def _rotates(orientation: int) -> bool:
+    """True when this EXIF orientation value needs a rotation or flip."""
+    return orientation in _ORIENTATION_TRANSFORMS
+
 def _apply_exif_orientation(img: Image.Image, exif_bytes: bytes) -> Image.Image:
     """Rotate/flip a PIL image to correct orientation based on raw EXIF bytes."""
     orientation = _parse_exif_orientation(exif_bytes)
@@ -101,10 +105,10 @@ def open_image_upright(source):
     Returns (image, rotated); rotated is True when the orientation needed a rotation or flip."""
     if _is_heif_source(source):
         img, orientation = _decode_heif_with_orientation(source)
-        return img, orientation in _ORIENTATION_TRANSFORMS
+        return img, _rotates(orientation)
     img = Image.open(source)
     try:
-        if img.getexif().get(_EXIF_ORIENTATION_TAG, 1) in _ORIENTATION_TRANSFORMS:
+        if _rotates(img.getexif().get(_EXIF_ORIENTATION_TAG, 1)):
             upright = ImageOps.exif_transpose(img)
             img.close()
             return upright, True
@@ -114,21 +118,31 @@ def open_image_upright(source):
         img.close()
         raise
 
-def compute_file_hash(filepath, chunk_size=8192):
-    hasher = hashlib.sha256()
-    with open(filepath, 'rb') as f:
-        while chunk := f.read(chunk_size):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+def read_orientation(path) -> int:
+    """EXIF orientation value (1-8) of an image file, read from its header without decoding any pixels."""
+    if _is_heif_source(path):
+        heif_file = pillow_heif.open_heif(path)  # .data would decode, so only .info is touched
+        return _parse_exif_orientation(heif_file.info.get("exif", b"") or b"")
+    with Image.open(path) as img:
+        return img.getexif().get(_EXIF_ORIENTATION_TAG, 1)
 
-def process_file_worker(filepath):
-    """Worker function for multithreaded CPU preprocessing pool.
-    Calculates SHA-256 hash and pre-loads the upright PIL image in parallel.
-    Returns (filepath, hash, image, error, rotated); rotated is True when EXIF orientation was applied.
+def compute_file_hash(filepath):
+    with open(filepath, 'rb') as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+def read_rotated(path) -> bool:
+    """True when the file's EXIF orientation needs a rotation or flip (read as read_orientation does)."""
+    return _rotates(read_orientation(path))
+
+def inspect_file(filepath, orientation=True):
+    """Worker function for the multithreaded CPU pool: hashes a file and, when asked, reads its EXIF
+    orientation from the header. That decodes no pixels, except that Pillow loads a PNG whose EXIF comes
+    after its image data, so callers only ask when the orientation decides something.
+    Returns (filepath, hash, rotated, error); rotated is True when the orientation needs a rotation or flip,
+    None when it was not read.
     """
     try:
         file_hash = compute_file_hash(filepath)
-        img, rotated = open_image_upright(filepath)  # Decodes into CPU memory in the thread pool
-        return (filepath, file_hash, img, None, rotated)
+        return (filepath, file_hash, read_rotated(filepath) if orientation else None, None)
     except Exception as e:
-        return (filepath, None, None, str(e), False)
+        return (filepath, None, False, str(e))
