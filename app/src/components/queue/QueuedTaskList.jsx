@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ChevronUp, ChevronDown, ChevronsUp, Trash2, Folder, Video, Clock, RefreshCw, GripVertical } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronsUp, Trash2, Clock, GripVertical } from 'lucide-react';
+import { getTaskTypeIcon } from './taskIcon';
 
 export const QueuedTaskList = ({
   tasks,
@@ -31,19 +32,6 @@ export const QueuedTaskList = ({
       </div>
     );
   }
-
-  const getTypeIcon = (type) => {
-    switch (type) {
-      case 'INDEX_FOLDERS':
-      case 'REINDEX_FOLDER':
-      case 'BATCH_REINDEX':
-        return <Folder className="w-4 h-4 text-indigo-500" />;
-      case 'REBUILD_VIDEO_THUMBNAILS':
-        return <Video className="w-4 h-4 text-cyan-500" />;
-      default:
-        return <RefreshCw className="w-4 h-4 text-emerald-500" />;
-    }
-  };
 
   const handleDragStart = (e, task) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -168,7 +156,7 @@ export const QueuedTaskList = ({
                 </span>
 
                 <div className="p-2 rounded-xl bg-gray-50 dark:bg-neutral-700/50 shrink-0">
-                  {getTypeIcon(task.type)}
+                  {getTaskTypeIcon(task.type)}
                 </div>
 
                 <div className="min-w-0 flex-1">

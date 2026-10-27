@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
+import { isModelDependentTask } from '../utils/taskTypes';
 
 export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchStart }) => {
   const [modelLoadError, setModelLoadError] = useState(null);
@@ -174,8 +175,9 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
       return;
     }
 
-    // 2. Guard against queued tasks with idle worker
-    if (queue.pendingCount > 0) {
+    // 2. Guard against queued tasks with idle worker. Only tasks that need a
+    // model matter here; a pending media-info scan survives a model switch.
+    if ((queue.pendingTasks || []).some(isModelDependentTask)) {
       setModelSwitchWarning({
         isOpen: true,
         mode: 'queued_tasks',

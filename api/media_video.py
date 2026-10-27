@@ -1,12 +1,15 @@
 import os
 import hashlib
 import pathlib
+import re
 import threading
+from datetime import timedelta, timezone
 from PIL import Image
 import cv2
 import av
 from av.codec.hwaccel import hwdevices_available, HWAccel
 import paths
+from media_image import _check_gps, _format_offset, _format_taken, _parse_datetime, _text
 from functools import partial
 from thumbnail_cache import (
     get_or_create_thumbnail, is_thumbnail_cached, save_jpeg_thumbnail
@@ -491,3 +494,75 @@ def iter_video_frames(
             last_selected_timestamp = timestamp
 
         previous_descriptor = descriptor
+
+_ISO6709_RE = re.compile(r"([+-]\d{2}(?:\.\d+)?)([+-]\d{3}(?:\.\d+)?)([+-]\d+(?:\.\d+)?)?(?:CRS[^/]*)?/?")
+_EPOCH_DATES = {(1904, 1, 1), (1970, 1, 1)}  # QuickTime and Unix zero, written by tools that know no date
+
+def _first_frame_rotation(container, stream) -> int:
+    """Display rotation in degrees of the first decoded frame; 0 when no frame can be decoded."""
+    try:
+        for frame in container.decode(stream):
+            return int(round(getattr(frame, "rotation", 0) or 0))
+    except Exception:
+        pass
+    return 0
+
+def _video_date(metadata):
+    """(taken_at, taken_offset) from container metadata: the QuickTime creation date as written (wall time
+    plus its offset), else creation_time (UTC) converted to this PC's local time."""
+    for key in ("com.apple.quicktime.creationdate", "creation_time"):
+        parsed = _parse_datetime(metadata.get(key))
+        if not parsed or (parsed[0].year, parsed[0].month, parsed[0].day) in _EPOCH_DATES:
+            continue
+        moment, offset = parsed
+        if key == "creation_time":
+            utc_offset = timedelta(0)
+            if offset:
+                sign = -1 if offset[0] == "-" else 1
+                utc_offset = sign * timedelta(hours=int(offset[1:3]), minutes=int(offset[4:6]))
+            try:
+                local = moment.replace(tzinfo=timezone(utc_offset)).astimezone()
+            except (OSError, OverflowError, ValueError):
+                continue  # Windows cannot convert a time before 1970
+            return _format_taken(local.replace(tzinfo=None)), _format_offset(local.utcoffset())
+        return _format_taken(moment), offset
+    return None, None
+
+def _video_gps(metadata):
+    """(lat, lon, alt) from an ISO 6709 decimal-degree location string; DMS forms are ignored."""
+    for key in ("com.apple.quicktime.location.iso6709", "location", "location-eng"):
+        text = _text(metadata.get(key))
+        match = _ISO6709_RE.fullmatch(text) if text else None
+        if match:
+            lat, lon, alt = (float(part) if part else None for part in match.groups())
+            return _check_gps(lat, lon, alt)
+    return None, None, None
+
+def probe_video_info(path) -> dict:
+    """Size, rotation, duration, date taken and GPS of a video file from its container header plus its first
+    frame (CPU decode only). width/height are the upright size, swapped for a 90/270 degree rotation.
+    Raises when the file cannot be opened or has no video stream."""
+    container = av.open(path)
+    try:
+        if not container.streams.video:
+            raise ValueError("No video stream")
+        stream = container.streams.video[0]
+        if container.duration is not None:
+            duration_s = container.duration / 1_000_000
+        elif stream.duration is not None and stream.time_base is not None:
+            duration_s = float(stream.duration * stream.time_base)
+        else:
+            duration_s = None
+        rotation = _first_frame_rotation(container, stream)
+        width = getattr(stream.codec_context, "width", 0) or stream.width
+        height = getattr(stream.codec_context, "height", 0) or stream.height
+        if abs(rotation) % 180 == 90:
+            width, height = height, width
+        metadata = {str(key).lower(): value for key, value in (container.metadata or {}).items()}
+        taken_at, taken_offset = _video_date(metadata)
+        lat, lon, alt = _video_gps(metadata)
+        return {"width": width, "height": height, "rotation": rotation, "duration_s": duration_s,
+                "taken_at": taken_at, "taken_offset": taken_offset,
+                "gps_lat": lat, "gps_lon": lon, "gps_alt": alt}
+    finally:
+        _close_quietly(container)

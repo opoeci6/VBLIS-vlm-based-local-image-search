@@ -17,6 +17,7 @@ class TaskType(str, Enum):
     REBUILD_VIDEO_THUMBNAILS = "REBUILD_VIDEO_THUMBNAILS"
     PRUNE_DELETED = "PRUNE_DELETED"
     CLEAR_CACHE = "CLEAR_CACHE"
+    SCAN_MEDIA_INFO = "SCAN_MEDIA_INFO"
 
 
 # Task types that need an AI model loaded before they can run
@@ -104,6 +105,8 @@ class Task:
         elif task_type == TaskType.CLEAR_CACHE:
             target = payload.get("target", "all")
             return f"Clear {target.capitalize()} Cache"
+        elif task_type == TaskType.SCAN_MEDIA_INFO:
+            return "Read media details"
         return str(task_type.value)
 
     def is_paused(self) -> bool:
@@ -272,19 +275,20 @@ class TaskQueueManager:
         return self.current_model_id
 
     def _check_model_mismatch(self):
-        """Checks if pending tasks expect a model different from the active model."""
+        """Checks if pending tasks that need a model expect one different from the active model."""
         active_m = self._get_active_model_id()
         is_ready = self._is_model_loaded()
+        model_tasks = [task for task in self.pending_queue if task.type in MODEL_DEPENDENT_TASK_TYPES]
 
         if not active_m or not is_ready:
-            # If no model is currently active/loaded, warn if tasks exist
-            if self.pending_queue:
-                queued_m = self.pending_queue[0].model_id or "unknown"
+            # If no model is currently active/loaded, warn if tasks that need one exist
+            if model_tasks:
+                queued_m = model_tasks[0].model_id or "unknown"
                 self.model_mismatch_warning = {
                     "is_mismatch": True,
                     "queued_model": queued_m,
                     "active_model": None,
-                    "mismatched_count": len(self.pending_queue),
+                    "mismatched_count": len(model_tasks),
                     "reason": "no_model_loaded"
                 }
             else:
@@ -292,7 +296,7 @@ class TaskQueueManager:
             return
 
         mismatches = []
-        for task in self.pending_queue:
+        for task in model_tasks:
             if task.model_id and task.model_id != active_m:
                 mismatches.append({
                     "task_id": task.id,
@@ -422,7 +426,7 @@ class TaskQueueManager:
         priority: str = "bottom",
         model_id: Optional[str] = None
     ) -> Task:
-        assigned_model = model_id or self._get_active_model_id()
+        assigned_model = (model_id or self._get_active_model_id()) if task_type in MODEL_DEPENDENT_TASK_TYPES else None
         task = Task(task_type=task_type, payload=payload, title=title, model_id=assigned_model)
         with self.lock:
             if priority == "top":
@@ -433,6 +437,22 @@ class TaskQueueManager:
             self.save_to_disk()
             self._wake_event.set()
         return task
+
+    def enqueue_unique(
+        self,
+        task_type: TaskType,
+        payload: Dict[str, Any],
+        title: str = "",
+        priority: str = "bottom"
+    ) -> "tuple[Task, bool]":
+        """Enqueue a task unless one of the same type is already pending. Returns (task, created); when not
+        created, the task is the pending one. A running task does not count: what it had already read when
+        the request came may be out of date, so the request queues one follow-up."""
+        with self.lock:
+            for task in self.pending_queue:
+                if task.type == task_type:
+                    return task, False
+            return self.enqueue(task_type, payload, title=title, priority=priority), True
 
     def is_folder_in_queue(self, folder_path: str) -> Optional[Dict[str, Any]]:
         """Check if a folder path is already in active task or pending queue."""
@@ -565,8 +585,9 @@ class TaskQueueManager:
         with self.lock:
             self.current_model_id = new_model_id
             for task in self.pending_queue:
-                task.model_id = new_model_id
-            if self.active_task:
+                if task.type in MODEL_DEPENDENT_TASK_TYPES:
+                    task.model_id = new_model_id
+            if self.active_task and self.active_task.type in MODEL_DEPENDENT_TASK_TYPES:
                 self.active_task.model_id = new_model_id
             self._check_model_mismatch()
             self.save_to_disk()
@@ -626,7 +647,7 @@ class TaskQueueManager:
                 task_type=target.type,
                 payload=dict(target.payload),
                 title=target.title,
-                model_id=self._get_active_model_id()
+                model_id=self._get_active_model_id() if target.type in MODEL_DEPENDENT_TASK_TYPES else None
             )
             self.pending_queue.append(new_task)
             self._check_model_mismatch()
@@ -725,6 +746,8 @@ class TaskQueueManager:
                 self.indexer.batch_reindex_folders(folder_paths, task_context=task)
             elif task.type == TaskType.REBUILD_VIDEO_THUMBNAILS:
                 self.indexer.regenerate_video_thumbnails(task_context=task)
+            elif task.type == TaskType.SCAN_MEDIA_INFO:
+                self.indexer.scan_media_info(task_context=task)
             elif task.type == TaskType.CLEAR_CACHE:
                 target = task.payload.get("target", "all")
                 cache_store.safe_clear_cache(target=target)

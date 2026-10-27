@@ -31,3 +31,4 @@ async def lifespan(app: FastAPI):
     yield
     print("Shutting down API backend...")
     task_queue.stop()
+    indexer.media_registry.close()

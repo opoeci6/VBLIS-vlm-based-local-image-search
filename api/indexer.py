@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor
 from model_manager import ModelManager
 import pathlib
 import paths
+import media_sync
+import security
 from media_image import (
     IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, inspect_file, open_image_upright,
     read_rotated
@@ -23,6 +25,7 @@ from media_video import (
     extract_video_frames_batch, iter_video_frames
 )
 from folder_registry import FolderRegistry
+from media_registry import MediaRegistry
 from collection_cache import CachedCollection
 from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY, make_scorer
 from search_session import (
@@ -310,6 +313,8 @@ class Indexer:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.video_cache_dir = self.cache_dir / "videos"
         self.folders = FolderRegistry(self.data_dir, self.cache_dir)
+        self.media_registry = MediaRegistry(self.data_dir / "media_registry.sqlite3")
+        self.last_media_sync = None
         
         # Connect to the collection matching the loaded VLM
         if self.model_manager.current_model_id:
@@ -395,11 +400,11 @@ class Indexer:
 
     def discover_media_files(self, folder_paths: list[str]):
         """Discover supported images and videos without decoding media files.
-        Returns (image paths, video paths, {image path: (st_mtime_ns, st_size)}); an image whose stat failed
-        is listed but has no stat entry."""
+        Returns (image paths, video paths, {path: (st_mtime_ns, st_size)}) with the stat of every image and
+        video; a file whose stat failed is listed but has no stat entry."""
         image_files = []
         video_files = []
-        image_stats = {}
+        file_stats = {}
 
         for directory in folder_paths:
             if self.cancel_requested:
@@ -416,15 +421,93 @@ class Indexer:
                     extension = os.path.splitext(entry.name)[1].lower()
                     if extension in IMAGE_EXTENSIONS:
                         image_files.append(file_path)
-                        try:
-                            stat = entry.stat()
-                            image_stats[file_path] = (stat.st_mtime_ns, stat.st_size)
-                        except OSError:
-                            pass
                     elif extension in VIDEO_EXTENSIONS:
                         video_files.append(file_path)
+                    else:
+                        continue
+                    try:
+                        stat = entry.stat()
+                        file_stats[file_path] = (stat.st_mtime_ns, stat.st_size)
+                    except OSError:
+                        pass
 
-        return image_files, video_files, image_stats
+        return image_files, video_files, file_stats
+
+    def _sync_stop_check(self, task_context):
+        """should_stop callback for the media sync: true once the run is cancelled (blocks while paused)."""
+        return self.cancel_requested or (task_context is not None and not task_context.check_paused_or_cancelled())
+
+    def _run_media_sync(self, roots, image_paths, video_paths, stats, task_context=None, on_progress=None):
+        files = [(path, "image", stats.get(path)) for path in image_paths]
+        files += [(path, "video", stats.get(path)) for path in video_paths]
+        result = media_sync.sync_media_files(
+            self.media_registry, files, roots,
+            should_stop=lambda: self._sync_stop_check(task_context), on_progress=on_progress
+        )
+        self.last_media_sync = result
+        print(
+            f"[MediaRegistry] probed {result.probed}, unchanged {result.unchanged}, "
+            f"pruned {result.pruned}, errors {result.errors}, skipped {result.skipped} in {result.seconds:.2f} s"
+        )
+        return result
+
+    def _sync_media_registry(self, roots, image_paths, video_paths, stats, task_context=None):
+        """Bring the media registry up to date after an index run. A registry problem is only logged: it
+        must never fail the run."""
+        try:
+            self.current_file = "Reading media details..."
+            if task_context:
+                task_context.update_progress(
+                    task_context.processed_count, task_context.total_count, "Reading media details..."
+                )
+            self._run_media_sync(roots, image_paths, video_paths, stats, task_context)
+        except Exception as e:
+            print(f"[Warning] Indexer: could not update the media registry: {e}")
+
+    def _media_scan_roots(self):
+        """The folders of every collection that still exists, as absolute paths without duplicates or
+        folders nested in another one; folders that are not directories right now are skipped."""
+        existing = {getattr(c, "name", c) for c in self.client.list_collections()}
+        folders = [
+            folder for name, selected in list(self.folders.selected_folders_by_collection.items())
+            if name in existing for folder in list(selected)
+        ]
+        unique = {}
+        for folder in folders:
+            path = os.path.abspath(os.path.normpath(folder))
+            unique.setdefault(os.path.normcase(path), path)
+        missing = [path for path in unique.values() if not os.path.isdir(path)]
+        if missing:
+            print(f"[Notice] Indexer: skipping media details of folders that are not available: {', '.join(missing)}")
+        roots = []
+        for path in sorted((p for p in unique.values() if p not in missing), key=len):
+            if not security.is_within(path, roots):
+                roots.append(path)
+        return roots
+
+    def scan_media_info(self, task_context=None):
+        """Read the media details of every indexed folder into the media registry. It never touches Chroma
+        or the AI model, so it runs without a model loaded."""
+        if not self.media_registry.available:
+            if task_context:
+                task_context.add_error(
+                    "Media details are unavailable: the media registry file could not be opened (see the log)"
+                )
+            return
+        roots = self._media_scan_roots()
+        if task_context:
+            task_context.update_progress(0, 0, "Finding media files...")
+        images, videos, file_stats = self.discover_media_files(roots)
+        if self.cancel_requested:
+            return
+
+        def on_progress(done, total):
+            if task_context:
+                task_context.update_progress(done, total, f"Reading media details ({done}/{total})")
+
+        result = self._run_media_sync(roots, images, videos, file_stats, task_context, on_progress)
+        if task_context and not result.stopped and result.probed == 0:
+            task_context.update_progress(0, 0, "Media details are up to date")
 
     def get_folder_contents(self, folder_path: str, limit: int = 50000):
         """List supported media in a folder with indexing status and ghost record detection."""
@@ -1121,7 +1204,7 @@ class Indexer:
         try:
             if task_context:
                 task_context.update_progress(0, 0, "Discovering media files...")
-            files_to_index, discovered_videos, image_stats = self.discover_media_files(folder_paths)
+            files_to_index, discovered_videos, file_stats = self.discover_media_files(folder_paths)
             self.discovered_video_count = len(discovered_videos)
             self.total_files = len(files_to_index) + len(discovered_videos)
             if task_context:
@@ -1144,10 +1227,14 @@ class Indexer:
             if task_context:
                 task_context.update_progress(self.indexed_files, self.total_files, "Indexing items...")
 
-            self._index_image_files(pending_files, task_context=task_context, label="Indexing", stats=image_stats)
+            self._index_image_files(pending_files, task_context=task_context, label="Indexing", stats=file_stats)
 
             if not self.cancel_requested and not (task_context and task_context.cancel_requested):
                 self._index_video_files(discovered_videos, existing_video_entries, task_context=task_context)
+
+            if not self.cancel_requested and not (task_context and task_context.cancel_requested):
+                roots = [folder for folder in folder_paths if os.path.isdir(folder)]
+                self._sync_media_registry(roots, files_to_index, discovered_videos, file_stats, task_context)
         finally:
             self.is_indexing = False
             self.current_file = ""
@@ -1188,10 +1275,10 @@ class Indexer:
                 task_context.update_progress(0, 0, f"Scanning {os.path.basename(norm_target)}...")
 
             # 1. Get current files on disk
-            discovered_images, discovered_videos, image_stats = self.discover_media_files([directory])
+            discovered_images, discovered_videos, file_stats = self.discover_media_files([directory])
             disk_files = [os.path.normpath(path) for path in discovered_images]
             disk_video_files = [os.path.normpath(path) for path in discovered_videos]
-            disk_stats = {os.path.normpath(path): stat for path, stat in image_stats.items()}
+            disk_stats = {os.path.normpath(path): stat for path, stat in file_stats.items()}
             self.discovered_video_count = len(discovered_videos)
             
             # 2. Get current files in index for this directory
@@ -1251,6 +1338,9 @@ class Indexer:
 
             if not self.cancel_requested and not (task_context and task_context.cancel_requested):
                 self._index_video_files(disk_video_files, existing_video_entries, task_context=task_context)
+
+            if not self.cancel_requested and not (task_context and task_context.cancel_requested):
+                self._sync_media_registry([directory], discovered_images, discovered_videos, file_stats, task_context)
                 
         finally:
             self.is_indexing = False

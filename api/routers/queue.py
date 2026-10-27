@@ -32,6 +32,15 @@ def get_queue_snapshot():
 def enqueue_task_endpoint(req: EnqueueTaskRequest):
     if not task_queue_module.is_supported_task_type(req.type):
         raise HTTPException(status_code=400, detail=f"Unsupported task type: {req.type.value}")
+    if req.type == TaskType.SCAN_MEDIA_INFO:
+        task, created = app_state.task_queue.enqueue_unique(
+            req.type, {}, title=req.title, priority=req.priority
+        )
+        return {
+            "status": "queued" if created else "duplicate",
+            "task": task.to_dict(),
+            "message": f"Task '{task.title}' enqueued." if created else f"Task '{task.title}' is already queued."
+        }
     if req.type == TaskType.INDEX_FOLDERS and "folder_paths" in req.payload:
         paths = [os.path.abspath(os.path.normpath(p)) for p in req.payload["folder_paths"]]
         added_tasks = []

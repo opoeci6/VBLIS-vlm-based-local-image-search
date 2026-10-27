@@ -1,6 +1,9 @@
 import hashlib
+import math
 import os
+import re
 import struct
+from datetime import datetime
 from PIL import Image, ImageOps
 import pillow_heif
 
@@ -125,6 +128,136 @@ def read_orientation(path) -> int:
         return _parse_exif_orientation(heif_file.info.get("exif", b"") or b"")
     with Image.open(path) as img:
         return img.getexif().get(_EXIF_ORIENTATION_TAG, 1)
+
+# Header-only metadata probing. The date and GPS helpers are shared with media_video.
+_DATETIME_RE = re.compile(
+    r"(\d{4})[:\-](\d{2})[:\-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?\s*(Z|[+-]\d{2}(?::?\d{2})?)?", re.I)
+_OFFSET_RE = re.compile(r"Z|[+-]\d{2}(?::?\d{2})?", re.I)
+_MIN_YEAR = 1800
+
+def _text(value):
+    """A str or bytes metadata value (possibly NUL padded) as stripped text, or None for other types."""
+    if isinstance(value, bytes):
+        value = value.decode("ascii", "ignore")
+    return value.strip("\x00 \t\r\n") if isinstance(value, str) else None
+
+def _normalize_offset(value):
+    """'+HH:MM' / '-HH:MM' from '+08:00', '+0800', '+08' or 'Z'; None when missing or invalid."""
+    text = _text(value)
+    if not text or not _OFFSET_RE.fullmatch(text):
+        return None
+    if text.upper() == "Z":
+        return "+00:00"
+    digits = text[1:].replace(":", "")
+    hours, minutes = int(digits[:2]), int(digits[2:4] or 0)
+    return f"{text[0]}{hours:02d}:{minutes:02d}" if hours <= 14 and minutes <= 59 else None
+
+def _parse_datetime(value):
+    """(naive datetime, embedded offset or None) from 'YYYY:MM:DD HH:MM:SS' style text; fractional seconds
+    are dropped. None when blank, zero, unparsable, an invalid calendar date or an implausible year."""
+    text = _text(value)
+    match = _DATETIME_RE.fullmatch(text) if text else None
+    if not match:
+        return None
+    try:
+        moment = datetime(*(int(part) for part in match.groups()[:6]))
+    except ValueError:
+        return None
+    if not _MIN_YEAR <= moment.year <= datetime.now().year + 1:
+        return None
+    return moment, _normalize_offset(match.group(7))
+
+def _format_taken(moment) -> str:
+    return moment.isoformat(timespec="seconds")
+
+def _format_offset(delta) -> str:
+    minutes = int(delta.total_seconds() // 60)
+    return f"{'-' if minutes < 0 else '+'}{abs(minutes) // 60:02d}:{abs(minutes) % 60:02d}"
+
+def _finite(value):
+    """float(value), or None when it is not a finite number (zero-denominator rationals included)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+    return number if math.isfinite(number) else None
+
+def _check_gps(lat, lon, alt):
+    """(lat, lon, alt) with junk dropped: lat/lon survive only as an in-range pair that is not the (0, 0)
+    no-fix value, and the altitude only with them."""
+    if lat is None or lon is None or abs(lat) > 90 or abs(lon) > 180 or (lat == 0 and lon == 0):
+        return None, None, None
+    return lat, lon, alt
+
+def _gps_coordinate(gps, dms_tag, ref_tag, positive, negative):
+    ref = (_text(gps.get(ref_tag)) or "").upper()[:1]
+    if ref not in (positive, negative):
+        return None
+    try:
+        degrees, minutes, seconds = (_finite(part) for part in gps.get(dms_tag))
+    except (TypeError, ValueError):
+        return None
+    if None in (degrees, minutes, seconds):
+        return None
+    value = degrees + minutes / 60 + seconds / 3600
+    return -value if ref == negative else value
+
+def _exif_gps(gps):
+    """(lat, lon, alt) from an EXIF GPS IFD."""
+    lat = _gps_coordinate(gps, 2, 1, "N", "S")
+    lon = _gps_coordinate(gps, 4, 3, "E", "W")
+    alt = _finite(gps.get(6))
+    if alt is not None:
+        ref = gps.get(5)
+        if isinstance(ref, bytes):
+            ref = ref.strip(b"\x00")
+        alt = -alt if ref in (1, b"\x01", b"1", "1") else alt
+    return _check_gps(lat, lon, alt)
+
+def _exif_ifd(exif, tag):
+    try:
+        return exif.get_ifd(tag)
+    except Exception:
+        return {}
+
+def _read_exif(exif_bytes) -> dict:
+    """Orientation, date taken and GPS from raw EXIF bytes; unreadable or missing EXIF gives the defaults."""
+    exif = Image.Exif()
+    try:
+        if exif_bytes:
+            exif.load(exif_bytes)
+    except Exception:
+        exif = Image.Exif()
+    orientation = exif.get(_EXIF_ORIENTATION_TAG)
+    if not isinstance(orientation, int) or not 1 <= orientation <= 8:
+        orientation = 1
+    sub = _exif_ifd(exif, 0x8769)
+    taken_at = taken_offset = None
+    for value, offset in ((sub.get(0x9003), sub.get(0x9011)),
+                          (sub.get(0x9004), sub.get(0x9012)),
+                          (exif.get(0x0132), sub.get(0x9010))):
+        parsed = _parse_datetime(value)
+        if parsed:
+            taken_at, taken_offset = _format_taken(parsed[0]), _normalize_offset(offset) or parsed[1]
+            break
+    lat, lon, alt = _exif_gps(_exif_ifd(exif, 0x8825))
+    return {"orientation": orientation, "taken_at": taken_at, "taken_offset": taken_offset,
+            "gps_lat": lat, "gps_lon": lon, "gps_alt": alt}
+
+def probe_image_info(path) -> dict:
+    """Size, EXIF orientation, date taken and GPS of an image file, read from its header without decoding
+    any pixels. width/height are the upright size (swapped for orientations 5-8, as open_image_upright
+    rotates). Raises when the file cannot be opened as an image."""
+    if _is_heif_source(path):
+        heif_file = pillow_heif.open_heif(path)  # .data would decode, so only .size and .info are touched
+        (width, height), exif_bytes = heif_file.size, heif_file.info.get("exif") or b""
+    else:
+        with Image.open(path) as img:
+            (width, height), exif_bytes = img.size, img.info.get("exif") or b""
+    info = _read_exif(exif_bytes)
+    if info["orientation"] in (5, 6, 7, 8):
+        width, height = height, width
+    return {"width": width, "height": height, **info}
 
 def compute_file_hash(filepath):
     with open(filepath, 'rb') as f:

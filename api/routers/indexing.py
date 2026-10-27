@@ -94,6 +94,11 @@ def batch_reindex_folders(req: BatchFolderRequest):
         enqueued.append(t.to_dict())
     return {"status": "queued", "tasks": enqueued, "message": f"Enqueued {len(enqueued)} folder(s) for re-indexing."}
 
+@router.post("/index/media-info/scan")
+def scan_media_info():
+    task, created = app_state.task_queue.enqueue_unique(TaskType.SCAN_MEDIA_INFO, {}, "Read media details")
+    return {"status": "queued" if created else "duplicate", "task_id": task.id}
+
 @router.get("/status")
 def get_status():
     status = app_state.indexer.get_status()
