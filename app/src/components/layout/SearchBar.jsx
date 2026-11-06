@@ -1,6 +1,7 @@
 import { Search, Loader2, X } from 'lucide-react';
+import { SearchFiltersButton } from '../search/filters/SearchFiltersButton';
 
-export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, setQuery }) => {
+export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount = 0, filtersOpen = false, onToggleFilters }) => {
   return (
   <form onSubmit={handleSearch} className="flex-1 max-w-2xl w-full relative group flex gap-2">
     <div className="relative flex-1">
@@ -31,6 +32,7 @@ export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, se
         </button>
       )}
     </div>
+    <SearchFiltersButton activeCount={activeFilterCount} isOpen={filtersOpen} onToggle={onToggleFilters} />
     <button
       type="submit"
       className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl transition-all hover:scale-105 active:scale-95 font-medium text-sm shadow-lg shadow-indigo-500/20"

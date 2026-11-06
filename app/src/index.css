@@ -241,6 +241,25 @@ body {
   stroke: var(--terminal-background) !important;
 }
 
+/* Pressed toggles (filter options): inverted, and still readable when hovered. The selector needs
+   specificity (0,3,1) to beat both the base button rule and the
+   `[class*="text-"]:not(.text-transparent)` colour rule (0,3,0), hence [type="button"], which every toggle
+   has. The hover rule inverts the same way, so hover keeps the look. */
+.terminal-theme button[type="button"][aria-pressed="true"],
+.terminal-theme button[type="button"][aria-pressed="true"] * {
+  color: var(--terminal-background) !important;
+  -webkit-text-fill-color: var(--terminal-background) !important;
+}
+
+.terminal-theme button[type="button"][aria-pressed="true"] {
+  background-color: var(--terminal-foreground) !important;
+  background: var(--terminal-foreground) !important;
+}
+
+.terminal-theme button[type="button"][aria-pressed="true"] svg {
+  stroke: var(--terminal-background) !important;
+}
+
 .terminal-theme input::placeholder {
   color: var(--terminal-foreground) !important;
   opacity: 1 !important;

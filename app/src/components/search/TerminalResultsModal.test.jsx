@@ -141,4 +141,55 @@ describe('TerminalResultsModal', () => {
     render(<TerminalResultsModal {...makeProps()} />);
     expect(screen.queryByText(/LOAD MORE/)).toBeNull();
   });
+  describe('filter chips', () => {
+    const makeChips = (labels) => labels.map(label => ({ key: label, label, onRemove: vi.fn() }));
+
+    it('shows no chips by default', () => {
+      render(<TerminalResultsModal {...makeProps()} />);
+      expect(screen.queryByRole('group', { name: 'Active filters' })).toBeNull();
+    });
+
+    it('lists the active filters under the header and removes one', () => {
+      const filterChips = makeChips(['Images only', '2024']);
+      render(<TerminalResultsModal {...makeProps({ filterChips, onClearFilters: vi.fn() })} />);
+      expect(screen.getByRole('group', { name: 'Active filters' })).toBeTruthy();
+      expect(screen.getByText('Images only')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove filter: 2024' }));
+      expect(filterChips[1].onRemove).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears all filters, and does not close the results while doing so', () => {
+      const props = makeProps({ filterChips: makeChips(['Images only', '2024']), onClearFilters: vi.fn() });
+      render(<TerminalResultsModal {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      expect(props.onClearFilters).toHaveBeenCalledTimes(1);
+      expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+    });
+  });
+  describe('Filters button', () => {
+    it('sits in the header row before the close button, with no badge by default', () => {
+      render(<TerminalResultsModal {...makeProps()} />);
+      const filters = screen.getByRole('button', { name: 'Search filters' });
+      const close = screen.getByLabelText('Close search results');
+      expect(filters.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(filters.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByTestId('filters-count')).toBeNull();
+    });
+
+    it('shows the active count and the open state', () => {
+      render(<TerminalResultsModal {...makeProps({ activeFilterCount: 2, filtersOpen: true })} />);
+      const filters = screen.getByRole('button', { name: 'Search filters (2 active)' });
+      expect(filters.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByTestId('filters-count').textContent).toBe('2');
+    });
+
+    it('calls the toggle without closing the results', () => {
+      const props = makeProps({ onToggleFilters: vi.fn() });
+      render(<TerminalResultsModal {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Search filters' }));
+      expect(props.onToggleFilters).toHaveBeenCalledTimes(1);
+      expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+    });
+  });
 });

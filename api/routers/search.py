@@ -1,10 +1,11 @@
 import io
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
-from pydantic import BaseModel, Field, model_validator
+from fastapi import APIRouter, Form, HTTPException, Query, UploadFile, File
+from pydantic import BaseModel, Field, ValidationError, model_validator
 import app_state
 import security
 from media_image import open_image_upright
+from search_filters import SearchFilters
 from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY
 from search_session import SearchSessionExpired
 
@@ -14,12 +15,14 @@ class SearchQuery(BaseModel):
     query: str
     top_k: int = 50
     min_score: float = Field(DEFAULT_TEXT_MIN_SCORE, ge=0.0, le=1.0)
+    filters: Optional[SearchFilters] = None
 
 class SearchRefQuery(BaseModel):
     query_ref: str
     top_k: int = 50
     # No default: whether it is a match probability or a cosine similarity depends on the query behind the ref
     min_score: float = Field(..., ge=0.0, le=1.0)
+    filters: Optional[SearchFilters] = None
 
 class SearchVideoQuery(BaseModel):
     query_ref: Optional[str] = None
@@ -40,7 +43,7 @@ def search_images(req: SearchQuery):
 
     try:
         # The indexer already skips files that no longer exist on disk
-        return app_state.indexer.run_text_search(req.query, req.top_k, req.min_score)
+        return app_state.indexer.run_text_search(req.query, req.top_k, req.min_score, filters=req.filters)
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
     except Exception as e:
@@ -48,13 +51,21 @@ def search_images(req: SearchQuery):
 
 @router.post("/search/image")
 def search_images_by_file(file: UploadFile = File(...), top_k: int = 50,
-                           min_score: float = Query(DEFAULT_IMAGE_MIN_SIMILARITY, ge=0.0, le=1.0)):
+                           min_score: float = Query(DEFAULT_IMAGE_MIN_SIMILARITY, ge=0.0, le=1.0),
+                           filters: Optional[str] = Form(None)):
+    # A multipart form carries the filters as one JSON string; a bad one is a 422, like a bad JSON body
+    parsed_filters = None
+    if filters is not None and filters.strip():
+        try:
+            parsed_filters = SearchFilters.model_validate_json(filters)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=e.errors(include_url=False, include_context=False, include_input=False))
     if file.size is not None and file.size > security.MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Upload too large (max 50 MB)")
     try:
         contents = file.file.read()
         img = open_image_upright(io.BytesIO(contents))[0]
-        return app_state.indexer.run_image_search(img, top_k, min_score)
+        return app_state.indexer.run_image_search(img, top_k, min_score, filters=parsed_filters)
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
     except Exception as e:
@@ -63,9 +74,16 @@ def search_images_by_file(file: UploadFile = File(...), top_k: int = 50,
 @router.post("/search/ref")
 def search_again_by_ref(req: SearchRefQuery):
     try:
-        return app_state.indexer.rerun_search(req.query_ref, req.top_k, req.min_score)
+        return app_state.indexer.rerun_search(req.query_ref, req.top_k, req.min_score, filters=req.filters)
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/search/filter-options")
+def search_filter_options():
+    try:
+        return app_state.indexer.search_filter_options()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

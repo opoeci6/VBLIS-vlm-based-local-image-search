@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 from PIL import UnidentifiedImageError
 
-from media_image import _format_offset, _format_taken, probe_image_info
+from media_image import _format_offset, _format_taken, is_macos_junk_path, probe_image_info
 from media_video import probe_video_info
 
 PROBE_VERSION = 1  # bump to read every file again when the probers change
@@ -135,8 +135,9 @@ def sync_media_files(registry, files, roots, should_stop=None, on_progress=None,
 
 
 def _prune(registry, known, unique, roots) -> int:
-    """Delete the rows under a root that is a directory right now, whose file was not discovered and no
-    longer exists. A root that is not a directory (unplugged drive, deleted folder) prunes nothing."""
+    """Delete the rows under a root that is a directory right now, whose file was not discovered and either
+    no longer exists or is macOS metadata that discovery skips (rows written before it did). A root that is
+    not a directory (unplugged drive, deleted folder) prunes nothing."""
     live_roots = [root for root in roots if root and os.path.isdir(root)]
     if not live_roots:
         return 0
@@ -146,6 +147,6 @@ def _prune(registry, known, unique, roots) -> int:
         key for key, row in known.items()
         if key not in unique
         and any(key == root_key or key.startswith(root_key + os.sep) for root_key in root_keys)
-        and not os.path.exists(row[0])
+        and (is_macos_junk_path(row[0]) or not os.path.exists(row[0]))
     ]
     return registry.delete(gone) if gone else 0

@@ -2,8 +2,10 @@ import { memo } from 'react';
 import { Search, FolderOpen, Loader2, Image as ImageIcon, X } from 'lucide-react';
 import { VideoResultFolder } from './VideoResultFolder';
 import { SearchResultCard } from './SearchResultCard';
+import { ActiveFilterChips } from './filters/ActiveFilterChips';
+import { SearchFiltersButton } from './filters/SearchFiltersButton';
 
-export const TerminalResultsModal = memo(function TerminalResultsModal({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage }) {
+export const TerminalResultsModal = memo(function TerminalResultsModal({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage, filterChips, onClearFilters, activeFilterCount = 0, filtersOpen = false, onToggleFilters }) {
   if (!(showSearchResults && results.length > 0 && uiTheme === 'terminal')) return null;
 
   // Counted like Max Results: every image once, every video once (not its frames).
@@ -29,6 +31,7 @@ export const TerminalResultsModal = memo(function TerminalResultsModal({ showSea
           <span className="border border-white px-3 py-2 text-sm font-bold">
             {matchCount} MATCH{matchCount === 1 ? '' : 'ES'}
           </span>
+          <SearchFiltersButton activeCount={activeFilterCount} isOpen={filtersOpen} onToggle={onToggleFilters} />
           <button
             onClick={handleCloseSearchResults}
             className="icon-tile flex h-12 w-12 flex-shrink-0 items-center justify-center border border-white"
@@ -37,6 +40,8 @@ export const TerminalResultsModal = memo(function TerminalResultsModal({ showSea
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        <ActiveFilterChips chips={filterChips} onClearAll={onClearFilters} className="border-b border-white px-5 py-3" />
 
         <div className="custom-scrollbar overflow-y-auto p-6">
           {videoGroups.length > 0 && (

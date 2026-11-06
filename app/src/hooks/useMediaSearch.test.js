@@ -756,4 +756,601 @@ describe('useMediaSearch', () => {
       expect(result.current.handleCloseSearchResults).toBe(handler);
     });
   });
+
+  describe('search filters', () => {
+    const FILTERS = { media_type: 'image', min_megapixels: 8 };
+    const OTHER_FILTERS = { orientations: ['portrait'] };
+
+    const renderWith = (initialFilters = null) => {
+      const setToast = vi.fn();
+      const onSearchStart = vi.fn();
+      const onClose = vi.fn();
+      const hook = renderHook(
+        ({ filters }) => useMediaSearch({ setToast, onSearchStart, onClose, filters }),
+        { initialProps: { filters: initialFilters } }
+      );
+      return { ...hook, setToast, onSearchStart, onClose };
+    };
+
+    const bodyOf = (index) => JSON.parse(fetchMock.mock.calls[index][1].body);
+    const urlOf = (index) => fetchMock.mock.calls[index][0];
+
+    // Moves the clock past the re-run debounce and lets the request settle.
+    const settle = (ms = 250) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+    const textSearch = async (hook, query = 'cats', payload = { results: [imageHit('/a.jpg')], query_ref: 'ref-1' }) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(payload));
+      await submit(hook.result, query);
+      await runSearch(hook.result);
+    };
+
+    const imageSearch = async (hook, payload = { results: [imageHit('/a.jpg')], query_ref: 'img-ref' }) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(payload));
+      await act(async () => {
+        await hook.result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' }));
+      });
+    };
+
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    describe('in requests', () => {
+      it('adds filters to the /search body only when set', async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ results: [] }));
+        const hook = renderWith(FILTERS);
+        await submit(hook.result, 'cats');
+        await runSearch(hook.result);
+        expect(bodyOf(0)).toEqual({ query: 'cats', top_k: 50, min_score: 0.1, filters: FILTERS });
+
+        hook.rerender({ filters: null });
+        await runSearch(hook.result);
+        expect(bodyOf(1)).toEqual({ query: 'cats', top_k: 50, min_score: 0.1 });
+        expect(Object.keys(bodyOf(1))).not.toContain('filters');
+      });
+
+      it('adds a filters form field to /search/image only when set', async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ results: [] }));
+        const hook = renderWith(FILTERS);
+        await act(async () => { await hook.result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' })); });
+
+        const form = fetchMock.mock.calls[0][1].body;
+        expect(form.get('file').name).toBe('cat.png');
+        expect(JSON.parse(form.get('filters'))).toEqual(FILTERS);
+        const parsed = new URL(urlOf(0));
+        expect(parsed.searchParams.get('top_k')).toBe('50');
+        expect(parsed.searchParams.has('filters')).toBe(false);
+
+        hook.rerender({ filters: null });
+        await act(async () => { await hook.result.current.handleImageDrop(new File(['x'], 'dog.png', { type: 'image/png' })); });
+        expect(fetchMock.mock.calls[1][1].body.has('filters')).toBe(false);
+      });
+
+      it('refreshSearch sends the current filters, not the ones of the original search', async () => {
+        const hook = renderWith(FILTERS);
+        await textSearch(hook);
+        expect(bodyOf(0).filters).toEqual(FILTERS);
+
+        hook.rerender({ filters: OTHER_FILTERS });
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'ref-2' }));
+        await act(async () => { await hook.result.current.refreshSearch(); });
+        expect(urlOf(1)).toBe(`${API}/search`);
+        expect(bodyOf(1)).toEqual({ query: 'cats', top_k: 50, min_score: 0.1, filters: OTHER_FILTERS });
+
+        // The refresh replaced the pending filter re-run: only one extra request in total.
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        hook.rerender({ filters: null });
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'ref-3' }));
+        await act(async () => { await hook.result.current.refreshSearch(); });
+        expect(Object.keys(bodyOf(2))).toEqual(['query', 'top_k', 'min_score']);
+      });
+
+      it('refreshSearch re-runs an image search through /search/ref with the current filters', async () => {
+        const hook = renderWith(null);
+        await imageSearch(hook);
+        hook.rerender({ filters: FILTERS });
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b.jpg')], query_ref: 'img-ref-2' }));
+        await act(async () => { await hook.result.current.refreshSearch(); });
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(bodyOf(1)).toEqual({ query_ref: 'img-ref', top_k: 50, min_score: 0.7, filters: FILTERS });
+      });
+
+      it('does not send filters when expanding a video', async () => {
+        const hook = renderWith(FILTERS);
+        await textSearch(hook, 'cats', { results: [videoHit('/v.mp4', 5, 0.7)], query_ref: 'ref-1' });
+        fetchMock.mockResolvedValueOnce(jsonResponse({ path: '/v.mp4', frames: [{ ...videoHit('/v.mp4', 5, 0.7), id: 'f' }], total_frames: 1 }));
+        await act(async () => { await hook.result.current.expandVideo('/v.mp4'); });
+        expect(urlOf(1)).toBe(`${API}/search/video`);
+        expect(bodyOf(1)).not.toHaveProperty('filters');
+      });
+    });
+
+    describe('re-running when the filters change', () => {
+      it('re-runs a text search through /search/ref after the debounce, with the search it came from', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        // Settings moved after the search: the re-run must keep the original top_k and minimum.
+        act(() => { hook.result.current.setMaxResults(5); hook.result.current.setMinScore(0.9); });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b.jpg')], query_ref: 'ref-2' }));
+        hook.rerender({ filters: FILTERS });
+        await settle(249);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        await settle(1);
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(bodyOf(1)).toEqual({ query_ref: 'ref-1', top_k: 50, min_score: 0.1, filters: FILTERS });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
+        expect(hook.result.current.queryRef).toBe('ref-2');
+        expect(hook.result.current.isSearching).toBe(false);
+        expect(hook.result.current.hasSearched).toBe(true);
+        expect(hook.onSearchStart).toHaveBeenCalledTimes(1);
+
+        // The next change uses the new reference.
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/c.jpg')], query_ref: 'ref-3' }));
+        hook.rerender({ filters: OTHER_FILTERS });
+        await settle();
+        expect(bodyOf(2)).toEqual({ query_ref: 'ref-2', top_k: 50, min_score: 0.1, filters: OTHER_FILTERS });
+      });
+
+      it('omits the filters key when the last filter is removed', async () => {
+        const hook = renderWith(FILTERS);
+        await textSearch(hook);
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'ref-2' }));
+        hook.rerender({ filters: null });
+        await settle();
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(Object.keys(bodyOf(1))).toEqual(['query_ref', 'top_k', 'min_score']);
+      });
+
+      it('sends one request for a burst of changes', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        fetchMock.mockResolvedValue(jsonResponse({ results: [], query_ref: 'ref-2' }));
+
+        hook.rerender({ filters: { media_type: 'image' } });
+        await settle(100);
+        hook.rerender({ filters: { media_type: 'video' } });
+        await settle(100);
+        hook.rerender({ filters: { media_type: 'video', min_megapixels: 2 } });
+        await settle(249);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        await settle(1);
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(bodyOf(1).filters).toEqual({ media_type: 'video', min_megapixels: 2 });
+      });
+
+      it('does not re-run when the filters are equal but a new object', async () => {
+        const hook = renderWith({ media_type: 'image' });
+        await textSearch(hook);
+        hook.rerender({ filters: { media_type: 'image' } });
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('does nothing when there is no search behind the view', async () => {
+        const hook = renderWith(null);
+        hook.rerender({ filters: FILTERS });
+        await settle(1000);
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      it('falls back to /search when the query reference expired (HTTP 410)', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        fetchMock.mockResolvedValueOnce(errorResponse(410));
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b.jpg')], query_ref: 'ref-new' }));
+        hook.rerender({ filters: FILTERS });
+        await settle();
+
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(urlOf(2)).toBe(`${API}/search`);
+        expect(bodyOf(2)).toEqual({ query: 'cats', top_k: 50, min_score: 0.1, filters: FILTERS });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
+        expect(hook.result.current.queryRef).toBe('ref-new');
+        expect(hook.setToast).not.toHaveBeenCalled();
+      });
+
+      it('posts /search directly when the backend gave no query reference', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook, 'cats', { results: [imageHit('/a.jpg')] });
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b.jpg')] }));
+        hook.rerender({ filters: FILTERS });
+        await settle();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(urlOf(1)).toBe(`${API}/search`);
+        expect(bodyOf(1)).toEqual({ query: 'cats', top_k: 50, min_score: 0.1, filters: FILTERS });
+      });
+
+      it('keeps the old results and shows an error toast on another HTTP error', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        fetchMock.mockResolvedValueOnce(errorResponse(500));
+        hook.rerender({ filters: FILTERS });
+        await settle();
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/a.jpg']);
+        expect(hook.result.current.queryRef).toBe('ref-1');
+        expect(hook.result.current.isSearching).toBe(false);
+        expect(hook.setToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+      });
+
+      it('keeps the old results and shows an error toast when the request throws', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        fetchMock.mockRejectedValueOnce(new Error('down'));
+        hook.rerender({ filters: FILTERS });
+        await settle();
+        expect(hook.result.current.results).toHaveLength(1);
+        expect(hook.result.current.isSearching).toBe(false);
+        expect(hook.setToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+      });
+
+      it('shows the search as running while the re-run is in flight', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        const pending = deferred();
+        fetchMock.mockReturnValueOnce(pending.promise);
+        hook.rerender({ filters: FILTERS });
+        await settle();
+        expect(hook.result.current.isSearching).toBe(true);
+        expect(hook.result.current.results).toHaveLength(1);
+
+        await act(async () => { pending.resolve(jsonResponse({ results: [], query_ref: 'ref-2' })); });
+        expect(hook.result.current.isSearching).toBe(false);
+        expect(hook.result.current.results).toEqual([]);
+      });
+
+      it('re-runs an image search through /search/ref with the image search minimum', async () => {
+        const hook = renderWith(null);
+        act(() => hook.result.current.setMinSimilarity(0.55));
+        await imageSearch(hook);
+        act(() => hook.result.current.setMinSimilarity(0.9));
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b.jpg')], query_ref: 'img-ref-2' }));
+        hook.rerender({ filters: FILTERS });
+        await settle();
+
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(bodyOf(1)).toEqual({ query_ref: 'img-ref', top_k: 50, min_score: 0.55, filters: FILTERS });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
+        expect(hook.result.current.imageSearchContext).toBe('cat.png');
+        expect(hook.result.current.queryRef).toBe('img-ref-2');
+      });
+
+      it('clears an image search whose reference expired (HTTP 410)', async () => {
+        const hook = renderWith(null);
+        await imageSearch(hook);
+        fetchMock.mockResolvedValueOnce(errorResponse(410));
+        hook.rerender({ filters: FILTERS });
+        await settle();
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(hook.result.current.results).toEqual([]);
+        expect(hook.result.current.imageSearchContext).toBeNull();
+        expect(hook.result.current.hasSearched).toBe(false);
+        expect(hook.result.current.isSearching).toBe(false);
+      });
+
+      it('keeps the reference of a search with no results so removing the filters re-runs it', async () => {
+        const hook = renderWith(FILTERS);
+        await textSearch(hook, 'cats', { results: [], query_ref: 'ref-1' });
+        expect(hook.result.current.results).toEqual([]);
+        expect(hook.result.current.queryRef).toBe('ref-1');
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'ref-2' }));
+        hook.rerender({ filters: null });
+        await settle();
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(bodyOf(1)).toEqual({ query_ref: 'ref-1', top_k: 50, min_score: 0.1 });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/a.jpg']);
+      });
+
+      it('also works for an image search that found nothing', async () => {
+        const hook = renderWith(FILTERS);
+        await imageSearch(hook, { results: [], query_ref: 'img-ref' });
+        expect(hook.result.current.hasSearched).toBe(true);
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'img-ref-2' }));
+        hook.rerender({ filters: null });
+        await settle();
+        expect(bodyOf(1)).toEqual({ query_ref: 'img-ref', top_k: 50, min_score: 0.7 });
+        expect(hook.result.current.results).toHaveLength(1);
+      });
+
+      it('cancels a pending re-run when the results are closed', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        hook.rerender({ filters: FILTERS });
+        await settle(100);
+        act(() => hook.result.current.handleCloseSearchResults());
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(hook.result.current.results).toEqual([]);
+      });
+
+      it('cancels a pending re-run when a new search starts, which then carries the new filters', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        hook.rerender({ filters: FILTERS });
+        await settle(100);
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/z.jpg')], query_ref: 'ref-z' }));
+        await submit(hook.result, 'dogs');
+        await runSearch(hook.result);
+        await settle(1000);
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(urlOf(1)).toBe(`${API}/search`);
+        expect(bodyOf(1)).toEqual({ query: 'dogs', top_k: 50, min_score: 0.1, filters: FILTERS });
+      });
+
+      it('stops the timer on unmount', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        hook.rerender({ filters: FILTERS });
+        hook.unmount();
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('filter changes while a search is in flight', () => {
+      it('re-runs the new search through its own reference, never the previous search', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook, 'cats', { results: [imageHit('/a.jpg')], query_ref: 'ref-A' });
+
+        const slowB = deferred();
+        fetchMock.mockReturnValueOnce(slowB.promise);
+        await submit(hook.result, 'dogs');
+        let searchB;
+        act(() => { searchB = hook.result.current.handleSearch({ preventDefault: vi.fn() }); });
+
+        hook.rerender({ filters: FILTERS });
+        await settle(1000);
+        // Nothing is posted while B is in flight: A's reference must not be re-run.
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b-filtered.jpg')], query_ref: 'ref-B2' }));
+        await act(async () => {
+          slowB.resolve(jsonResponse({ results: [imageHit('/b.jpg')], query_ref: 'ref-B' }));
+          await searchB;
+        });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
+        await settle();
+
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(urlOf(2)).toBe(`${API}/search/ref`);
+        expect(bodyOf(2)).toEqual({ query_ref: 'ref-B', top_k: 50, min_score: 0.1, filters: FILTERS });
+        expect(fetchMock.mock.calls.some(([, init], i) => i > 0 && init.body && String(init.body).includes('ref-A'))).toBe(false);
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/b-filtered.jpg']);
+        expect(hook.result.current.queryRef).toBe('ref-B2');
+      });
+
+      it('re-runs an image search that was in flight through its new reference', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook, 'cats', { results: [imageHit('/a.jpg')], query_ref: 'ref-A' });
+
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        let drop;
+        act(() => { drop = hook.result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' })); });
+
+        hook.rerender({ filters: FILTERS });
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/img-filtered.jpg')], query_ref: 'img-ref-2' }));
+        await act(async () => {
+          slow.resolve(jsonResponse({ results: [imageHit('/img.jpg')], query_ref: 'img-ref' }));
+          await drop;
+        });
+        await settle();
+
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(urlOf(2)).toBe(`${API}/search/ref`);
+        expect(bodyOf(2)).toEqual({ query_ref: 'img-ref', top_k: 50, min_score: 0.7, filters: FILTERS });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/img-filtered.jpg']);
+        expect(hook.result.current.imageSearchContext).toBe('cat.png');
+      });
+
+      it('does not re-run when the filters are back to what the search was sent with', async () => {
+        const hook = renderWith(null);
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        await submit(hook.result, 'cats');
+        let search;
+        act(() => { search = hook.result.current.handleSearch({ preventDefault: vi.fn() }); });
+        hook.rerender({ filters: FILTERS });
+        hook.rerender({ filters: null });
+        await act(async () => {
+          slow.resolve(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'ref-A' }));
+          await search;
+        });
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not re-run an earlier search when the new one failed', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook, 'cats', { results: [imageHit('/a.jpg')], query_ref: 'ref-A' });
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        await submit(hook.result, 'dogs');
+        let search;
+        act(() => { search = hook.result.current.handleSearch({ preventDefault: vi.fn() }); });
+        hook.rerender({ filters: FILTERS });
+        await act(async () => {
+          slow.resolve(Promise.reject(new Error('down')));
+          await search;
+        });
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(hook.result.current.isSearching).toBe(false);
+      });
+    });
+
+    describe('rerunCurrentSearch', () => {
+      it('re-runs the current search through its reference after the debounce, with the current filters', async () => {
+        const hook = renderWith(FILTERS);
+        await textSearch(hook);
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/b.jpg')], query_ref: 'ref-2' }));
+
+        act(() => hook.result.current.rerunCurrentSearch());
+        await settle(249);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        await settle(1);
+
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(bodyOf(1)).toEqual({ query_ref: 'ref-1', top_k: 50, min_score: 0.1, filters: FILTERS });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
+      });
+
+      it('keeps the same identity across renders', async () => {
+        const hook = renderWith(null);
+        const first = hook.result.current.rerunCurrentSearch;
+        await textSearch(hook);
+        hook.rerender({ filters: FILTERS });
+        await settle();
+        expect(hook.result.current.rerunCurrentSearch).toBe(first);
+      });
+
+      it('does nothing without a search behind the view', async () => {
+        const hook = renderWith(FILTERS);
+        act(() => hook.result.current.rerunCurrentSearch());
+        await settle(1000);
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      it('does nothing while a search is in flight', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        await submit(hook.result, 'dogs');
+        let search;
+        act(() => { search = hook.result.current.handleSearch({ preventDefault: vi.fn() }); });
+
+        act(() => hook.result.current.rerunCurrentSearch());
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        await act(async () => {
+          slow.resolve(jsonResponse({ results: [imageHit('/b.jpg')], query_ref: 'ref-B' }));
+          await search;
+        });
+        expect(hook.result.current.queryRef).toBe('ref-B');
+      });
+    });
+
+    describe('stale responses', () => {
+      it('lets an in-flight re-run finish, then re-runs it through its own reference with the newest filters', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        hook.rerender({ filters: FILTERS });
+        await settle();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        // A change while the re-run is in flight schedules nothing yet.
+        hook.rerender({ filters: OTHER_FILTERS });
+        await settle(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/new.jpg')], query_ref: 'ref-new' }));
+        await act(async () => { slow.resolve(jsonResponse({ results: [imageHit('/old.jpg')], query_ref: 'ref-old' })); });
+        await settle();
+
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(urlOf(2)).toBe(`${API}/search/ref`);
+        expect(bodyOf(2)).toEqual({ query_ref: 'ref-old', top_k: 50, min_score: 0.1, filters: OTHER_FILTERS });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/new.jpg']);
+        expect(hook.result.current.queryRef).toBe('ref-new');
+        expect(hook.result.current.isSearching).toBe(false);
+      });
+
+      it('drops a slow search when a newer one has been submitted', async () => {
+        const hook = renderWith(null);
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        await submit(hook.result, 'slow');
+        let first;
+        act(() => { first = hook.result.current.handleSearch({ preventDefault: vi.fn() }); });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/fast.jpg')], query_ref: 'fast' }));
+        await submit(hook.result, 'fast');
+        await runSearch(hook.result);
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/fast.jpg']);
+
+        await act(async () => {
+          slow.resolve(jsonResponse({ results: [imageHit('/slow.jpg')], query_ref: 'slow' }));
+          await first;
+        });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/fast.jpg']);
+        expect(hook.result.current.queryRef).toBe('fast');
+        expect(hook.result.current.isSearching).toBe(false);
+      });
+
+      it('drops a slow image search and its toast when a text search overtook it', async () => {
+        const hook = renderWith(null);
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        let drop;
+        act(() => { drop = hook.result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' })); });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/text.jpg')], query_ref: 'text' }));
+        await submit(hook.result, 'cats');
+        await runSearch(hook.result);
+
+        await act(async () => {
+          slow.resolve(jsonResponse({ results: [imageHit('/image.jpg')], query_ref: 'image' }));
+          await drop;
+        });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/text.jpg']);
+        expect(hook.setToast).not.toHaveBeenCalled();
+      });
+
+      it('drops a response that arrives after the results were cleared', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook);
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        hook.rerender({ filters: FILTERS });
+        await settle();
+        expect(hook.result.current.isSearching).toBe(true);
+
+        act(() => hook.result.current.handleCloseSearchResults());
+        expect(hook.result.current.isSearching).toBe(false);
+        await act(async () => { slow.resolve(jsonResponse({ results: [imageHit('/late.jpg')], query_ref: 'late' })); });
+        expect(hook.result.current.results).toEqual([]);
+        expect(hook.result.current.queryRef).toBeNull();
+      });
+
+      it('still drops a pending video expansion when a re-run replaces the results', async () => {
+        const hook = renderWith(null);
+        await textSearch(hook, 'cats', { results: [{ ...videoHit('/v.mp4', 5, 0.7), id: 'shown' }], query_ref: 'ref-1' });
+        const pending = deferred();
+        fetchMock.mockReturnValueOnce(pending.promise);
+        let call;
+        act(() => { call = hook.result.current.expandVideo('/v.mp4'); });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [{ ...videoHit('/v.mp4', 8, 0.65), id: 'new' }], query_ref: 'ref-2' }));
+        hook.rerender({ filters: FILTERS });
+        await settle();
+
+        await act(async () => {
+          pending.resolve(jsonResponse({ path: '/v.mp4', frames: [{ ...videoHit('/v.mp4', 1, 0.5), id: 'x' }], total_frames: 1 }));
+          await call;
+        });
+        expect(hook.result.current.videoGroups[0].isExpanded).toBe(false);
+        expect(hook.result.current.videoGroups[0].frames.map(f => f.id)).toEqual(['new']);
+      });
+    });
+  });
 });

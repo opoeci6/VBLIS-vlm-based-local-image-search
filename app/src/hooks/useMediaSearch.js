@@ -1,10 +1,21 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { API_BASE } from '../config';
 import { annotateDuplicates, groupVideoResults, getImageResults, countSearchResults } from '../utils/searchResults';
 import { useProgressiveList } from './useProgressiveList';
 import { apiFetch } from '../utils/api';
 
-export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
+// Wait this long after the last filter change before re-running the current search.
+const FILTER_RERUN_DELAY_MS = 250;
+
+const postJson = (path, body) => apiFetch(`${API_BASE}${path}`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body)
+});
+
+// `filters` is the request object from useSearchFilters (null when no filter is active). It is
+// sent with every search and, when it changes, the search behind the current results is re-run.
+export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = null }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -30,6 +41,23 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   const expandInFlight = useRef(new Set());
   const setToastRef = useRef(setToast);
   setToastRef.current = setToast;
+  // Read when a request is built, so callbacks need not be recreated when the filters change.
+  const filtersRef = useRef(null);
+  filtersRef.current = filters ?? null;
+  const hasSearchedRef = useRef(false);
+  hasSearchedRef.current = hasSearched;
+  // Every search-type request (search, image search, refresh, filter re-run) takes the next number;
+  // only the response of the latest one is applied, so a slow older request cannot overwrite it.
+  const searchSeq = useRef(0);
+  // The latest search-type request while it is in flight: its number and the filters it was sent with.
+  const pendingSearch = useRef(null);
+  // Number of the request whose results were applied last.
+  const appliedSeq = useRef(0);
+  const filtersKey = filters ? JSON.stringify(filters) : '';
+  const filtersKeyRef = useRef(filtersKey);
+  filtersKeyRef.current = filtersKey;
+  const rerunForFiltersRef = useRef(null);
+  const filterRerunTimer = useRef(null);
 
   const imageResults = useMemo(
     () => getImageResults(results),
@@ -66,7 +94,8 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     setExpandingVideoPath(null);
   };
 
-  const applyResults = (data, info) => {
+  const applyResults = (data, info, seq) => {
+    appliedSeq.current = seq;
     resetSearchState();
     const nextInfo = { ...info, queryRef: data.query_ref ?? null };
     searchInfoRef.current = nextInfo;
@@ -74,14 +103,63 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     setResults(annotateDuplicates(data.results));
   };
 
-  const postTextSearch = async (body) => {
-    const res = await apiFetch(`${API_BASE}/search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+  const withCurrentFilters = (body) => (filtersRef.current ? { ...body, filters: filtersRef.current } : body);
+
+  const cancelFilterRerun = useCallback(() => {
+    if (filterRerunTimer.current) {
+      clearTimeout(filterRerunTimer.current);
+      filterRerunTimer.current = null;
+    }
+  }, []);
+
+  // Start a search-type request: drops a pending filter re-run and makes older responses stale.
+  // `sameSearch`: the request repeats the search behind the current results (a filter re-run), so
+  // the view still matches searchInfoRef if it fails.
+  const beginSearch = (sameSearch = false) => {
+    cancelFilterRerun();
+    searchSeq.current += 1;
+    pendingSearch.current = { seq: searchSeq.current, filtersKey: filtersKeyRef.current, sameSearch };
+    return searchSeq.current;
+  };
+
+  // Re-run the search behind the current results once the filter changes settle.
+  const scheduleFilterRerun = useCallback(() => {
+    cancelFilterRerun();
+    filterRerunTimer.current = setTimeout(() => {
+      filterRerunTimer.current = null;
+      rerunForFiltersRef.current?.();
+    }, FILTER_RERUN_DELAY_MS);
+  }, [cancelFilterRerun]);
+
+  // End of a request, in its finally block. Does nothing for a request a newer one overtook.
+  // When the filters changed while this one was in flight, its results were produced with the old
+  // filters: re-run it (through its own reference) with the new ones.
+  const settleSearch = (seq) => {
+    if (seq !== searchSeq.current) return;
+    const pending = pendingSearch.current;
+    pendingSearch.current = null;
+    setIsSearching(false);
+    if (pending && (appliedSeq.current === seq || pending.sameSearch) && pending.filtersKey !== filtersKeyRef.current && searchInfoRef.current) {
+      scheduleFilterRerun();
+    }
+  };
+
+  // Called when the results are cleared: nothing in flight may bring them back.
+  const cancelPendingSearches = useCallback(() => {
+    cancelFilterRerun();
+    searchSeq.current += 1;
+    pendingSearch.current = null;
+    setIsSearching(false);
+  }, [cancelFilterRerun]);
+
+  // Posts a text search with the current filters. Returns false when a newer search made the
+  // response stale and it was dropped.
+  const postTextSearch = async (body, seq) => {
+    const res = await postJson('/search', withCurrentFilters(body));
     const data = await res.json();
-    applyResults(data, { kind: 'text', topK: body.top_k, minScore: body.min_score, query: body.query });
+    if (seq !== searchSeq.current) return false;
+    applyResults(data, { kind: 'text', topK: body.top_k, minScore: body.min_score, query: body.query }, seq);
+    return true;
   };
 
   const handleSearch = async (e) => {
@@ -89,6 +167,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     if (!query.trim()) {
       if (hasSearched && !imageSearchContext) {
         lastTextSearchBody.current = null;
+        cancelPendingSearches();
         resetSearchState();
         setResults([]);
         setHasSearched(false);
@@ -98,6 +177,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     }
 
     onSearchStart?.();
+    const seq = beginSearch();
     setIsSearching(true);
     setHasSearched(true);
     setImageSearchContext(null);
@@ -105,12 +185,11 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     const body = { query, top_k: parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults), min_score: parseFloat(minScore) };
     lastTextSearchBody.current = body;
     try {
-      await postTextSearch(body);
-      setShowSearchResults(true);
+      if (await postTextSearch(body, seq)) setShowSearchResults(true);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsSearching(false);
+      settleSearch(seq);
     }
   };
 
@@ -122,6 +201,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
 
     lastTextSearchBody.current = null;
     onSearchStart?.();
+    const seq = beginSearch();
     setIsSearching(true);
     setHasSearched(true);
     setImageSearchContext(file.name);
@@ -131,6 +211,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (filtersRef.current) formData.append('filters', JSON.stringify(filtersRef.current));
       // We can also append top_k and min_score if the API takes them as form fields or query params
       // Our API takes them as query params in the new endpoint if we defined it that way
       const url = new URL(`${API_BASE}/search/image`);
@@ -145,19 +226,21 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
       });
 
       const data = await res.json();
-      applyResults(data, { kind: 'image', topK, minScore: imageMinScore });
+      if (seq !== searchSeq.current) return;
+      applyResults(data, { kind: 'image', topK, minScore: imageMinScore }, seq);
       setShowSearchResults(true);
       setToast({ message: `Found ${countSearchResults(data.results)} similar media result(s).`, type: 'success' });
     } catch (err) {
       console.error(err);
-      setToast({ message: "Failed to search by image.", type: 'error' });
+      if (seq === searchSeq.current) setToast({ message: "Failed to search by image.", type: 'error' });
     } finally {
-      setIsSearching(false);
+      settleSearch(seq);
     }
   };
 
   const handleCloseSearchResults = useCallback(() => {
     lastTextSearchBody.current = null;
+    cancelPendingSearches();
     resetSearchState();
     setShowSearchResults(false);
     setResults([]);
@@ -165,10 +248,11 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     setHasSearched(false);
     setImageSearchContext(null);
     onClose?.();
-  }, [onClose]);
+  }, [onClose, cancelPendingSearches]);
 
   const handleClearImageSearch = () => {
     lastTextSearchBody.current = null;
+    cancelPendingSearches();
     resetSearchState();
     setImageSearchContext(null);
     setResults([]);
@@ -177,6 +261,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
 
   const clearResults = () => {
     lastTextSearchBody.current = null;
+    cancelPendingSearches();
     resetSearchState();
     setResults([]);
     setHasSearched(false);
@@ -184,29 +269,28 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
   };
 
   // Re-run the last search after the index changed, so stale hits disappear. Text searches
-  // re-post the same request body; image searches are re-run from the backend's query_ref and are
-  // cleared when that has expired.
+  // re-post the same request (with the current filters); image searches are re-run from the
+  // backend's query_ref and are cleared when that has expired.
   const refreshSearch = async () => {
     const info = searchInfoRef.current;
     if (hasSearched && imageSearchContext && info?.kind === 'image' && info.queryRef) {
+      const seq = beginSearch();
       setIsSearching(true);
       try {
-        const res = await apiFetch(`${API_BASE}/search/ref`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query_ref: info.queryRef, top_k: info.topK, min_score: info.minScore })
-        });
+        const res = await postJson('/search/ref', withCurrentFilters({ query_ref: info.queryRef, top_k: info.topK, min_score: info.minScore }));
+        if (seq !== searchSeq.current) return;
         if (!res.ok) {
           clearResults();
           return;
         }
         const data = await res.json();
-        applyResults(data, { kind: 'image', topK: info.topK, minScore: info.minScore });
+        if (seq !== searchSeq.current) return;
+        applyResults(data, { kind: 'image', topK: info.topK, minScore: info.minScore }, seq);
       } catch (err) {
         console.error(err);
-        clearResults();
+        if (seq === searchSeq.current) clearResults();
       } finally {
-        setIsSearching(false);
+        settleSearch(seq);
       }
       return;
     }
@@ -215,17 +299,92 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
       clearResults();
       return;
     }
+    const seq = beginSearch();
     resetSearchState();
     setResults([]);
     setIsSearching(true);
     try {
-      await postTextSearch(body);
+      await postTextSearch(body, seq);
     } catch (err) {
       console.error(err);
     } finally {
-      setIsSearching(false);
+      settleSearch(seq);
     }
   };
+
+  // Re-run the search behind the current results with the current filters. Uses the saved query
+  // reference (no re-embedding); a text search whose reference is gone is posted again by query.
+  // Results are replaced only on success: a failure keeps the old ones and shows a toast.
+  const rerunForFilters = async () => {
+    const info = searchInfoRef.current;
+    if (!info || !hasSearchedRef.current) return;
+    const base = { kind: info.kind, topK: info.topK, minScore: info.minScore, query: info.query, queryRef: info.queryRef };
+    if (base.kind === 'image' && !base.queryRef) {
+      // The uploaded image is not kept, so without a reference the search cannot be repeated.
+      clearResults();
+      return;
+    }
+
+    const seq = beginSearch(true);
+    setIsSearching(true);
+    try {
+      let res = null;
+      if (base.queryRef) {
+        res = await postJson('/search/ref', withCurrentFilters({ query_ref: base.queryRef, top_k: base.topK, min_score: base.minScore }));
+        if (seq !== searchSeq.current) return;
+        if (res.status === 410 && base.kind === 'image') {
+          clearResults();
+          return;
+        }
+      }
+      if (!res || res.status === 410) {
+        res = await postJson('/search', withCurrentFilters({ query: base.query, top_k: base.topK, min_score: base.minScore }));
+        if (seq !== searchSeq.current) return;
+      }
+      if (!res.ok) {
+        setToastRef.current({ message: 'Failed to apply the filters.', type: 'error' });
+        return;
+      }
+      const data = await res.json();
+      if (seq !== searchSeq.current) return;
+      const nextInfo = { kind: base.kind, topK: base.topK, minScore: base.minScore };
+      if (base.kind === 'text') nextInfo.query = base.query;
+      applyResults(data, nextInfo, seq);
+    } catch (err) {
+      console.error(err);
+      if (seq === searchSeq.current) setToastRef.current({ message: 'Failed to apply the filters.', type: 'error' });
+    } finally {
+      settleSearch(seq);
+    }
+  };
+  rerunForFiltersRef.current = rerunForFilters;
+
+  // When the filters change, re-run the current search once the changes settle. A search still in
+  // flight is not touched: when it settles it sees that its filters are out of date (settleSearch).
+  const appliedFiltersKey = useRef(filtersKey);
+  useEffect(() => {
+    if (appliedFiltersKey.current === filtersKey) return;
+    appliedFiltersKey.current = filtersKey;
+    cancelFilterRerun();
+    if (pendingSearch.current) return;
+    if (!hasSearchedRef.current || !searchInfoRef.current) return;
+    scheduleFilterRerun();
+  }, [filtersKey, cancelFilterRerun, scheduleFilterRerun]);
+
+  // Re-run the search behind the current results (debounced like a filter change), for when the
+  // data it depends on changed, e.g. a media details scan finished. Stable. Does nothing without a
+  // search behind the view, and while a search is in flight (that one reads the newest data).
+  const rerunCurrentSearch = useCallback(() => {
+    if (pendingSearch.current || !hasSearchedRef.current || !searchInfoRef.current) return;
+    scheduleFilterRerun();
+  }, [scheduleFilterRerun]);
+
+  // On unmount: stop the timer and drop any response still on its way.
+  useEffect(() => () => {
+    cancelFilterRerun();
+    searchSeq.current += 1;
+    pendingSearch.current = null;
+  }, [cancelFilterRerun]);
 
   const resetSearch = () => {
     clearResults();
@@ -315,6 +474,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose }) => {
     handleClearImageSearch,
     clearResults,
     refreshSearch,
+    rerunCurrentSearch,
     resetSearch
   };
 };

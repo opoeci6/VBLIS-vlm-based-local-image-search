@@ -13,6 +13,56 @@ describe('NoMatches', () => {
     expect(screen.getByText('No matches found')).toBeTruthy();
     expect(screen.getByText('Try a different query or index more images.')).toBeTruthy();
   });
+
+  it('keeps the plain message when filters are not active, even if a handler is given', () => {
+    render(<NoMatches filtersActive={false} onClearFilters={vi.fn()} />);
+    expect(screen.getByText('No matches found')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('names the filters and offers to clear them when they are active', () => {
+    const onClearFilters = vi.fn();
+    render(<NoMatches filtersActive onClearFilters={onClearFilters} />);
+    expect(screen.getByText('No matches with the current filters')).toBeTruthy();
+    expect(screen.queryByText('No matches found')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(onClearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  describe('files without media details', () => {
+    it('explains that the filters skip them and offers to read the details', () => {
+      const onReadDetails = vi.fn();
+      const onClearFilters = vi.fn();
+      render(<NoMatches filtersActive missingDetails={1234} onReadDetails={onReadDetails} onClearFilters={onClearFilters} />);
+      expect(screen.getByText('1,234 files have no media details yet, so these filters skip them.')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Read details now' }));
+      expect(onReadDetails).toHaveBeenCalledTimes(1);
+      // Clear filters stays available next to it.
+      fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+      expect(onClearFilters).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows progress instead of the button while the scan runs', () => {
+      render(<NoMatches filtersActive missingDetails={5} scanActive onReadDetails={vi.fn()} />);
+      expect(screen.getByText('5 files have no media details yet, so these filters skip them.')).toBeTruthy();
+      expect(screen.getByText('Reading media details...')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Read details now' })).toBeNull();
+    });
+
+    it('says nothing about details when none are missing', () => {
+      render(<NoMatches filtersActive missingDetails={0} onReadDetails={vi.fn()} />);
+      expect(screen.queryByText(/no media details yet/)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Read details now' })).toBeNull();
+    });
+
+    it('does not show the hint without filters', () => {
+      render(<NoMatches missingDetails={5} onReadDetails={vi.fn()} />);
+      expect(screen.getByText('No matches found')).toBeTruthy();
+      expect(screen.queryByText(/no media details yet/)).toBeNull();
+    });
+  });
 });
 
 describe('BackendLoading', () => {

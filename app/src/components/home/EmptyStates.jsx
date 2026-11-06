@@ -1,7 +1,46 @@
 import { Search, Loader2, Image as ImageIcon, LogOut } from 'lucide-react';
 import { AsciiLogo } from '../common/AsciiLogo';
 
-export const NoMatches = () => {
+// `missingDetails`: files without media details that the active date/orientation/resolution filters
+// skip (0 when none of those filters is active); the hint offers to read them.
+export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetails = 0, scanActive = false, onReadDetails }) => {
+  if (filtersActive) {
+    return (
+      <div className="flex flex-col items-center justify-center mt-32 gap-3">
+        <Search className="w-16 h-16 mb-1 text-neutral-400 dark:text-neutral-600 opacity-50" />
+        <p className="text-xl text-neutral-800 dark:text-neutral-300 font-bold">No matches with the current filters</p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-500 font-medium">Remove a filter or try a different query.</p>
+        {missingDetails > 0 && (
+          <div className="flex flex-col items-center gap-2" data-testid="no-matches-details-hint">
+            <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">
+              {`${missingDetails.toLocaleString('en-US')} files have no media details yet, so these filters skip them.`}
+            </p>
+            {scanActive ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                Reading media details...
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onReadDetails}
+                className="px-4 py-2 border border-indigo-600 text-indigo-700 dark:text-indigo-300 rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+              >
+                Read details now
+              </button>
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="mt-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+        >
+          Clear filters
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col items-center justify-center mt-32 opacity-50">
       <Search className="w-16 h-16 mb-4 text-neutral-400 dark:text-neutral-600" />

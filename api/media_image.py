@@ -11,6 +11,23 @@ pillow_heif.register_heif_opener()
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif"}
 
+
+# macOS leaves metadata next to real files when it writes to a non-Apple drive or into a zip: "._<name>"
+# AppleDouble files, and "__MACOSX" folders that unzipped archives carry. They keep the media extension of the
+# file they describe but are not media, so file discovery, the folder views and the media registry skip them.
+def is_macos_junk_dir(name: str) -> bool:
+    return name.lower() == "__macosx"
+
+
+def is_macos_junk_file(name: str) -> bool:
+    return name.startswith("._")
+
+
+def is_macos_junk_path(path: str) -> bool:
+    """True for an AppleDouble file or any file inside a __MACOSX folder."""
+    parts = re.split(r"[\\/]+", path)
+    return is_macos_junk_file(parts[-1]) or any(is_macos_junk_dir(part) for part in parts[:-1])
+
 # Bump when the image preprocessing before embedding changes. Image records without "embed_version"
 # (or with a lower one) are version 1 and get re-checked by reindex.
 IMAGE_EMBED_VERSION = 2

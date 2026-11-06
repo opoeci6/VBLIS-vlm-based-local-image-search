@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import TitleBar from './TitleBar';
 import { API_BASE } from './config';
 import { cn } from './utils/cn';
@@ -8,6 +8,7 @@ import { useToast } from './hooks/useToast';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import { useModelManager } from './hooks/useModelManager';
 import { useMediaSearch } from './hooks/useMediaSearch';
+import { useSearchFilters } from './hooks/useSearchFilters';
 import { useFileDrop } from './hooks/useFileDrop';
 import { useIndexedFolders } from './hooks/useIndexedFolders';
 import { useFolderContents } from './hooks/useFolderContents';
@@ -22,6 +23,8 @@ import { IndexingErrorsAlert } from './components/status/IndexingErrorsAlert';
 import { ModelLoadErrorBanner } from './components/status/ModelLoadErrorBanner';
 import { ModelDownloadBanner } from './components/status/ModelDownloadBanner';
 import { ImageSearchChip } from './components/search/ImageSearchChip';
+import { ActiveFilterChips } from './components/search/filters/ActiveFilterChips';
+import { SearchFiltersPanel } from './components/search/filters/SearchFiltersPanel';
 import { NoMatches, BackendLoading, ModelSetupState, ReadyToSearch } from './components/home/EmptyStates';
 import { IndexedFoldersPanel } from './components/folders/IndexedFoldersPanel';
 import { VideoGroupModal } from './components/search/VideoGroupModal';
@@ -52,6 +55,23 @@ function App() {
     setSelectedImage(null);
     setSelectedVideoPath(null);
   }, []);
+  // A media details scan that is running or waiting in the queue.
+  const mediaInfoScanActive = queue.activeTask?.type === 'SCAN_MEDIA_INFO'
+    || queue.pendingTasks.some(task => task.type === 'SCAN_MEDIA_INFO');
+  const searchFilters = useSearchFilters({
+    setToast,
+    activeTaskId: queue.activeTask?.id ?? null,
+    scanActive: mediaInfoScanActive
+  });
+  const {
+    chips: filterChips,
+    clearAll: clearFilters,
+    requestFilters,
+    activeCount: activeFilterCount,
+    detailsFilterActive,
+    missingDetails,
+    readDetailsNow
+  } = searchFilters;
   const {
     query,
     setQuery,
@@ -81,12 +101,22 @@ function App() {
     handleCloseSearchResults,
     handleClearImageSearch,
     refreshSearch,
+    rerunCurrentSearch,
     resetSearch
   } = useMediaSearch({
     setToast,
     onSearchStart: () => setIsFoldersExpanded(false),
-    onClose: handleSearchResultsClosed
+    onClose: handleSearchResultsClosed,
+    filters: requestFilters
   });
+  // The media details scan just finished: files that date, orientation and resolution filters used
+  // to skip may match now, so show the new results without the user touching the filters.
+  const wasScanActive = useRef(mediaInfoScanActive);
+  useEffect(() => {
+    const scanFinished = wasScanActive.current && !mediaInfoScanActive;
+    wasScanActive.current = mediaInfoScanActive;
+    if (scanFinished && detailsFilterActive) rerunCurrentSearch();
+  }, [mediaInfoScanActive, detailsFilterActive, rerunCurrentSearch]);
   const selectedVideoGroup = useMemo(
     () => (selectedVideoPath ? videoGroups.find(group => group.path === selectedVideoPath) || null : null),
     [selectedVideoPath, videoGroups]
@@ -181,6 +211,7 @@ function App() {
     handleRebuildVideoThumbnails
   } = useCacheStats({ isSettingsOpen: showSettings, status, setToast });
   const searchInputRef = useRef(null);
+  const showNoMatches = results.length === 0 && !isSearching && hasSearched && Boolean(models.active_model) && !isSwitchingModel && (query.length > 0 || Boolean(imageSearchContext));
 
   const handleOpenFolder = async () => {
     if (!window.electronAPI) return;
@@ -275,7 +306,10 @@ function App() {
       <FolderContentsModal showFolderContents={showFolderContents} browsingFolder={browsingFolder} folderContents={folderContents} isFetchingFolderContents={isFetchingFolderContents} isCleaningGhostRecords={isCleaningGhostRecords} setIsCleaningGhostRecords={setIsCleaningGhostRecords} folderVisibleLimit={folderVisibleLimit} setFolderVisibleLimit={setFolderVisibleLimit} handleCloseFolderContents={handleCloseFolderContents} handleReindexFolder={handleReindexFolder} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
 
       {/* Header */}
-      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} />
+      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} />
+
+      {/* Search filters panel (floats under the header) */}
+      <SearchFiltersPanel filters={searchFilters} indexedFolders={indexedFolders} />
 
       {/* Global Status Bar */}
       <IndexingStatusBar status={status} queue={queue} setToast={setToast} setShowSettings={setShowSettings} isCancellingIndexing={isCancellingIndexing} handleCancelIndexing={handleCancelIndexing} />
@@ -324,19 +358,22 @@ function App() {
       <main className="w-full max-w-7xl px-6 pb-24 flex-1">
         <ImageSearchChip imageSearchContext={imageSearchContext} handleClearImageSearch={handleClearImageSearch} />
 
-        {results.length === 0 && !isSearching && hasSearched && models.active_model && !isSwitchingModel && query.length > 0 && <NoMatches />}
+        {/* In Terminal theme the chips live in the results console while it is open */}
+        {(uiTheme !== 'terminal' || !(showSearchResults && results.length > 0)) && <ActiveFilterChips chips={filterChips} onClearAll={clearFilters} className="mb-6" />}
+
+        {showNoMatches && <NoMatches filtersActive={activeFilterCount > 0} onClearFilters={clearFilters} missingDetails={detailsFilterActive ? missingDetails : 0} scanActive={mediaInfoScanActive} onReadDetails={readDetailsNow} />}
 
         {(!backendReady || isSwitchingModel) && !status.is_downloading && <BackendLoading isSwitchingModel={isSwitchingModel} />}
 
         {backendReady && !isSwitchingModel && !models.active_model && !status.is_downloading && results.length === 0 && <ModelSetupState models={models} handleModelSwitch={handleModelSwitch} setShowSettings={setShowSettings} handleDownloadModel={handleDownloadModel} pendingModel={pendingModel} />}
 
-        {models.active_model && !isSearching && query.length === 0 && results.length === 0 && !isSwitchingModel && <ReadyToSearch uiTheme={uiTheme} indexedFolders={indexedFolders} models={models} setShowSettings={setShowSettings} handleUnloadModel={handleUnloadModel} isUnloadingModel={isUnloadingModel} status={status} />}
+        {models.active_model && !isSearching && query.length === 0 && results.length === 0 && !isSwitchingModel && !showNoMatches && <ReadyToSearch uiTheme={uiTheme} indexedFolders={indexedFolders} models={models} setShowSettings={setShowSettings} handleUnloadModel={handleUnloadModel} isUnloadingModel={isUnloadingModel} status={status} />}
 
         {/* In-page results grid for Modern theme */}
         <SearchResultsGrid results={results} uiTheme={uiTheme} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelRef={sentinelRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} />
 
         {/* Terminal Modal Console for Terminal theme */}
-        <TerminalResultsModal showSearchResults={showSearchResults} results={results} uiTheme={uiTheme} handleCloseSearchResults={handleCloseSearchResults} imageSearchContext={imageSearchContext} query={query} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelTerminalRef={sentinelTerminalRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} />
+        <TerminalResultsModal showSearchResults={showSearchResults} results={results} uiTheme={uiTheme} handleCloseSearchResults={handleCloseSearchResults} imageSearchContext={imageSearchContext} query={query} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelTerminalRef={sentinelTerminalRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} filterChips={filterChips} onClearFilters={clearFilters} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} />
       </main>
 
       {/* Background Task Queue Drawer */}
