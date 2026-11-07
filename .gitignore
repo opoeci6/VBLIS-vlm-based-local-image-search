@@ -133,3 +133,7 @@ VBLIS-win-*.zip
 
 *.rar
 *.zip
+
+# Local agent config and planning docs
+.claude/
+docs/
