@@ -22,7 +22,7 @@ from media_image import (
 from media_video import (
     VIDEO_EXTENSIONS, VIDEO_SAMPLING_VERSION, VIDEO_ANALYSIS_INTERVAL_SECONDS,
     VIDEO_MAX_SAMPLE_GAP_SECONDS, get_video_signature, save_video_frame_thumbnail,
-    extract_video_frames_batch, iter_video_frames
+    extract_video_frames_batch, iter_video_frames, probe_video_info
 )
 from folder_registry import FolderRegistry
 from media_registry import MediaRegistry
@@ -399,6 +399,8 @@ class Indexer:
         self.folders = FolderRegistry(self.data_dir, self.cache_dir)
         self.media_registry = MediaRegistry(self.data_dir / "media_registry.sqlite3")
         self.last_media_sync = None
+        # (registry key, size, mtime_ns) -> display rotation probed from the file, one probe per file version
+        self._probed_video_rotations = {}
         # video source key -> path, learned from metadata reads (a pure function of the path, so never stale)
         self._video_paths_by_sha = {}
         
@@ -661,7 +663,28 @@ class Indexer:
                     self._record_failed_frame(metadata["path"], metadata["timestamp_seconds"], record_id, frame_error)
         return stored_count
 
-    def _index_video_file(self, filepath, source_signature, batch_size, task_context=None):
+    def video_rotation(self, path, stat=None) -> int:
+        """Display rotation (PyAV degrees) of a video. The video signature and the thumbnail cache key need it
+        without decoding the video, so an unchanged video is never opened when the media registry knows it:
+        the registry row counts when it is a video row of the file's current size and mtime. Otherwise the
+        file is probed, once per file version and process; a failed probe counts as no rotation."""
+        if stat is None:
+            stat = os.stat(path)
+        key = MediaRegistry.key_for(path)
+        fact = self.media_registry.snapshot().facts.get(key)
+        if (fact is not None and fact.media_type == "video" and fact.rotation is not None
+                and fact.size == stat.st_size and fact.mtime_ns == stat.st_mtime_ns):
+            return fact.rotation
+        version = (key, stat.st_size, stat.st_mtime_ns)
+        if version not in self._probed_video_rotations:
+            try:
+                rotation = int(probe_video_info(path)["rotation"] or 0)
+            except Exception:
+                rotation = 0
+            self._probed_video_rotations[version] = rotation
+        return self._probed_video_rotations[version]
+
+    def _index_video_file(self, filepath, source_signature, batch_size, task_context=None, rotation=0):
         """Extract and index adaptive scene-aware frames from one video. A producer thread decodes, thumbnails
         and preprocesses the frames while this thread embeds the batch before."""
         normalized_path = os.path.abspath(os.path.normpath(filepath))
@@ -702,7 +725,9 @@ class Indexer:
                         if should_cancel_fn():
                             break
                         # Save 480x480 thumbnail at indexing time for instant 0ms search lookup
-                        save_video_frame_thumbnail(normalized_path, timestamp, image, self.video_cache_dir, stat)
+                        save_video_frame_thumbnail(
+                            normalized_path, timestamp, image, self.video_cache_dir, stat, rotation=rotation
+                        )
                         try:
                             item = ("frame", timestamp, self.model_manager.prepare_image(image), sampling_metadata)
                         except Exception as e:
@@ -794,7 +819,9 @@ class Indexer:
             if task_context:
                 task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(normalized_path))
             try:
-                source_signature = get_video_signature(normalized_path)
+                stat = os.stat(normalized_path)
+                rotation = self.video_rotation(normalized_path, stat)
+                source_signature = get_video_signature(normalized_path, rotation, stat)
                 previous_entries = existing_video_entries.get(normalized_path, [])
                 if previous_entries and all(
                     entry.get("source_signature") == source_signature
@@ -808,7 +835,7 @@ class Indexer:
                     self.collection.delete(ids=old_ids)
 
                 frame_count = self._index_video_file(
-                    normalized_path, source_signature, batch_size, task_context=task_context
+                    normalized_path, source_signature, batch_size, task_context=task_context, rotation=rotation
                 )
                 self.indexed_video_frames += frame_count
             except Exception as e:
@@ -914,6 +941,10 @@ class Indexer:
                     break
                 if not os.path.isfile(filepath):
                     continue
+                try:
+                    rotation = self.video_rotation(filepath)
+                except OSError:
+                    continue  # vanished since the check above
                 timestamps = [float(e["timestamp_seconds"]) for e in entries if "timestamp_seconds" in e]
                 if timestamps:
                     def on_frame_done(_ts):
@@ -925,7 +956,9 @@ class Indexer:
                                 os.path.basename(filepath)
                             )
 
-                    extract_video_frames_batch(filepath, timestamps, self.video_cache_dir, on_frame_saved=on_frame_done)
+                    extract_video_frames_batch(
+                        filepath, timestamps, self.video_cache_dir, on_frame_saved=on_frame_done, rotation=rotation
+                    )
 
             return {
                 "status": "success",

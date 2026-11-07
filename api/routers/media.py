@@ -38,7 +38,8 @@ def batch_extract_video_frames(req: VideoBatchExtractRequest):
     if not os.path.isfile(req.path):
         raise HTTPException(status_code=404, detail="Video file not found")
     try:
-        cached_paths = extract_video_frames_batch(req.path, req.timestamps, VIDEO_CACHE_DIR)
+        rotation = app_state.indexer.video_rotation(req.path)
+        cached_paths = extract_video_frames_batch(req.path, req.timestamps, VIDEO_CACHE_DIR, rotation=rotation)
         return {"status": "success", "cached_count": len(cached_paths)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -73,7 +74,8 @@ def serve_image(
     if is_video:
         try:
             stat = os.stat(path)
-            cache_path = get_video_frame_cache_path(path, timestamp, VIDEO_CACHE_DIR, stat)
+            rotation = app_state.indexer.video_rotation(path, stat)
+            cache_path = get_video_frame_cache_path(path, timestamp, VIDEO_CACHE_DIR, stat, rotation)
 
             if size == "thumbnail":
                 def render_frame_thumbnail(fp):

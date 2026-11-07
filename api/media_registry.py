@@ -52,7 +52,7 @@ _UPSERT_SQL = (
 
 
 class MediaFacts(NamedTuple):
-    """What search filters read for one file."""
+    """What search filters and the video index read for one file."""
     media_type: str
     ext: str
     width: Optional[int]
@@ -61,6 +61,8 @@ class MediaFacts(NamedTuple):
     taken_source: Optional[str]
     duration_s: Optional[float]
     rotation: Optional[int]
+    size: Optional[int] = None
+    mtime_ns: Optional[int] = None
 
 
 _FACT_COLUMNS = ("key",) + MediaFacts._fields
