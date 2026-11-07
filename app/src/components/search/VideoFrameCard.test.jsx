@@ -18,6 +18,11 @@ describe('VideoFrameCard', () => {
     );
   });
 
+  it('labels the score as SIMILAR for similarity results', () => {
+    render(<VideoFrameCard frame={{ ...frame, score_kind: 'similarity' }} index={0} onSelect={() => {}} />);
+    expect(screen.getByText('80% SIMILAR')).toBeTruthy();
+  });
+
   it('numbers frames from the index', () => {
     render(<VideoFrameCard frame={frame} index={4} onSelect={() => {}} />);
     expect(screen.getByText('FRAME 5')).toBeTruthy();

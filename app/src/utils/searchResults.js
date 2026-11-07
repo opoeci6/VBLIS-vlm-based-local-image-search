@@ -26,7 +26,8 @@ export const annotateDuplicates = (dataResults) => {
   );
 
   // 2. Pairwise Cosine Similarity for Visual Duplicates (Threshold >= 0.985)
-  // Run full pairwise on top candidate results (up to 800) to keep JS thread non-blocking for 4k+ sets
+  // Run full pairwise on the top image results (up to 800) to keep JS thread non-blocking for 4k+ sets.
+  // Video frames are skipped (and carry no embedding), so they must not eat into that budget.
   const VISUAL_THRESHOLD = 0.985;
   // Union-find over result indices so that similarity chains merge into one group
   const parent = new Map(); // index -> parent index; only indices in a similar pair are present
@@ -47,15 +48,20 @@ export const annotateDuplicates = (dataResults) => {
     const rootB = findRoot(b);
     if (rootA !== rootB) parent.set(rootB, rootA);
   };
-  const maxVisualLimit = Math.min(results.length, 800);
+  const candidateIndices = [];
+  for (let i = 0; i < results.length && candidateIndices.length < 800; i++) {
+    if (results[i].media_type !== 'video') candidateIndices.push(i);
+  }
 
-  for (let i = 0; i < maxVisualLimit; i++) {
+  for (let a = 0; a < candidateIndices.length; a++) {
+    const i = candidateIndices[a];
     const itemA = results[i];
-    if (itemA.media_type === 'video' || !itemA.embedding) continue;
+    if (!itemA.embedding) continue;
 
-    for (let j = i + 1; j < maxVisualLimit; j++) {
+    for (let b = a + 1; b < candidateIndices.length; b++) {
+      const j = candidateIndices[b];
       const itemB = results[j];
-      if (itemB.media_type === 'video' || !itemB.embedding) continue;
+      if (!itemB.embedding) continue;
 
       // Skip if already exact hash match
       if (itemA.hash && itemB.hash && itemA.hash === itemB.hash) continue;
@@ -130,7 +136,12 @@ export const annotateDuplicates = (dataResults) => {
   });
 };
 
-export const groupVideoResults = (results) => {
+const frameKey = (frame) => frame.id ?? `${frame.path}:${frame.timestamp_seconds}`;
+
+// `expandedFramesByPath` maps a video path to `{ frames, totalFrames }` fetched by "Find more
+// frames"; those frames are merged into the group of the same path. Group order always follows
+// the frames of `results` itself, so expanding a video never reorders the grid.
+export const groupVideoResults = (results, expandedFramesByPath = {}) => {
   const groupsByPath = new Map();
 
   results.forEach(frame => {
@@ -156,17 +167,53 @@ export const groupVideoResults = (results) => {
   });
 
   return Array.from(groupsByPath.values())
-    .map(group => ({
-      ...group,
-      frames: [...group.frames].sort(
-        (first, second) => {
-          const scoreDifference = (second.score || 0) - (first.score || 0);
-          if (scoreDifference !== 0) return scoreDifference;
-          return (first.timestamp_seconds || 0) - (second.timestamp_seconds || 0);
-        }
-      )
-    }))
-    .sort((first, second) => second.bestScore - first.bestScore);
+    .map(group => {
+      const searchBestScore = group.bestScore;
+      const expansion = expandedFramesByPath[group.path];
+      let { frames, bestScore, bestFrame } = group;
+      if (expansion) {
+        const seen = new Set(frames.map(frameKey));
+        frames = [...frames];
+        (expansion.frames || []).forEach(frame => {
+          const key = frameKey(frame);
+          if (seen.has(key)) return;
+          seen.add(key);
+          frames.push(frame);
+          if ((frame.score || 0) > bestScore) {
+            bestScore = frame.score || 0;
+            bestFrame = frame;
+          }
+        });
+      }
+      return {
+        ...group,
+        bestScore,
+        bestFrame,
+        searchBestScore,
+        totalFrames: expansion ? (expansion.totalFrames ?? null) : null,
+        isExpanded: Boolean(expansion),
+        frames: [...frames].sort(
+          (first, second) => {
+            const scoreDifference = (second.score || 0) - (first.score || 0);
+            if (scoreDifference !== 0) return scoreDifference;
+            return (first.timestamp_seconds || 0) - (second.timestamp_seconds || 0);
+          }
+        )
+      };
+    })
+    .sort((first, second) => second.searchBestScore - first.searchBestScore)
+    .map(({ searchBestScore, ...group }) => group);
 };
 
 export const getImageResults = (results) => results.filter(result => result.media_type !== 'video');
+
+// Number of results the way Max Results counts them: every image, and every video once.
+export const countSearchResults = (results) => {
+  const videoPaths = new Set();
+  let count = 0;
+  (results || []).forEach(result => {
+    if (result.media_type === 'video') videoPaths.add(result.path);
+    else count += 1;
+  });
+  return count + videoPaths.size;
+};

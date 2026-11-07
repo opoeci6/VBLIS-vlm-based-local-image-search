@@ -3,7 +3,7 @@ import json
 import pathlib
 import threading
 from security import is_within
-from media_image import IMAGE_EXTENSIONS
+from media_image import IMAGE_EXTENSIONS, is_macos_junk_dir, is_macos_junk_file
 from media_video import VIDEO_EXTENSIONS
 
 
@@ -223,12 +223,15 @@ class FolderRegistry:
                 disk_counts_by_dir = {}
                 if os.path.isdir(root_path):
                     try:
-                        for r, _, f_list in os.walk(root_path):
+                        for r, dir_names, f_list in os.walk(root_path):
+                            dir_names[:] = [d for d in dir_names if not is_macos_junk_dir(d)]
                             r_norm = os.path.abspath(os.path.normpath(r))
                             r_lower_dir = r_norm.lower()
                             imgs = 0
                             vids = 0
                             for fname in f_list:
+                                if is_macos_junk_file(fname):
+                                    continue
                                 ext = os.path.splitext(fname)[1].lower()
                                 if ext in IMAGE_EXTENSIONS:
                                     imgs += 1
@@ -354,8 +357,11 @@ class FolderRegistry:
         seen_disk_paths = set()
 
         # 2. Scan physical files on disk
-        for root, _, files in os.walk(normalized_folder):
+        for root, dir_names, files in os.walk(normalized_folder):
+            dir_names[:] = [d for d in dir_names if not is_macos_junk_dir(d)]
             for file in files:
+                if is_macos_junk_file(file):
+                    continue
                 extension = os.path.splitext(file)[1].lower()
                 if extension not in IMAGE_EXTENSIONS and extension not in VIDEO_EXTENSIONS:
                     continue

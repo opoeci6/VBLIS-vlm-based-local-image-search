@@ -6,9 +6,11 @@ const makeImages = (n) => Array.from({ length: n }, (_, i) => ({
   path: `/pics/img${i}.jpg`, media_type: 'image', score: 0.5, id: `img${i}`,
 }));
 
-const makeGroup = (name) => {
-  const frame = { path: `/videos/${name}`, media_type: 'video', score: 0.9, timestamp_seconds: 3 };
-  return { path: `/videos/${name}`, name, frames: [frame], bestScore: 0.9, bestFrame: frame };
+const makeGroup = (name, frameCount = 1) => {
+  const frames = Array.from({ length: frameCount }, (_, i) => (
+    { path: `/videos/${name}`, media_type: 'video', score: 0.9 - i * 0.01, timestamp_seconds: 3 + i }
+  ));
+  return { path: `/videos/${name}`, name, frames, bestScore: 0.9, bestFrame: frames[0] };
 };
 
 const makeProps = (overrides = {}) => {
@@ -73,6 +75,19 @@ describe('TerminalResultsModal', () => {
     expect(screen.getByText('2 MATCHES')).toBeTruthy();
   });
 
+  it('counts each video once, not its frames', () => {
+    render(<TerminalResultsModal {...makeProps({
+      imageResults: makeImages(1),
+      videoGroups: [makeGroup('a.mp4', 5), makeGroup('b.mp4', 3)],
+    })} />);
+    expect(screen.getByText('3 MATCHES')).toBeTruthy();
+  });
+
+  it('shows a singular match for a single video with several frames', () => {
+    render(<TerminalResultsModal {...makeProps({ imageResults: [], visibleImageResults: [], videoGroups: [makeGroup('a.mp4', 4)] })} />);
+    expect(screen.getByText('1 MATCH')).toBeTruthy();
+  });
+
   it('renders video groups and image cards, with headers only when both exist', () => {
     const { rerender } = render(<TerminalResultsModal {...makeProps()} />);
     expect(screen.getAllByAltText('Result')).toHaveLength(2);
@@ -125,5 +140,56 @@ describe('TerminalResultsModal', () => {
   it('hides load more when everything is visible', () => {
     render(<TerminalResultsModal {...makeProps()} />);
     expect(screen.queryByText(/LOAD MORE/)).toBeNull();
+  });
+  describe('filter chips', () => {
+    const makeChips = (labels) => labels.map(label => ({ key: label, label, onRemove: vi.fn() }));
+
+    it('shows no chips by default', () => {
+      render(<TerminalResultsModal {...makeProps()} />);
+      expect(screen.queryByRole('group', { name: 'Active filters' })).toBeNull();
+    });
+
+    it('lists the active filters under the header and removes one', () => {
+      const filterChips = makeChips(['Images only', '2024']);
+      render(<TerminalResultsModal {...makeProps({ filterChips, onClearFilters: vi.fn() })} />);
+      expect(screen.getByRole('group', { name: 'Active filters' })).toBeTruthy();
+      expect(screen.getByText('Images only')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove filter: 2024' }));
+      expect(filterChips[1].onRemove).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears all filters, and does not close the results while doing so', () => {
+      const props = makeProps({ filterChips: makeChips(['Images only', '2024']), onClearFilters: vi.fn() });
+      render(<TerminalResultsModal {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      expect(props.onClearFilters).toHaveBeenCalledTimes(1);
+      expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+    });
+  });
+  describe('Filters button', () => {
+    it('sits in the header row before the close button, with no badge by default', () => {
+      render(<TerminalResultsModal {...makeProps()} />);
+      const filters = screen.getByRole('button', { name: 'Search filters' });
+      const close = screen.getByLabelText('Close search results');
+      expect(filters.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(filters.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByTestId('filters-count')).toBeNull();
+    });
+
+    it('shows the active count and the open state', () => {
+      render(<TerminalResultsModal {...makeProps({ activeFilterCount: 2, filtersOpen: true })} />);
+      const filters = screen.getByRole('button', { name: 'Search filters (2 active)' });
+      expect(filters.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByTestId('filters-count').textContent).toBe('2');
+    });
+
+    it('calls the toggle without closing the results', () => {
+      const props = makeProps({ onToggleFilters: vi.fn() });
+      render(<TerminalResultsModal {...props} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Search filters' }));
+      expect(props.onToggleFilters).toHaveBeenCalledTimes(1);
+      expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+    });
   });
 });

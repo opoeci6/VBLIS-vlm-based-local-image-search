@@ -3,6 +3,7 @@ import { API_BASE } from '../../config';
 import { cn } from '../../utils/cn';
 import { formatBytes, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
+import { formatScorePercent, isSimilarityKind } from '../../utils/scoreLabel';
 
 export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiTheme }) => {
   if (!(selectedImage)) return null;
@@ -52,7 +53,7 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
       <div className="mt-6 text-center" onClick={(e) => e.stopPropagation()}>
         {!selectedImage.isBrowsing && selectedImage.score !== undefined && (
           <p className="text-xl font-medium text-white mb-2">
-            Match Score: {Math.round(selectedImage.score * 100)}%
+            {isSimilarityKind(selectedImage.score_kind) ? 'Similarity' : 'Match Score'}: {formatScorePercent(selectedImage.score)}
           </p>
         )}
         {selectedImage.isBrowsing && (

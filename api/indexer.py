@@ -1,5 +1,7 @@
 import os
 import hashlib
+import math
+import numpy as np
 from PIL import Image
 import chromadb
 import sqlite3
@@ -11,23 +13,52 @@ from concurrent.futures import ThreadPoolExecutor
 from model_manager import ModelManager
 import pathlib
 import paths
+import media_sync
+import security
 from media_image import (
-    IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, inspect_file, open_image_upright,
-    read_rotated
+    IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, inspect_file, is_macos_junk_dir,
+    is_macos_junk_file, open_image_upright, read_rotated
 )
 from media_video import (
     VIDEO_EXTENSIONS, VIDEO_SAMPLING_VERSION, VIDEO_ANALYSIS_INTERVAL_SECONDS,
     VIDEO_MAX_SAMPLE_GAP_SECONDS, get_video_signature, save_video_frame_thumbnail,
-    extract_video_frames_batch, iter_video_frames
+    extract_video_frames_batch, iter_video_frames, probe_video_info
 )
 from folder_registry import FolderRegistry
+from media_registry import MediaRegistry
 from collection_cache import CachedCollection
+from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY, make_scorer
+from search_filters import compile_filters, filter_options, empty_filter_options
+from search_session import (
+    SearchSession, SearchSessions, SearchSessionExpired, EXPIRED_MESSAGE, MODEL_CHANGED_MESSAGE
+)
 
 paths.ensure_dirs()
 
 # How many leading search results carry their embedding for the frontend's visual-duplicate detection.
 # Must match maxVisualLimit in app/src/utils/searchResults.js.
 DUPLICATE_CHECK_LIMIT = 800
+
+# A search asks Chroma for at least this many candidates (distances only). A text query sits far from every
+# image embedding, so the HNSW graph finds its true best matches only when it searches wide: measured in round S
+# on 27k records, a request for 50 found 30 of the true top 50 on average and 1000 found 44. With the drive of
+# 77% of the records unplugged, the live top 50 was found 45.9/50 at 1000 candidates and 48.7/50 at 2000, for
+# about 9 ms more (a query that returns distances only is cheap; reading metadata is not, see _walk_ranking).
+SEARCH_CANDIDATES = 2000
+
+# A filtered search starts wider: its matches lie deeper in the ranking, where the HNSW order is only right when
+# the search is wide. Measured in round S on the same 27k records: of 176 filtered searches at Max Results 50,
+# 7 missed 1-2 items at 2000 candidates (against the Unlimited ranking); at 8000, 6 of them were exact, for
+# about 30 ms more. Candidates the filter rejects cost no metadata read (see _walk_ranking).
+FILTERED_SEARCH_CANDIDATES = 8000
+
+# One video fills one result slot of the top_k; this many of its best frames come with it
+VIDEO_FRAMES_PER_RESULT = 50
+
+# Metadata of the candidates is read in rank order, as lazily as possible: at least this many ids per read
+# (more when top_k is large) and at most METADATA_GET_MAX ids per Chroma get call.
+METADATA_CHUNK = 256
+METADATA_GET_MAX = 4000
 
 class _FileExistenceCache:
     """os.path.isfile answered from one directory listing per directory (one stat per file is far slower
@@ -56,10 +87,168 @@ class _FileExistenceCache:
             return os.path.isfile(path)
         return os.path.normcase(name) in names
 
+def _is_video(meta):
+    # Image records written before video support have no media_type
+    return meta.get("media_type", "image") == "video"
+
+def _read_metadatas(collection, ids, metas_by_id):
+    """Adds the metadata of the ids not in metas_by_id yet. An id that Chroma no longer has (deleted
+    meanwhile) maps to an empty dict, so it is skipped and never asked for again."""
+    wanted = [record_id for record_id in ids if record_id not in metas_by_id]
+    for start in range(0, len(wanted), METADATA_GET_MAX):
+        part = wanted[start:start + METADATA_GET_MAX]
+        fetched = collection.get(ids=part, include=["metadatas"])
+        # Mapped by id: the order of a get result is not guaranteed
+        for record_id, meta in zip(fetched.get("ids") or [], fetched.get("metadatas") or []):
+            metas_by_id[record_id] = meta or {}
+        for record_id in part:
+            metas_by_id.setdefault(record_id, {})
+
+def _video_source_key(path):
+    """What a video's frame ids carry in place of its path: the sha256 of its normalized, lower-cased path
+    (a pure function of the path, so a sha learned once stays valid)."""
+    normalized_path = os.path.abspath(os.path.normpath(path))
+    return hashlib.sha256(normalized_path.lower().encode("utf-8")).hexdigest()
+
+def _video_sha(record_id):
+    """The source key inside a video frame id (video:<sha>:<ms>); None when the id is not of that shape."""
+    parts = record_id.split(":")
+    return parts[1] if record_id.startswith("video:") and len(parts) >= 3 else None
+
+def _path_from_id(record_id, video_paths):
+    """(path, is_video) a record id tells without reading its metadata; path is None when it does not tell.
+
+    Record ids carry the file path. An image record's id is its path (_store_embedded and
+    _add_reused_embeddings use the file path as id; so did every record written before video support). A
+    video frame's id is video:<_video_source_key(path)>:<ms> (_index_video_file), so its path is known once a
+    frame of that video was read (video_paths maps source key -> path). An id that is not an absolute path
+    gives no hint; the caller then reads its metadata."""
+    if record_id.startswith("video:"):
+        sha = _video_sha(record_id)
+        return (video_paths.get(sha) if sha is not None else None), True
+    return (record_id, False) if os.path.isabs(record_id) else (None, False)
+
+def _learn_video_paths(read_ids, metas_by_id, video_paths):
+    """Remembers video path <- source key from the metadata just read. Only a path that really hashes to the
+    key in its id is kept, so a record that does not follow the id convention can't plant a wrong path."""
+    for record_id in read_ids:
+        sha = _video_sha(record_id)
+        meta = metas_by_id.get(record_id)
+        if sha is not None and meta and _is_video(meta) and meta.get("path") and _video_source_key(meta["path"]) == sha:
+            video_paths[sha] = meta["path"]
+
+def _walk_ranking(collection, ids, scores, cut, top_k, metas_by_id, file_exists, video_paths, record_filter=None):
+    """Walks the first `cut` ranked ids and returns (found, items); found is a flat list of
+    (record_id, metadata, score) in rank order. Records without a path, whose file is gone or that the
+    record_filter (search filters, see search_filters.RecordFilter) rejects are skipped.
+    An image is one item, a video is one item however many of its frames match (its first frame creates it,
+    later frames join it up to VIDEO_FRAMES_PER_RESULT); `items` counts toward top_k.
+
+    Metadata is read chunk by chunk and the walk stops at the end of the chunk in which top_k is reached.
+    The rest of that chunk is still walked, but only for the frames of videos already included.
+
+    A record id tells the file path (see _path_from_id), so per chunk:
+    (a) paths not known yet are looked up with as few reads as possible: one frame per unknown video, and
+        every id that does not carry a path;
+    (b) an id whose path is known is dropped without reading its metadata when the filter rejects it or its
+        file is gone (this also keeps searches cheap while a whole drive is unplugged);
+    (c) the metadata of the other ids is read in one go;
+    (d) the ids are walked in rank order; a new item must pass the filter and exist on disk. A dropped id has
+        no metadata and is skipped, like an id that Chroma no longer has."""
+    found = []
+    items = 0
+    frames_by_video = {}  # normcased video path -> frames kept
+    pos = 0
+    while pos < cut and items < top_k:
+        end = pos + min(cut - pos, max(METADATA_CHUNK, 2 * (top_k - items)))
+        chunk = [record_id for record_id in ids[pos:end] if record_id not in metas_by_id]
+
+        probe = []
+        probed_shas = set()
+        for record_id in chunk:
+            path, is_video = _path_from_id(record_id, video_paths)
+            if path is None:
+                sha = _video_sha(record_id) if is_video else None
+                if sha is None or sha not in probed_shas:
+                    probed_shas.add(sha)
+                    probe.append(record_id)
+        if probe:
+            _read_metadatas(collection, probe, metas_by_id)
+            _learn_video_paths(probe, metas_by_id, video_paths)
+
+        wanted = []
+        for record_id in chunk:
+            if record_id in metas_by_id:
+                continue
+            path, is_video = _path_from_id(record_id, video_paths)
+            if path is not None and not (
+                (record_filter is None or record_filter.allows_path(path, is_video)) and file_exists.isfile(path)
+            ):
+                continue
+            wanted.append(record_id)
+        _read_metadatas(collection, wanted, metas_by_id)
+        _learn_video_paths(wanted, metas_by_id, video_paths)
+
+        for i in range(pos, end):
+            meta = metas_by_id.get(ids[i])
+            path = meta.get("path") if meta else None
+            if not path:
+                continue
+            if _is_video(meta):
+                key = os.path.normcase(path)
+                kept = frames_by_video.get(key)
+                if kept is None:
+                    if (items >= top_k or (record_filter is not None and not record_filter.allows_path(path, True))
+                            or not file_exists.isfile(path)):
+                        continue
+                    items += 1
+                    kept = 0
+                elif kept >= VIDEO_FRAMES_PER_RESULT:
+                    continue
+                frames_by_video[key] = kept + 1
+            else:
+                if (items >= top_k or (record_filter is not None and not record_filter.allows_path(path, False))
+                        or not file_exists.isfile(path)):
+                    continue
+                items += 1
+            found.append((ids[i], meta, scores[i]))
+        pos = end
+    return found, items
+
+def _format_search_result(record_id, meta, score, score_kind, embedding=None):
+    filepath = meta.get("path")
+    file_hash = meta.get("hash")
+
+    # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
+    if not file_hash:
+        try:
+            file_hash = compute_file_hash(filepath)
+        except Exception:
+            pass
+
+    if hasattr(embedding, "tolist"):
+        embedding = embedding.tolist()
+    elif isinstance(embedding, (list, tuple)):
+        embedding = [float(x) for x in embedding]
+
+    return {
+        "id": record_id,
+        "path": filepath,
+        "hash": file_hash,
+        "media_type": meta.get("media_type", "image"),
+        "timestamp_seconds": meta.get("timestamp_seconds"),
+        "scene_id": meta.get("scene_id"),
+        "sampling_reason": meta.get("sampling_reason"),
+        "score": float(score),
+        "score_kind": score_kind,
+        "embedding": embedding
+    }
+
 def _walk_file_entries(top):
     """os.walk(top) order (top-down, a directory's files before its subdirectories, symlinked directories not
     followed, unreadable directories skipped), yielding (directory, [os.DirEntry of its files]).
-    The entries carry the stat that the directory listing already holds (free on Windows)."""
+    The entries carry the stat that the directory listing already holds (free on Windows).
+    macOS metadata is left out: "__MACOSX" folders and "._<name>" AppleDouble files (see media_image)."""
     try:
         with os.scandir(top) as scan:
             entries = list(scan)
@@ -72,7 +261,11 @@ def _walk_file_entries(top):
             is_dir = entry.is_dir()
         except OSError:
             is_dir = False
-        (subdirectories if is_dir else file_entries).append(entry)
+        if is_dir:
+            if not is_macos_junk_dir(entry.name):
+                subdirectories.append(entry)
+        elif not is_macos_junk_file(entry.name):
+            file_entries.append(entry)
     yield top, file_entries
     for entry in subdirectories:
         if not entry.is_symlink():
@@ -197,12 +390,19 @@ class Indexer:
         self.model_manager = model_manager
         self.client = chromadb.PersistentClient(path=self.db_path)
         self.collection = None
+        self.search_sessions = SearchSessions()
         self.data_dir = pathlib.Path(data_dir if data_dir is not None else paths.DATA_DIR)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = pathlib.Path(cache_dir if cache_dir is not None else paths.CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.video_cache_dir = self.cache_dir / "videos"
         self.folders = FolderRegistry(self.data_dir, self.cache_dir)
+        self.media_registry = MediaRegistry(self.data_dir / "media_registry.sqlite3")
+        self.last_media_sync = None
+        # (registry key, size, mtime_ns) -> display rotation probed from the file, one probe per file version
+        self._probed_video_rotations = {}
+        # video source key -> path, learned from metadata reads (a pure function of the path, so never stale)
+        self._video_paths_by_sha = {}
         
         # Connect to the collection matching the loaded VLM
         if self.model_manager.current_model_id:
@@ -288,11 +488,11 @@ class Indexer:
 
     def discover_media_files(self, folder_paths: list[str]):
         """Discover supported images and videos without decoding media files.
-        Returns (image paths, video paths, {image path: (st_mtime_ns, st_size)}); an image whose stat failed
-        is listed but has no stat entry."""
+        Returns (image paths, video paths, {path: (st_mtime_ns, st_size)}) with the stat of every image and
+        video; a file whose stat failed is listed but has no stat entry."""
         image_files = []
         video_files = []
-        image_stats = {}
+        file_stats = {}
 
         for directory in folder_paths:
             if self.cancel_requested:
@@ -309,15 +509,93 @@ class Indexer:
                     extension = os.path.splitext(entry.name)[1].lower()
                     if extension in IMAGE_EXTENSIONS:
                         image_files.append(file_path)
-                        try:
-                            stat = entry.stat()
-                            image_stats[file_path] = (stat.st_mtime_ns, stat.st_size)
-                        except OSError:
-                            pass
                     elif extension in VIDEO_EXTENSIONS:
                         video_files.append(file_path)
+                    else:
+                        continue
+                    try:
+                        stat = entry.stat()
+                        file_stats[file_path] = (stat.st_mtime_ns, stat.st_size)
+                    except OSError:
+                        pass
 
-        return image_files, video_files, image_stats
+        return image_files, video_files, file_stats
+
+    def _sync_stop_check(self, task_context):
+        """should_stop callback for the media sync: true once the run is cancelled (blocks while paused)."""
+        return self.cancel_requested or (task_context is not None and not task_context.check_paused_or_cancelled())
+
+    def _run_media_sync(self, roots, image_paths, video_paths, stats, task_context=None, on_progress=None):
+        files = [(path, "image", stats.get(path)) for path in image_paths]
+        files += [(path, "video", stats.get(path)) for path in video_paths]
+        result = media_sync.sync_media_files(
+            self.media_registry, files, roots,
+            should_stop=lambda: self._sync_stop_check(task_context), on_progress=on_progress
+        )
+        self.last_media_sync = result
+        print(
+            f"[MediaRegistry] probed {result.probed}, unchanged {result.unchanged}, "
+            f"pruned {result.pruned}, errors {result.errors}, skipped {result.skipped} in {result.seconds:.2f} s"
+        )
+        return result
+
+    def _sync_media_registry(self, roots, image_paths, video_paths, stats, task_context=None):
+        """Bring the media registry up to date after an index run. A registry problem is only logged: it
+        must never fail the run."""
+        try:
+            self.current_file = "Reading media details..."
+            if task_context:
+                task_context.update_progress(
+                    task_context.processed_count, task_context.total_count, "Reading media details..."
+                )
+            self._run_media_sync(roots, image_paths, video_paths, stats, task_context)
+        except Exception as e:
+            print(f"[Warning] Indexer: could not update the media registry: {e}")
+
+    def _media_scan_roots(self):
+        """The folders of every collection that still exists, as absolute paths without duplicates or
+        folders nested in another one; folders that are not directories right now are skipped."""
+        existing = {getattr(c, "name", c) for c in self.client.list_collections()}
+        folders = [
+            folder for name, selected in list(self.folders.selected_folders_by_collection.items())
+            if name in existing for folder in list(selected)
+        ]
+        unique = {}
+        for folder in folders:
+            path = os.path.abspath(os.path.normpath(folder))
+            unique.setdefault(os.path.normcase(path), path)
+        missing = [path for path in unique.values() if not os.path.isdir(path)]
+        if missing:
+            print(f"[Notice] Indexer: skipping media details of folders that are not available: {', '.join(missing)}")
+        roots = []
+        for path in sorted((p for p in unique.values() if p not in missing), key=len):
+            if not security.is_within(path, roots):
+                roots.append(path)
+        return roots
+
+    def scan_media_info(self, task_context=None):
+        """Read the media details of every indexed folder into the media registry. It never touches Chroma
+        or the AI model, so it runs without a model loaded."""
+        if not self.media_registry.available:
+            if task_context:
+                task_context.add_error(
+                    "Media details are unavailable: the media registry file could not be opened (see the log)"
+                )
+            return
+        roots = self._media_scan_roots()
+        if task_context:
+            task_context.update_progress(0, 0, "Finding media files...")
+        images, videos, file_stats = self.discover_media_files(roots)
+        if self.cancel_requested:
+            return
+
+        def on_progress(done, total):
+            if task_context:
+                task_context.update_progress(done, total, f"Reading media details ({done}/{total})")
+
+        result = self._run_media_sync(roots, images, videos, file_stats, task_context, on_progress)
+        if task_context and not result.stopped and result.probed == 0:
+            task_context.update_progress(0, 0, "Media details are up to date")
 
     def get_folder_contents(self, folder_path: str, limit: int = 50000):
         """List supported media in a folder with indexing status and ghost record detection."""
@@ -385,11 +663,32 @@ class Indexer:
                     self._record_failed_frame(metadata["path"], metadata["timestamp_seconds"], record_id, frame_error)
         return stored_count
 
-    def _index_video_file(self, filepath, source_signature, batch_size, task_context=None):
+    def video_rotation(self, path, stat=None) -> int:
+        """Display rotation (PyAV degrees) of a video. The video signature and the thumbnail cache key need it
+        without decoding the video, so an unchanged video is never opened when the media registry knows it:
+        the registry row counts when it is a video row of the file's current size and mtime. Otherwise the
+        file is probed, once per file version and process; a failed probe counts as no rotation."""
+        if stat is None:
+            stat = os.stat(path)
+        key = MediaRegistry.key_for(path)
+        fact = self.media_registry.snapshot().facts.get(key)
+        if (fact is not None and fact.media_type == "video" and fact.rotation is not None
+                and fact.size == stat.st_size and fact.mtime_ns == stat.st_mtime_ns):
+            return fact.rotation
+        version = (key, stat.st_size, stat.st_mtime_ns)
+        if version not in self._probed_video_rotations:
+            try:
+                rotation = int(probe_video_info(path)["rotation"] or 0)
+            except Exception:
+                rotation = 0
+            self._probed_video_rotations[version] = rotation
+        return self._probed_video_rotations[version]
+
+    def _index_video_file(self, filepath, source_signature, batch_size, task_context=None, rotation=0):
         """Extract and index adaptive scene-aware frames from one video. A producer thread decodes, thumbnails
         and preprocesses the frames while this thread embeds the batch before."""
         normalized_path = os.path.abspath(os.path.normpath(filepath))
-        source_key = hashlib.sha256(normalized_path.lower().encode("utf-8")).hexdigest()
+        source_key = _video_source_key(normalized_path)
         stat = os.stat(normalized_path)
         pending_prepared = []
         pending_metadatas = []
@@ -426,7 +725,9 @@ class Indexer:
                         if should_cancel_fn():
                             break
                         # Save 480x480 thumbnail at indexing time for instant 0ms search lookup
-                        save_video_frame_thumbnail(normalized_path, timestamp, image, self.video_cache_dir, stat)
+                        save_video_frame_thumbnail(
+                            normalized_path, timestamp, image, self.video_cache_dir, stat, rotation=rotation
+                        )
                         try:
                             item = ("frame", timestamp, self.model_manager.prepare_image(image), sampling_metadata)
                         except Exception as e:
@@ -518,7 +819,9 @@ class Indexer:
             if task_context:
                 task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(normalized_path))
             try:
-                source_signature = get_video_signature(normalized_path)
+                stat = os.stat(normalized_path)
+                rotation = self.video_rotation(normalized_path, stat)
+                source_signature = get_video_signature(normalized_path, rotation, stat)
                 previous_entries = existing_video_entries.get(normalized_path, [])
                 if previous_entries and all(
                     entry.get("source_signature") == source_signature
@@ -532,7 +835,7 @@ class Indexer:
                     self.collection.delete(ids=old_ids)
 
                 frame_count = self._index_video_file(
-                    normalized_path, source_signature, batch_size, task_context=task_context
+                    normalized_path, source_signature, batch_size, task_context=task_context, rotation=rotation
                 )
                 self.indexed_video_frames += frame_count
             except Exception as e:
@@ -638,6 +941,10 @@ class Indexer:
                     break
                 if not os.path.isfile(filepath):
                     continue
+                try:
+                    rotation = self.video_rotation(filepath)
+                except OSError:
+                    continue  # vanished since the check above
                 timestamps = [float(e["timestamp_seconds"]) for e in entries if "timestamp_seconds" in e]
                 if timestamps:
                     def on_frame_done(_ts):
@@ -649,7 +956,9 @@ class Indexer:
                                 os.path.basename(filepath)
                             )
 
-                    extract_video_frames_batch(filepath, timestamps, self.video_cache_dir, on_frame_saved=on_frame_done)
+                    extract_video_frames_batch(
+                        filepath, timestamps, self.video_cache_dir, on_frame_saved=on_frame_done, rotation=rotation
+                    )
 
             return {
                 "status": "success",
@@ -1014,7 +1323,7 @@ class Indexer:
         try:
             if task_context:
                 task_context.update_progress(0, 0, "Discovering media files...")
-            files_to_index, discovered_videos, image_stats = self.discover_media_files(folder_paths)
+            files_to_index, discovered_videos, file_stats = self.discover_media_files(folder_paths)
             self.discovered_video_count = len(discovered_videos)
             self.total_files = len(files_to_index) + len(discovered_videos)
             if task_context:
@@ -1037,10 +1346,14 @@ class Indexer:
             if task_context:
                 task_context.update_progress(self.indexed_files, self.total_files, "Indexing items...")
 
-            self._index_image_files(pending_files, task_context=task_context, label="Indexing", stats=image_stats)
+            self._index_image_files(pending_files, task_context=task_context, label="Indexing", stats=file_stats)
 
             if not self.cancel_requested and not (task_context and task_context.cancel_requested):
                 self._index_video_files(discovered_videos, existing_video_entries, task_context=task_context)
+
+            if not self.cancel_requested and not (task_context and task_context.cancel_requested):
+                roots = [folder for folder in folder_paths if os.path.isdir(folder)]
+                self._sync_media_registry(roots, files_to_index, discovered_videos, file_stats, task_context)
         finally:
             self.is_indexing = False
             self.current_file = ""
@@ -1081,10 +1394,10 @@ class Indexer:
                 task_context.update_progress(0, 0, f"Scanning {os.path.basename(norm_target)}...")
 
             # 1. Get current files on disk
-            discovered_images, discovered_videos, image_stats = self.discover_media_files([directory])
+            discovered_images, discovered_videos, file_stats = self.discover_media_files([directory])
             disk_files = [os.path.normpath(path) for path in discovered_images]
             disk_video_files = [os.path.normpath(path) for path in discovered_videos]
-            disk_stats = {os.path.normpath(path): stat for path, stat in image_stats.items()}
+            disk_stats = {os.path.normpath(path): stat for path, stat in file_stats.items()}
             self.discovered_video_count = len(discovered_videos)
             
             # 2. Get current files in index for this directory
@@ -1144,6 +1457,9 @@ class Indexer:
 
             if not self.cancel_requested and not (task_context and task_context.cancel_requested):
                 self._index_video_files(disk_video_files, existing_video_entries, task_context=task_context)
+
+            if not self.cancel_requested and not (task_context and task_context.cancel_requested):
+                self._sync_media_registry([directory], discovered_images, discovered_videos, file_stats, task_context)
                 
         finally:
             self.is_indexing = False
@@ -1199,105 +1515,185 @@ class Indexer:
                 break
             self.reindex_directory(path, task_context=task_context)
 
-    def search(self, query: str, top_k: int = 50, min_score: float = 0.2):
+    def run_text_search(self, query: str, top_k: int = 50, min_score: float = DEFAULT_TEXT_MIN_SCORE, filters=None):
+        """Results plus a query ref, with which the same query can be re-run or a video expanded. `filters`
+        (search_filters.SearchFilters) narrow the results before the top_k cut."""
+        collection = self._search_collection()
+        if collection.count() == 0:
+            return {"results": [], "query_ref": None}
+
+        q = self.model_manager.embed_text_query(query)
+        self._check_query_collection(collection, q.model_id)
+        scorer = make_scorer("text", q.score_params, min_score)
+        record_filter = compile_filters(filters, self.media_registry.snapshot)
+        results = self._do_search(collection, q.embedding, top_k, scorer, record_filter=record_filter)
+        return {"results": results, "query_ref": self._store_session(collection, "text", q.embedding, q.score_params, query)}
+
+    def run_image_search(self, image: Image.Image, top_k: int = 50, min_score: float = DEFAULT_IMAGE_MIN_SIMILARITY,
+                         filters=None):
+        collection = self._search_collection()
+        if collection.count() == 0:
+            return {"results": [], "query_ref": None}
+
+        q = self.model_manager.embed_image_query(image)
+        self._check_query_collection(collection, q.model_id)
+        scorer = make_scorer("image", None, min_score)
+        record_filter = compile_filters(filters, self.media_registry.snapshot)
+        results = self._do_search(collection, q.embedding, top_k, scorer, record_filter=record_filter)
+        return {"results": results, "query_ref": self._store_session(collection, "image", q.embedding, None, None)}
+
+    def search(self, query: str, top_k: int = 50, min_score: float = DEFAULT_TEXT_MIN_SCORE):
+        return self.run_text_search(query, top_k, min_score)["results"]
+
+    def search_by_image(self, image: Image.Image, top_k: int = 50, min_score: float = DEFAULT_IMAGE_MIN_SIMILARITY):
+        return self.run_image_search(image, top_k, min_score)["results"]
+
+    def _store_session(self, collection, kind, embedding, score_params, query):
+        return self.search_sessions.put(SearchSession(
+            collection_name=collection.name, kind=kind, embedding=[float(x) for x in embedding],
+            score_params=score_params, query=query
+        ))
+
+    def _session_for(self, collection, query_ref):
+        """The session of a query ref; None when the ref is unknown. A session of another collection
+        (the active model changed) raises, as its embedding cannot be compared to this collection."""
+        session = self.search_sessions.get(query_ref)
+        if session is not None and session.collection_name != collection.name:
+            raise SearchSessionExpired(MODEL_CHANGED_MESSAGE)
+        return session
+
+    def rerun_search(self, query_ref: str, top_k: int, min_score: float, filters=None):
+        """The search of a query ref again with another top_k / min_score / filters, without embedding the
+        query again."""
+        collection = self._search_collection()
+        session = self._session_for(collection, query_ref)
+        if session is None:
+            raise SearchSessionExpired(EXPIRED_MESSAGE)
+        scorer = make_scorer(session.kind, session.score_params, min_score)
+        record_filter = compile_filters(filters, self.media_registry.snapshot)
+        results = self._do_search(collection, session.embedding, top_k, scorer, record_filter=record_filter)
+        return {"results": results, "query_ref": query_ref}
+
+    def expand_video(self, path: str, min_score=None, query_ref=None, query=None):
+        """Every frame of one video that matches a search, best first. The query comes from the ref; when the
+        ref is unknown a text `query` is embedded instead (and gets a new ref)."""
+        collection = self._search_collection()
+        session = self._session_for(collection, query_ref)
+        if session is not None:
+            ref = query_ref
+        elif query is not None and query.strip():
+            q = self.model_manager.embed_text_query(query)
+            self._check_query_collection(collection, q.model_id)
+            session = SearchSession(collection.name, "text", [float(x) for x in q.embedding], q.score_params, query)
+            ref = self.search_sessions.put(session)
+        else:
+            raise SearchSessionExpired(EXPIRED_MESSAGE)
+
+        if min_score is None:
+            min_score = DEFAULT_TEXT_MIN_SCORE if session.kind == "text" else DEFAULT_IMAGE_MIN_SIMILARITY
+        scorer = make_scorer(session.kind, session.score_params, min_score)
+
+        fetched = collection.get(where={"path": path}, include=["metadatas", "embeddings"])
+        embeddings = fetched.get("embeddings")
+        rows = []
+        if embeddings is not None:
+            rows = [(record_id, meta, emb) for record_id, meta, emb
+                    in zip(fetched.get("ids") or [], fetched.get("metadatas") or [], embeddings)
+                    if meta and _is_video(meta)]
+        result = {"path": path, "frames": [], "total_frames": len(rows), "query_ref": ref}
+        # Only a path the index knows is looked up on disk
+        if not rows or not os.path.isfile(path):
+            result["total_frames"] = 0
+            return result
+
+        frame_embeddings = np.asarray([emb for _, _, emb in rows], dtype=np.float64)
+        query_embedding = np.asarray(session.embedding, dtype=np.float64)
+        norms = np.linalg.norm(frame_embeddings, axis=1) * np.linalg.norm(query_embedding)
+        dots = frame_embeddings @ query_embedding
+        cosines = np.divide(dots, norms, out=np.zeros_like(dots), where=norms > 0)
+        scored = []
+        for (record_id, meta, _), cos in zip(rows, cosines):
+            score = scorer.score(float(cos))
+            if score >= scorer.min_score:
+                scored.append((record_id, meta, score))
+        scored.sort(key=lambda item: (-item[2], item[1].get("timestamp_seconds") or 0.0))
+        result["frames"] = [_format_search_result(record_id, meta, score, scorer.kind) for record_id, meta, score in scored]
+        return result
+
+    def search_filter_options(self):
+        """What the search filter panel offers for the active collection (see search_filters.filter_options)."""
+        registry_available = self.media_registry.available
+        if not self._ensure_collection():
+            return empty_filter_options(registry_available)
+        scan = self.collection.get(include=["metadatas"])  # the call CachedCollection caches
+        snapshot = self.media_registry.snapshot()
+        roots = list(self.folders.selected_folders_by_collection.get(self.collection.name, ()))
+        return filter_options(scan, snapshot, roots, registry_available)
+
+    def _search_collection(self):
         if not self.collection:
             self.switch_collection(self.model_manager.get_collection_name())
-            
-        if self.collection.count() == 0:
-            return []
+        return self.collection
 
-        query_embedding = self.model_manager.get_text_embedding(query)
-        return self._do_search(query_embedding, top_k, min_score)
+    @staticmethod
+    def _check_query_collection(collection, query_model_id):
+        """The collection of a search is captured once; it must belong to the model that embedded the query."""
+        if query_model_id is not None:
+            expected = query_model_id.replace("/", "_").replace("-", "_")
+            if collection.name != expected:
+                raise RuntimeError("The active model changed during the search. Please search again.")
 
-    def search_by_image(self, image: Image.Image, top_k: int = 50, min_score: float = 0.2):
-        if not self.collection:
-            self.switch_collection(self.model_manager.get_collection_name())
-            
-        if self.collection.count() == 0:
-            return []
-
-        query_embedding = self.model_manager.get_image_embedding(image)
-        return self._do_search(query_embedding, top_k, min_score)
-
-    def _do_search(self, query_embedding, top_k, min_score):
+    def _do_search(self, collection, query_embedding, top_k, scorer, record_filter=None):
         if top_k < 1:
             return []
-        total = self.collection.count()
+        total = collection.count()
         if total == 0:
             return []
 
-        # Query without embeddings and walk the ranking: records whose file is gone are skipped so they
-        # cannot crowd out existing results, and the walk stops at the first score under min_score
-        # (scores are sorted descending). If missing files left fewer than top_k results from a full
-        # batch, query again with a larger n (the HNSW order can shift slightly, so start from scratch).
-        n = min(top_k, total)
+        # Query for distances only and read metadata lazily (see _walk_ranking): fetching it for every
+        # candidate would dominate the search time, and most records of a library on an unplugged drive are
+        # skipped anyway. Scores fall with the rank, so ids from the first one under min_score on are never
+        # looked at. If missing files left fewer than top_k items from a full batch, query again with a
+        # larger n (the HNSW order can shift slightly, so start from scratch; known metadata is kept).
+        candidates = SEARCH_CANDIDATES if record_filter is None else FILTERED_SEARCH_CANDIDATES
+        n = min(max(top_k, candidates), total)
         file_exists = _FileExistenceCache()  # shared by the re-query passes
+        metas_by_id = {}
         while True:
-            results = self.collection.query(
+            results = collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n,
-                include=["metadatas", "distances"]
+                include=["distances"]
             )
             raw_ids = results["ids"][0] if results.get("ids") else []
-            raw_metas = results["metadatas"][0] if results.get("metadatas") else []
             raw_dists = results["distances"][0] if results.get("distances") else []
+            ids = list(raw_ids)[:len(raw_dists)]
+            scores = [scorer.score(1.0 - dist) for dist in raw_dists[:len(ids)]]
+            cut = next((i for i, score in enumerate(scores) if score < scorer.min_score), len(scores))
 
-            found = []
-            cut_off = False
-            for record_id, meta, dist in zip(raw_ids, raw_metas, raw_dists):
-                score = 1.0 - (dist / 2.0)
-                if score < min_score:
-                    cut_off = True
-                    break
-                filepath = meta.get("path") if meta else None
-                if not filepath or not file_exists.isfile(filepath):
-                    continue
-                found.append((record_id, meta, score))
-                if len(found) >= top_k:
-                    break
+            found, items = _walk_ranking(collection, ids, scores, cut, top_k, metas_by_id, file_exists,
+                                         self._video_paths_by_sha, record_filter)
 
-            if len(found) >= top_k or cut_off or len(raw_ids) < n or n >= total:
+            if items >= top_k or cut < len(ids) or len(ids) < n or n >= total:
                 break
-            n = min(n * 2, total)
+            n = min(total, max(2 * n, math.ceil(1.25 * n * top_k / max(items, 1))), 8 * n)
 
-        # Embeddings are only needed for the results the frontend runs duplicate detection on
+        # Embeddings are only needed for the images the frontend runs duplicate detection on
         embeddings_by_id = {}
-        head_ids = [record_id for record_id, _, _ in found[:DUPLICATE_CHECK_LIMIT]]
+        head_ids = []
+        for record_id, meta, _ in found:
+            if not _is_video(meta):
+                head_ids.append(record_id)
+                if len(head_ids) >= DUPLICATE_CHECK_LIMIT:
+                    break
         if head_ids:
-            fetched = self.collection.get(ids=head_ids, include=["embeddings"])
+            fetched = collection.get(ids=head_ids, include=["embeddings"])
             fetched_embeddings = fetched.get("embeddings")
             if fetched_embeddings is not None:
                 for record_id, emb in zip(fetched["ids"], fetched_embeddings):
                     embeddings_by_id[record_id] = emb
 
-        formatted_results = []
-        for record_id, meta, score in found:
-            filepath = meta.get("path")
-            file_hash = meta.get("hash")
-
-            # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
-            if not file_hash:
-                try:
-                    file_hash = compute_file_hash(filepath)
-                except Exception:
-                    pass
-
-            emb = embeddings_by_id.get(record_id)
-            if hasattr(emb, "tolist"):
-                emb = emb.tolist()
-            elif isinstance(emb, (list, tuple)):
-                emb = [float(x) for x in emb]
-
-            formatted_results.append({
-                "id": record_id,
-                "path": filepath,
-                "hash": file_hash,
-                "media_type": meta.get("media_type", "image"),
-                "timestamp_seconds": meta.get("timestamp_seconds"),
-                "scene_id": meta.get("scene_id"),
-                "sampling_reason": meta.get("sampling_reason"),
-                "score": float(score),
-                "embedding": emb
-            })
-
-        return formatted_results
+        return [
+            _format_search_result(record_id, meta, score, scorer.kind, embeddings_by_id.get(record_id))
+            for record_id, meta, score in found
+        ]

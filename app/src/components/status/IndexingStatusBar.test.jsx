@@ -102,6 +102,66 @@ describe('IndexingStatusBar', () => {
     });
   });
 
+  describe('non-model tasks with no model loaded', () => {
+    const scanTask = { id: 3, type: 'SCAN_MEDIA_INFO', title: 'Read media details', progress: 0, processed_count: 0, total_count: 5 };
+    const indexTask = { id: 4, type: 'INDEX_FOLDERS', title: 'Index folders', progress: 0, processed_count: 0, total_count: 5 };
+    const idleStatus = { is_indexing: false, percent: 0, progress: '0/0' };
+
+    it('does not flag a pending scan and resumes the paused worker', () => {
+      const queue = makeQueue({ activeModel: null, pendingCount: 1, pendingTasks: [scanTask], workerState: 'paused' });
+      const { props } = renderBar({ status: idleStatus, queue });
+
+      expect(screen.queryByText('NO MODEL LOADED')).toBeNull();
+      expect(screen.getByText('PAUSED')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /Resume/ }));
+
+      expect(props.setToast).not.toHaveBeenCalled();
+      expect(props.setShowSettings).not.toHaveBeenCalled();
+      expect(queue.controlWorker).toHaveBeenCalledWith('start');
+    });
+
+    it('does not flag a paused active scan and resumes it', () => {
+      const queue = makeQueue({
+        activeModel: null,
+        activeTask: { ...runningTask, type: 'SCAN_MEDIA_INFO', status: 'paused', is_paused: true },
+        workerState: 'paused',
+      });
+      const { props } = renderBar({ queue });
+
+      expect(screen.queryByText('NO MODEL LOADED')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Resume/ }));
+      expect(props.setToast).not.toHaveBeenCalled();
+      expect(queue.resumeTask).toHaveBeenCalledWith(7);
+      expect(queue.controlWorker).toHaveBeenCalledWith('start');
+    });
+
+    it('does not flag a running scan', () => {
+      renderBar({ queue: makeQueue({ activeModel: null, activeTask: { ...runningTask, type: 'SCAN_MEDIA_INFO' } }) });
+      expect(screen.queryByText('NO MODEL LOADED')).toBeNull();
+    });
+
+    it('still flags a pending index task with no model loaded', () => {
+      const queue = makeQueue({ activeModel: null, pendingCount: 1, pendingTasks: [indexTask], workerState: 'paused' });
+      const { props } = renderBar({ status: idleStatus, queue });
+
+      expect(screen.getByText('NO MODEL LOADED')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /Resume/ }));
+      expect(props.setShowSettings).toHaveBeenCalledWith(true);
+      expect(queue.controlWorker).not.toHaveBeenCalled();
+    });
+
+    it('still flags an index task queued behind a scan', () => {
+      const queue = makeQueue({ activeModel: null, pendingCount: 2, pendingTasks: [scanTask, indexTask], workerState: 'paused' });
+      renderBar({ status: idleStatus, queue });
+      expect(screen.getByText('NO MODEL LOADED')).toBeTruthy();
+    });
+
+    it('still flags a running index task with no model loaded', () => {
+      renderBar({ queue: makeQueue({ activeModel: null, activeTask: { ...runningTask, type: 'INDEX_FOLDERS' } }) });
+      expect(screen.getByText('NO MODEL LOADED')).toBeTruthy();
+    });
+  });
+
   describe('Resume', () => {
     it('adopts the active model on a model mismatch', () => {
       const queue = makeQueue({

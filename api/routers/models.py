@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import app_state
 import settings_store
 from model_manager import AVAILABLE_MODELS
-from task_queue import TaskStatus
+from task_queue import MODEL_DEPENDENT_TASK_TYPES, TaskStatus
 
 router = APIRouter()
 
@@ -97,16 +97,15 @@ async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTa
             # 2. Check active model and queued tasks models
             is_model_active = app_state.model_manager.model is not None and app_state.model_manager.current_model_id is not None
 
-            queued_model_ids = set()
-            if app_state.task_queue.active_task and app_state.task_queue.active_task.model_id:
-                queued_model_ids.add(app_state.task_queue.active_task.model_id)
-            for t in app_state.task_queue.pending_queue:
-                if t.model_id:
-                    queued_model_ids.add(t.model_id)
+            # Only tasks that need a model count: a queued media-details scan must not block activation
+            model_tasks = [
+                t for t in [app_state.task_queue.active_task, *app_state.task_queue.pending_queue]
+                if t and t.type in MODEL_DEPENDENT_TASK_TYPES
+            ]
+            queued_model_ids = {t.model_id for t in model_tasks if t.model_id}
 
             has_tasks = bool(
-                app_state.task_queue.active_task or
-                app_state.task_queue.pending_queue or
+                model_tasks or
                 app_state.indexer.is_indexing or
                 app_state.indexer.is_rebuilding_video_thumbnails
             )

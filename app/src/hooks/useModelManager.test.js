@@ -26,7 +26,10 @@ const setupFetch = (overrides = {}) => {
   return fetchMock;
 };
 
-const makeQueue = (extra = {}) => ({ activeTask: null, pendingCount: 0, fetchQueue: vi.fn(), ...extra });
+const makeQueue = (extra = {}) => ({ activeTask: null, pendingCount: 0, pendingTasks: [], fetchQueue: vi.fn(), ...extra });
+
+const indexTask = (id) => ({ id, type: 'INDEX_FOLDERS' });
+const scanTask = (id) => ({ id, type: 'SCAN_MEDIA_INFO' });
 
 const render = (props = {}) => {
   const setToast = vi.fn();
@@ -106,12 +109,45 @@ describe('useModelManager', () => {
 
     it('warns (queued_tasks) when tasks are pending', async () => {
       const fetchMock = setupFetch();
-      const { result } = render({ queue: makeQueue({ pendingCount: 2 }) });
+      const { result } = render({ queue: makeQueue({ pendingCount: 2, pendingTasks: [indexTask(1), indexTask(2)] }) });
       await flush();
       const calls = fetchMock.mock.calls.length;
 
       await act(async () => { await result.current.handleModelSwitch('org/model-b'); });
       expect(result.current.modelSwitchWarning).toEqual({ isOpen: true, mode: 'queued_tasks', targetModel: 'org/model-b' });
+      expect(fetchMock.mock.calls.length).toBe(calls);
+    });
+
+    it('warns (queued_tasks) when an index task is queued behind a scan', async () => {
+      setupFetch();
+      const { result } = render({ queue: makeQueue({ pendingCount: 2, pendingTasks: [scanTask(1), indexTask(2)] }) });
+      await flush();
+
+      await act(async () => { await result.current.handleModelSwitch('org/model-b'); });
+      expect(result.current.modelSwitchWarning).toEqual({ isOpen: true, mode: 'queued_tasks', targetModel: 'org/model-b' });
+    });
+
+    it('switches directly (no warning) when only a media-info scan is pending', async () => {
+      const fetchMock = setupFetch({
+        [`POST ${API}/models/switch`]: async () => ({ ok: true, json: async () => ({}) }),
+      });
+      const { result } = render({ queue: makeQueue({ pendingCount: 1, pendingTasks: [scanTask(1)] }) });
+      await flush();
+
+      await act(async () => { await result.current.handleModelSwitch('org/model-b'); });
+      expect(result.current.modelSwitchWarning.isOpen).toBe(false);
+      const post = fetchMock.mock.calls.find(([url, init]) => url === `${API}/models/switch` && init?.method === 'POST');
+      expect(JSON.parse(post[1].body)).toEqual({ model_name: 'org/model-b', clear_queue: false });
+    });
+
+    it('still warns (active_task) for a running media-info scan', async () => {
+      const fetchMock = setupFetch();
+      const { result } = render({ queue: makeQueue({ activeTask: { ...scanTask(1), status: 'running' } }) });
+      await flush();
+      const calls = fetchMock.mock.calls.length;
+
+      await act(async () => { await result.current.handleModelSwitch('org/model-b'); });
+      expect(result.current.modelSwitchWarning).toEqual({ isOpen: true, mode: 'active_task', targetModel: 'org/model-b' });
       expect(fetchMock.mock.calls.length).toBe(calls);
     });
 
@@ -149,7 +185,7 @@ describe('useModelManager', () => {
       const fetchMock = setupFetch({
         [`POST ${API}/models/switch`]: async () => ({ ok: true, json: async () => ({}) }),
       });
-      const { result } = render({ queue: makeQueue({ pendingCount: 1 }) });
+      const { result } = render({ queue: makeQueue({ pendingCount: 1, pendingTasks: [indexTask(1)] }) });
       await flush();
 
       await act(async () => { await result.current.handleModelSwitch('org/model-b'); });

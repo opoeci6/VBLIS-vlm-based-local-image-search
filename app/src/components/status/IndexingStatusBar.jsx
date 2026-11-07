@@ -1,11 +1,12 @@
 import { Loader2, AlertTriangle, XCircle, Play, Pause } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { hasModelDependentTask } from '../../utils/taskTypes';
 
 export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, isCancellingIndexing, handleCancelIndexing }) => {
   if (!(status.is_indexing || queue.activeTask || (queue.pendingCount > 0 && queue.workerState === 'paused'))) return null;
   const isQueuePaused = status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused';
   const displayTask = queue.activeTask || queue.pendingTasks[0];
-  const isMissingModel = (queue.modelMismatch?.reason === 'no_model_loaded') || (!queue.activeModel && (queue.pendingCount > 0 || Boolean(queue.activeTask)));
+  const isMissingModel = (queue.modelMismatch?.reason === 'no_model_loaded') || (!queue.activeModel && hasModelDependentTask(queue.activeTask, queue.pendingTasks));
   const isModelMismatch = queue.modelMismatch?.reason === 'model_difference';
   const progressPct = queue.activeTask ? queue.activeTask.progress : (displayTask ? displayTask.progress : Math.round(status.percent));
   const processedCount = queue.activeTask ? queue.activeTask.processed_count : (displayTask ? displayTask.processed_count : 0);

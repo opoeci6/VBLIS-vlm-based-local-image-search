@@ -1,12 +1,15 @@
 import os
 import hashlib
 import pathlib
+import re
 import threading
+from datetime import timedelta, timezone
 from PIL import Image
 import cv2
 import av
 from av.codec.hwaccel import hwdevices_available, HWAccel
 import paths
+from media_image import _check_gps, _format_offset, _format_taken, _parse_datetime, _text
 from functools import partial
 from thumbnail_cache import (
     get_or_create_thumbnail, is_thumbnail_cached, save_jpeg_thumbnail
@@ -30,9 +33,53 @@ VIDEO_DUPLICATE_HISTOGRAM_THRESHOLD = 0.12
 CACHE_DIR = paths.CACHE_DIR
 VIDEO_CACHE_DIR = paths.VIDEO_CACHE_DIR
 
-def get_video_signature(filepath):
-    """Return a cheap signature that changes with the video or sampling strategy."""
-    stat = os.stat(filepath)
+def rotation_quarter_turns(rotation) -> int:
+    """Counterclockwise quarter turns (0-3) that make a frame upright, from a PyAV or probe display rotation
+    in degrees (counterclockwise, FFmpeg display-matrix convention; 270 shows as -90). Anything that is not
+    a number counts as no rotation."""
+    try:
+        return int(round(float(rotation or 0) / 90)) % 4
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+_UPRIGHT_ROTATE_CODES = {
+    1: cv2.ROTATE_90_COUNTERCLOCKWISE,
+    2: cv2.ROTATE_180,
+    3: cv2.ROTATE_90_CLOCKWISE,
+}
+
+def _rotate_upright(bgr_arr, rotation):
+    """Turn a BGR array upright for a display rotation in degrees; returns it unchanged for no rotation."""
+    turns = rotation_quarter_turns(rotation)
+    if turns == 0:
+        return bgr_arr
+    return cv2.rotate(bgr_arr, _UPRIGHT_ROTATE_CODES[turns])
+
+def _frame_to_bgr(frame):
+    """A decoded PyAV frame as an upright BGR array. PyAV reports the container's display rotation on the
+    frame but to_ndarray does not apply it."""
+    return _rotate_upright(frame.to_ndarray(format="bgr24"), getattr(frame, "rotation", 0))
+
+def _open_capture(filepath):
+    """cv2.VideoCapture with OpenCV's own display-rotation handling on. OpenCV applies the rotation itself,
+    also after seeks, so frames read from it must not be rotated again."""
+    capture = cv2.VideoCapture(filepath)
+    try:
+        capture.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+    except Exception:
+        pass  # a build without the property rotates (or not) on its own terms
+    return capture
+
+def _rotation_tag(rotation) -> str:
+    turns = rotation_quarter_turns(rotation)
+    return f":rot{turns * 90}" if turns else ""
+
+def get_video_signature(filepath, rotation=0, stat=None):
+    """Return a cheap signature that changes with the video or sampling strategy. A rotated video (phone
+    portrait) gets its display rotation appended, so videos indexed sideways before frames were turned
+    upright are indexed again; an unrotated video keeps the signature it always had."""
+    if stat is None:
+        stat = os.stat(filepath)
     sampling_signature = ":".join(str(value) for value in (
         VIDEO_SAMPLING_VERSION,
         VIDEO_ANALYSIS_INTERVAL_SECONDS,
@@ -43,7 +90,7 @@ def get_video_signature(filepath):
         VIDEO_DUPLICATE_PIXEL_THRESHOLD,
         VIDEO_DUPLICATE_HISTOGRAM_THRESHOLD
     ))
-    return f"{stat.st_mtime_ns}:{stat.st_size}:{sampling_signature}"
+    return f"{stat.st_mtime_ns}:{stat.st_size}:{sampling_signature}{_rotation_tag(rotation)}"
 
 # Hardware decode state shared by every decoding thread, guarded by _hw_lock.
 # _preferred_decoder is the last hardware target that worked (CPU is never stored here, so hardware is
@@ -145,11 +192,15 @@ def open_video_cascade(filepath):
     # Stage 3: Universal CPU Software Decoding Fallback
     return _open_cpu(filepath)
 
-def get_video_frame_cache_path(filepath: str, timestamp_seconds: float, cache_dir: pathlib.Path = None, stat=None) -> pathlib.Path:
+def get_video_frame_cache_path(filepath: str, timestamp_seconds: float, cache_dir: pathlib.Path = None, stat=None,
+                               rotation=0) -> pathlib.Path:
+    """Cache file of one video frame thumbnail. The video's display rotation is part of the key of a rotated
+    video, so thumbnails cached sideways before frames were turned upright are never used again."""
     if stat is None:
         stat = os.stat(filepath)
     cache_key = hashlib.sha256(
-        f"{os.path.abspath(filepath)}:{stat.st_mtime_ns}:{stat.st_size}:{float(timestamp_seconds):.3f}".encode("utf-8")
+        (f"{os.path.abspath(filepath)}:{stat.st_mtime_ns}:{stat.st_size}:{float(timestamp_seconds):.3f}"
+         f"{_rotation_tag(rotation)}").encode("utf-8")
     ).hexdigest()
     
     if cache_dir is None:
@@ -175,12 +226,14 @@ def get_video_frame_cache_path(filepath: str, timestamp_seconds: float, cache_di
 
     return target_path
 
-def save_video_frame_thumbnail(filepath: str, timestamp_seconds: float, image: Image.Image, cache_dir: pathlib.Path = None, stat=None):
-    """Save a 480x480 thumbnail directly from an in-memory PIL image into videos cache without extra decoding."""
+def save_video_frame_thumbnail(filepath: str, timestamp_seconds: float, image: Image.Image, cache_dir: pathlib.Path = None, stat=None,
+                               rotation=0):
+    """Save a 480x480 thumbnail directly from an in-memory PIL image into videos cache without extra decoding.
+    rotation only tags the cache key; the image is already upright."""
     try:
         cache_dir = VIDEO_CACHE_DIR if cache_dir is None else pathlib.Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        out_path = get_video_frame_cache_path(filepath, timestamp_seconds, cache_dir, stat)
+        out_path = get_video_frame_cache_path(filepath, timestamp_seconds, cache_dir, stat, rotation)
         if not is_thumbnail_cached(out_path):
             thumb = image.copy()
             get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, thumb))
@@ -216,7 +269,7 @@ def extract_video_frame(filepath, timestamp_seconds):
                     break
 
             if closest_frame is not None:
-                bgr_arr = closest_frame.to_ndarray(format="bgr24")
+                bgr_arr = _frame_to_bgr(closest_frame)
                 rgb_arr = cv2.cvtColor(bgr_arr, cv2.COLOR_BGR2RGB)
                 return Image.fromarray(rgb_arr)
         finally:
@@ -225,7 +278,7 @@ def extract_video_frame(filepath, timestamp_seconds):
         pass
 
     # Fallback to OpenCV if PyAV extraction fails
-    capture = cv2.VideoCapture(filepath)
+    capture = _open_capture(filepath)
     try:
         if not capture.isOpened():
             raise ValueError("Video could not be opened.")
@@ -241,8 +294,10 @@ def extract_video_frame(filepath, timestamp_seconds):
     finally:
         capture.release()
 
-def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathlib.Path, on_frame_saved=None):
-    """Extract and cache multiple video frame thumbnails in a single sequential decode pass."""
+def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathlib.Path, on_frame_saved=None,
+                               rotation=0):
+    """Extract and cache multiple video frame thumbnails in a single sequential decode pass. rotation is the
+    video's display rotation and only tags the cache keys; every frame is turned upright from its own."""
     if not os.path.isfile(filepath) or not timestamps:
         return []
 
@@ -252,14 +307,14 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
 
     uncached_ts = []
     for ts in timestamps:
-        p = get_video_frame_cache_path(filepath, ts, cache_dir, stat)
+        p = get_video_frame_cache_path(filepath, ts, cache_dir, stat, rotation)
         if not is_thumbnail_cached(p):
             uncached_ts.append(float(ts))
         elif on_frame_saved:
             on_frame_saved(ts)
 
     if not uncached_ts:
-        return [str(get_video_frame_cache_path(filepath, ts, cache_dir, stat)) for ts in timestamps]
+        return [str(get_video_frame_cache_path(filepath, ts, cache_dir, stat, rotation)) for ts in timestamps]
 
     sorted_ts = sorted(set(uncached_ts))
     processed_set = set()
@@ -286,9 +341,9 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
 
                 while ts_idx < num_ts and frame_ts >= sorted_ts[ts_idx] - 0.05:
                     target_ts = sorted_ts[ts_idx]
-                    out_path = get_video_frame_cache_path(filepath, target_ts, cache_dir, stat)
+                    out_path = get_video_frame_cache_path(filepath, target_ts, cache_dir, stat, rotation)
                     if not is_thumbnail_cached(out_path):
-                        bgr_arr = frame.to_ndarray(format="bgr24")
+                        bgr_arr = _frame_to_bgr(frame)
                         rgb_arr = cv2.cvtColor(bgr_arr, cv2.COLOR_BGR2RGB)
                         pil_img = Image.fromarray(rgb_arr)
                         get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, pil_img))
@@ -304,9 +359,9 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
             # If stream ended before reaching the latest timestamps, use the last decoded frame
             while ts_idx < num_ts and last_frame is not None:
                 target_ts = sorted_ts[ts_idx]
-                out_path = get_video_frame_cache_path(filepath, target_ts, cache_dir, stat)
+                out_path = get_video_frame_cache_path(filepath, target_ts, cache_dir, stat, rotation)
                 if not is_thumbnail_cached(out_path):
-                    bgr_arr = last_frame.to_ndarray(format="bgr24")
+                    bgr_arr = _frame_to_bgr(last_frame)
                     rgb_arr = cv2.cvtColor(bgr_arr, cv2.COLOR_BGR2RGB)
                     pil_img = Image.fromarray(rgb_arr)
                     get_or_create_thumbnail(out_path, partial(save_jpeg_thumbnail, pil_img))
@@ -323,10 +378,10 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
     # Fallback with OpenCV for any timestamps not decoded
     remaining_ts = [ts for ts in sorted_ts if ts not in processed_set]
     if remaining_ts:
-        capture = cv2.VideoCapture(filepath)
+        capture = _open_capture(filepath)
         try:
             for ts in remaining_ts:
-                out_path = get_video_frame_cache_path(filepath, ts, cache_dir, stat)
+                out_path = get_video_frame_cache_path(filepath, ts, cache_dir, stat, rotation)
                 if not is_thumbnail_cached(out_path):
                     capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, ts) * 1000.0)
                     success, frame = capture.read()
@@ -340,7 +395,7 @@ def extract_video_frames_batch(filepath: str, timestamps: list, cache_dir: pathl
         finally:
             capture.release()
 
-    return [str(get_video_frame_cache_path(filepath, ts, cache_dir, stat)) for ts in timestamps]
+    return [str(get_video_frame_cache_path(filepath, ts, cache_dir, stat, rotation)) for ts in timestamps]
 
 def _build_frame_descriptor(frame):
     """Build a small spatial and color descriptor for inexpensive frame comparison."""
@@ -363,7 +418,11 @@ def _compare_frame_descriptors(first, second):
 
 
 def _iter_video_analysis_frames(filepath, analysis_interval_seconds, should_cancel=None):
-    """Yield low-frequency source frames (timestamp, bgr_array) using 3-stage cascading decoder."""
+    """Yield low-frequency source frames (timestamp, bgr_array, rotation) using 3-stage cascading decoder.
+    PyAV frames come as stored, with their display rotation still to apply: the scene and duplicate checks
+    compare them as stored, which keeps a portrait video's frames undistorted in the 160x90 descriptor and its
+    sampled timestamps what they were before frames were turned upright. OpenCV frames come upright already
+    (rotation 0)."""
     try:
         container, stream, _ = open_video_cascade(filepath)
     except Exception:
@@ -381,14 +440,14 @@ def _iter_video_analysis_frames(filepath, analysis_interval_seconds, should_canc
                 ts = float(frame.pts * time_base) if frame.pts is not None else 0.0
                 if last_analysis_ts < 0 or (ts - last_analysis_ts >= analysis_interval_seconds * 0.95):
                     bgr_arr = frame.to_ndarray(format="bgr24")
-                    yield ts, bgr_arr
+                    yield ts, bgr_arr, getattr(frame, "rotation", 0)
                     last_analysis_ts = ts
             return
         finally:
             container.close()
 
     # OpenCV Fallback if PyAV could not be opened
-    capture = cv2.VideoCapture(filepath)
+    capture = _open_capture(filepath)
     try:
         if not capture.isOpened():
             raise ValueError("Video could not be opened.")
@@ -404,7 +463,7 @@ def _iter_video_analysis_frames(filepath, analysis_interval_seconds, should_canc
                     break
                 pos_msec = capture.get(cv2.CAP_PROP_POS_MSEC)
                 ts = (pos_msec / 1000.0) if pos_msec > 0 else (frame_index / fps)
-                yield ts, frame
+                yield ts, frame, 0
             else:
                 if not capture.grab():
                     break
@@ -424,7 +483,7 @@ def iter_video_frames(
     last_selected_timestamp = None
     scene_id = 0
 
-    for timestamp, frame in _iter_video_analysis_frames(
+    for timestamp, frame, rotation in _iter_video_analysis_frames(
         filepath, analysis_interval_seconds, should_cancel=should_cancel
     ):
         if should_cancel and should_cancel():
@@ -481,7 +540,7 @@ def iter_video_frames(
             else:
                 sampling_reason = "max_gap"
 
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb_frame = cv2.cvtColor(_rotate_upright(frame, rotation), cv2.COLOR_BGR2RGB)
             yield timestamp, Image.fromarray(rgb_frame), {
                 "scene_id": scene_id,
                 "sampling_reason": sampling_reason,
@@ -491,3 +550,75 @@ def iter_video_frames(
             last_selected_timestamp = timestamp
 
         previous_descriptor = descriptor
+
+_ISO6709_RE = re.compile(r"([+-]\d{2}(?:\.\d+)?)([+-]\d{3}(?:\.\d+)?)([+-]\d+(?:\.\d+)?)?(?:CRS[^/]*)?/?")
+_EPOCH_DATES = {(1904, 1, 1), (1970, 1, 1)}  # QuickTime and Unix zero, written by tools that know no date
+
+def _first_frame_rotation(container, stream) -> int:
+    """Display rotation in degrees of the first decoded frame; 0 when no frame can be decoded."""
+    try:
+        for frame in container.decode(stream):
+            return int(round(getattr(frame, "rotation", 0) or 0))
+    except Exception:
+        pass
+    return 0
+
+def _video_date(metadata):
+    """(taken_at, taken_offset) from container metadata: the QuickTime creation date as written (wall time
+    plus its offset), else creation_time (UTC) converted to this PC's local time."""
+    for key in ("com.apple.quicktime.creationdate", "creation_time"):
+        parsed = _parse_datetime(metadata.get(key))
+        if not parsed or (parsed[0].year, parsed[0].month, parsed[0].day) in _EPOCH_DATES:
+            continue
+        moment, offset = parsed
+        if key == "creation_time":
+            utc_offset = timedelta(0)
+            if offset:
+                sign = -1 if offset[0] == "-" else 1
+                utc_offset = sign * timedelta(hours=int(offset[1:3]), minutes=int(offset[4:6]))
+            try:
+                local = moment.replace(tzinfo=timezone(utc_offset)).astimezone()
+            except (OSError, OverflowError, ValueError):
+                continue  # Windows cannot convert a time before 1970
+            return _format_taken(local.replace(tzinfo=None)), _format_offset(local.utcoffset())
+        return _format_taken(moment), offset
+    return None, None
+
+def _video_gps(metadata):
+    """(lat, lon, alt) from an ISO 6709 decimal-degree location string; DMS forms are ignored."""
+    for key in ("com.apple.quicktime.location.iso6709", "location", "location-eng"):
+        text = _text(metadata.get(key))
+        match = _ISO6709_RE.fullmatch(text) if text else None
+        if match:
+            lat, lon, alt = (float(part) if part else None for part in match.groups())
+            return _check_gps(lat, lon, alt)
+    return None, None, None
+
+def probe_video_info(path) -> dict:
+    """Size, rotation, duration, date taken and GPS of a video file from its container header plus its first
+    frame (CPU decode only). width/height are the upright size, swapped for a 90/270 degree rotation.
+    Raises when the file cannot be opened or has no video stream."""
+    container = av.open(path)
+    try:
+        if not container.streams.video:
+            raise ValueError("No video stream")
+        stream = container.streams.video[0]
+        if container.duration is not None:
+            duration_s = container.duration / 1_000_000
+        elif stream.duration is not None and stream.time_base is not None:
+            duration_s = float(stream.duration * stream.time_base)
+        else:
+            duration_s = None
+        rotation = _first_frame_rotation(container, stream)
+        width = getattr(stream.codec_context, "width", 0) or stream.width
+        height = getattr(stream.codec_context, "height", 0) or stream.height
+        if abs(rotation) % 180 == 90:
+            width, height = height, width
+        metadata = {str(key).lower(): value for key, value in (container.metadata or {}).items()}
+        taken_at, taken_offset = _video_date(metadata)
+        lat, lon, alt = _video_gps(metadata)
+        return {"width": width, "height": height, "rotation": rotation, "duration_s": duration_s,
+                "taken_at": taken_at, "taken_offset": taken_offset,
+                "gps_lat": lat, "gps_lon": lon, "gps_alt": alt}
+    finally:
+        _close_quietly(container)

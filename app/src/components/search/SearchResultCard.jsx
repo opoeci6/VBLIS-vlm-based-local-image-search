@@ -4,6 +4,7 @@ import { cn } from '../../utils/cn';
 import { formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { API_BASE } from '../../config';
+import { formatScoreLabel } from '../../utils/scoreLabel';
 
 export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSelect, uiTheme = 'modern' }) {
   const isModern = uiTheme === 'modern';
@@ -71,7 +72,7 @@ export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSel
         <div className="translate-y-2 group-hover:translate-y-0 transition-transform duration-300 ease-out">
           <p className="text-xs font-semibold text-emerald-400 mb-1 flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
-            {Math.round(res.score * 100)}% Match
+            {formatScoreLabel(res.score, res.score_kind)}
           </p>
           <p className="text-xs text-white/90 truncate font-mono" title={res.path}>
             {res.path.split('\\').pop().split('/').pop()}

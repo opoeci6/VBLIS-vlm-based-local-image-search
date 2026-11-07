@@ -3,6 +3,7 @@ import { FolderOpen, ChevronRight, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { getMediaPreviewUrl, prewarmVideoGroup } from '../../utils/media';
 import { API_BASE } from '../../config';
+import { formatScorePercent } from '../../utils/scoreLabel';
 
 export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, onSelect, uiTheme = 'modern' }) {
   const isModern = uiTheme === 'modern';
@@ -55,7 +56,7 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
           "absolute bottom-3 right-3 px-3 py-1 text-xs font-bold shadow-lg",
           isModern ? "bg-black/70 backdrop-blur-md text-emerald-400 rounded-full ring-1 ring-white/10" : "bg-black border border-white text-emerald-400"
         )}>
-          BEST {Math.round(group.bestScore * 100)}%
+          BEST {formatScorePercent(group.bestScore)}
         </div>
       </div>
 
@@ -74,7 +75,7 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
             {group.name}
           </p>
           <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">
-            {group.frames.length} returned frame{group.frames.length === 1 ? '' : 's'}
+            {group.frames.length} {group.isExpanded ? 'matching' : 'returned'} frame{group.frames.length === 1 ? '' : 's'}
           </p>
         </div>
         <ChevronRight className={cn(

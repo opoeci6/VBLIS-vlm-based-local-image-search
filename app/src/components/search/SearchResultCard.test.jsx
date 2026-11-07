@@ -43,6 +43,22 @@ describe('SearchResultCard', () => {
     expect(screen.getByText(/87% Match/)).toBeTruthy();
   });
 
+  it('labels the score as Match when score_kind is "match"', () => {
+    render(<SearchResultCard res={imageRes({ score_kind: 'match' })} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText('87% Match')).toBeTruthy();
+  });
+
+  it('labels the score as Similar when score_kind is "similarity"', () => {
+    render(<SearchResultCard res={imageRes({ score: 0.846, score_kind: 'similarity' })} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText('84% Similar')).toBeTruthy();
+    expect(screen.queryByText(/Match/)).toBeNull();
+  });
+
+  it('never rounds a near-perfect score up to 100%', () => {
+    render(<SearchResultCard res={imageRes({ score: 0.9999 })} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText('99.9% Match')).toBeTruthy();
+  });
+
   it('shows the timestamp badge for a video result', () => {
     render(
       <SearchResultCard

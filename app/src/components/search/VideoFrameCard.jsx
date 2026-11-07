@@ -4,6 +4,7 @@ import { cn } from '../../utils/cn';
 import { formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { API_BASE } from '../../config';
+import { formatScoreLabelUpper } from '../../utils/scoreLabel';
 
 export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSelect, uiTheme = 'modern' }) {
   const [loaded, setLoaded] = useState(false);
@@ -71,7 +72,7 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
       </div>
       <div className="flex items-center justify-between gap-3 p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
         <span>FRAME {index + 1}</span>
-        <span className="text-emerald-500 font-semibold">{Math.round((frame.score || 0) * 100)}% MATCH</span>
+        <span className="text-emerald-500 font-semibold">{formatScoreLabelUpper(frame.score, frame.score_kind)}</span>
       </div>
     </div>
   );

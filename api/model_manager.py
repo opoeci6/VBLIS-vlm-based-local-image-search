@@ -16,6 +16,7 @@ import gc
 import time
 import threading
 from model_downloader import ModelDownloader
+from search_scoring import ScoreParams, read_score_params
 
 try:
     from transformers.models.siglip2.image_processing_siglip2 import get_image_size_for_max_num_patches
@@ -36,6 +37,19 @@ class PreparedImage(NamedTuple):
     """CPU-side processor output for one image, tagged with the model it was prepared for."""
     model_id: Optional[str]
     inputs: Dict[str, Any]
+
+
+class TextQuery(NamedTuple):
+    """A text query embedding with the calibration of the model that produced it."""
+    embedding: list
+    score_params: Optional[ScoreParams]
+    model_id: Optional[str]
+
+
+class ImageQuery(NamedTuple):
+    """A query-by-image embedding with the id of the model that produced it."""
+    embedding: list
+    model_id: Optional[str]
 
 
 class ModelManager:
@@ -566,19 +580,30 @@ class ModelManager:
         res = self.get_image_embeddings_batch([image], task_context=task_context)
         return res[0] if res else []
 
-    @torch.no_grad()
+    def embed_image_query(self, image: Image.Image) -> ImageQuery:
+        prepared = self.prepare_image(image)
+        # embed_prepared raises if the active model changed since prepare_image
+        embedding = self.embed_prepared([prepared])[0]
+        return ImageQuery(embedding=embedding, model_id=prepared.model_id)
+
     def get_text_embedding(self, text: str) -> list[float]:
+        return self.embed_text_query(text).embedding
+
+    @torch.no_grad()
+    def embed_text_query(self, text: str) -> TextQuery:
         print(f"Generating text embedding for: {text[:20]}...")
-        # Atomic capture of model and processor
+        # Atomic capture of model, processor and model id
         with self._lock:
             model = self.model
             processor = self.processor
             device = self.device
+            model_id = self.current_model_id
             
         if model is None or processor is None:
             raise RuntimeError("Model not loaded. Please select and download a model first.")
 
-        inputs = processor(text=text, return_tensors="pt", padding="max_length")
+        # SigLIP was trained on lowercase text and its tokenizer does not lowercase (CLIP's does)
+        inputs = processor(text=text.lower(), return_tensors="pt", padding="max_length")
         
         model_device = next(model.parameters()).device
         inputs = {k: v.to(model_device) for k, v in inputs.items()}
@@ -600,5 +625,6 @@ class ModelManager:
 
         text_features = text_features.float()  # a no-op for an fp32 text tower
         text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
-        return text_features.cpu().numpy().flatten().tolist()
+        embedding = text_features.cpu().numpy().flatten().tolist()
+        return TextQuery(embedding=embedding, score_params=read_score_params(model), model_id=model_id)
 

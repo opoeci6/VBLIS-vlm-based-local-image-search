@@ -62,4 +62,25 @@ describe('SearchBar', () => {
     const { container } = renderBar({ isSearching: true });
     expect(container.querySelector('.animate-spin')).toBeTruthy();
   });
+  it('renders the Filters button between the input and Search, without submitting the form', () => {
+    const handleSearch = vi.fn((e) => e.preventDefault());
+    const onToggleFilters = vi.fn();
+    renderBar({ handleSearch, onToggleFilters, activeFilterCount: 2, filtersOpen: true });
+
+    const filters = screen.getByRole('button', { name: 'Search filters (2 active)' });
+    expect(filters.getAttribute('aria-expanded')).toBe('true');
+    const search = screen.getByRole('button', { name: 'Search' });
+    expect(filters.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByPlaceholderText(/Search images/).compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(filters);
+    expect(onToggleFilters).toHaveBeenCalledTimes(1);
+    expect(handleSearch).not.toHaveBeenCalled();
+  });
+
+  it('shows the Filters button without a badge by default', () => {
+    renderBar();
+    expect(screen.getByRole('button', { name: 'Search filters' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('filters-count')).toBeNull();
+  });
 });
