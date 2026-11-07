@@ -1,0 +1,372 @@
+import { describe, expect, it } from 'vitest';
+import { annotateDuplicates, countSearchResults, getImageResults, groupVideoResults } from './searchResults';
+
+// Unit vectors: dot(a, b) is the cosine similarity.
+const unit = (cos) => [cos, Math.sqrt(1 - cos * cos)];
+const BASE = [1, 0];
+
+const img = (path, extra = {}) => ({ path, media_type: 'image', score: 0.5, ...extra });
+
+describe('annotateDuplicates', () => {
+  it('returns [] for empty, null and undefined input', () => {
+    expect(annotateDuplicates([])).toEqual([]);
+    expect(annotateDuplicates(null)).toEqual([]);
+    expect(annotateDuplicates(undefined)).toEqual([]);
+  });
+
+  it('tags images sharing a hash as exact duplicates', () => {
+    const out = annotateDuplicates([
+      img('/a.jpg', { hash: 'h1' }),
+      img('/b.jpg', { hash: 'h1' }),
+      img('/c.jpg', { hash: 'h2' }),
+    ]);
+    expect(out[0]).toMatchObject({ isDuplicate: true, duplicateType: 'exact', otherPaths: ['/b.jpg'] });
+    expect(out[1]).toMatchObject({ isDuplicate: true, duplicateType: 'exact', otherPaths: ['/a.jpg'] });
+    expect(out[0].dupeColor).toBe('#0078d4');
+    expect(out[1].dupeColor).toBe(out[0].dupeColor);
+    expect(out[2]).toMatchObject({ isDuplicate: false, duplicateType: null, dupeColor: null, otherPaths: [] });
+  });
+
+  it('gives different exact groups different colors', () => {
+    const out = annotateDuplicates([
+      img('/a.jpg', { hash: 'h1' }),
+      img('/b.jpg', { hash: 'h1' }),
+      img('/c.jpg', { hash: 'h2' }),
+      img('/d.jpg', { hash: 'h2' }),
+    ]);
+    expect(out[0].dupeColor).toBe('#0078d4');
+    expect(out[2].dupeColor).toBe('#ec4899');
+  });
+
+  it('tags near-identical embeddings with different hashes as visual', () => {
+    const out = annotateDuplicates([
+      img('/a.jpg', { hash: 'h1', embedding: BASE }),
+      img('/b.jpg', { hash: 'h2', embedding: unit(0.99) }),
+    ]);
+    expect(out[0]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/b.jpg'], dupeColor: '#f59e0b' });
+    expect(out[1]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg'], dupeColor: '#f59e0b' });
+  });
+
+  it('treats the 0.985 boundary as visual and 0.98 as not', () => {
+    const at = annotateDuplicates([
+      img('/a.jpg', { embedding: [1, 0] }),
+      img('/b.jpg', { embedding: [0.985, 0] }),
+    ]);
+    expect(at[0].duplicateType).toBe('visual');
+
+    const below = annotateDuplicates([
+      img('/a.jpg', { embedding: BASE }),
+      img('/b.jpg', { embedding: unit(0.98) }),
+    ]);
+    expect(below[0].duplicateType).toBeNull();
+    expect(below[1].duplicateType).toBeNull();
+  });
+
+  it('merges visual groups transitively when a later pair bridges two groups', () => {
+    const at = (deg) => {
+      const t = (deg * Math.PI) / 180;
+      return [Math.cos(t), Math.sin(t)];
+    };
+    // Pairs 9 degrees apart are similar (cos ~0.9877); 18 and 27 degrees apart are not.
+    // Pair loop order: {0,3}, then {1,2}, then the bridge (2,3).
+    const out = annotateDuplicates([
+      img('/a.jpg', { hash: 'h0', embedding: at(0) }),
+      img('/b.jpg', { hash: 'h1', embedding: at(27) }),
+      img('/c.jpg', { hash: 'h2', embedding: at(18) }),
+      img('/d.jpg', { hash: 'h3', embedding: at(9) }),
+    ]);
+    out.forEach(item => expect(item.duplicateType).toBe('visual'));
+    expect(new Set(out.map(item => item.dupeColor)).size).toBe(1);
+    const all = ['/a.jpg', '/b.jpg', '/c.jpg', '/d.jpg'];
+    out.forEach(item => {
+      expect([...item.otherPaths].sort()).toEqual(all.filter(p => p !== item.path));
+    });
+  });
+
+  it('orders visual groups by smallest member index for color assignment', () => {
+    const out = annotateDuplicates([
+      img('/a.jpg', { embedding: [1, 0] }),
+      img('/b.jpg', { embedding: [0, 1] }),
+      img('/c.jpg', { embedding: [1, 0] }),
+      img('/d.jpg', { embedding: [0, 1] }),
+    ]);
+    expect(out[0].dupeColor).toBe('#f59e0b');
+    expect(out[2].dupeColor).toBe('#f59e0b');
+    expect(out[1].dupeColor).toBe('#10b981');
+    expect(out[3].dupeColor).toBe('#10b981');
+  });
+
+  it('never tags videos, even with the same hash or embedding', () => {
+    const video = (path) => ({ path, media_type: 'video', hash: 'hv', embedding: BASE, score: 0.9 });
+    const out = annotateDuplicates([
+      video('/v1.mp4'),
+      video('/v2.mp4'),
+      img('/a.jpg', { hash: 'hv', embedding: BASE }),
+    ]);
+    out.forEach(item => {
+      expect(item).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] });
+    });
+  });
+
+  it('prefers exact over visual when hashes match', () => {
+    const out = annotateDuplicates([
+      img('/a.jpg', { hash: 'h1', embedding: BASE }),
+      img('/b.jpg', { hash: 'h1', embedding: BASE }),
+    ]);
+    expect(out[0].duplicateType).toBe('exact');
+    expect(out[1].duplicateType).toBe('exact');
+  });
+
+  it('strips embeddings and preserves other fields', () => {
+    const out = annotateDuplicates([
+      img('/a.jpg', { embedding: BASE, hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4 }),
+      { path: '/v.mp4', media_type: 'video', embedding: BASE, score: 0.1 },
+    ]);
+    out.forEach(item => expect(item).not.toHaveProperty('embedding'));
+    expect(out[0]).toMatchObject({ path: '/a.jpg', hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4 });
+    expect(out[1]).toMatchObject({ path: '/v.mp4', media_type: 'video', score: 0.1 });
+  });
+
+  it('keeps the output order equal to the input order', () => {
+    const paths = ['/c.jpg', '/a.jpg', '/b.jpg', '/d.jpg'];
+    const input = paths.map(p => img(p, { hash: p === '/a.jpg' || p === '/d.jpg' ? 'same' : p }));
+    expect(annotateDuplicates(input).map(r => r.path)).toEqual(paths);
+  });
+
+  it('does not mutate the input items', () => {
+    const input = [img('/a.jpg', { embedding: BASE })];
+    annotateDuplicates(input);
+    expect(input[0]).toHaveProperty('embedding');
+    expect(input[0]).not.toHaveProperty('isDuplicate');
+  });
+
+  describe('800-candidate cap', () => {
+    const filler = (n) => Array.from({ length: n }, (_, i) => img(`/f${i}.jpg`, { embedding: [0, 1] }));
+
+    it('tags a near-duplicate pair at indices 0 and 1', () => {
+      const input = [
+        img('/a.jpg', { embedding: BASE }),
+        img('/b.jpg', { embedding: unit(0.99) }),
+        ...filler(10),
+      ];
+      const out = annotateDuplicates(input);
+      expect(out[0].duplicateType).toBe('visual');
+      expect(out[1].duplicateType).toBe('visual');
+    });
+
+    it('does not tag the same pair at indices 800 and 801', () => {
+      const input = [
+        ...filler(800),
+        img('/a.jpg', { embedding: BASE }),
+        img('/b.jpg', { embedding: unit(0.99) }),
+      ];
+      const out = annotateDuplicates(input);
+      expect(out).toHaveLength(802);
+      expect(out[800].duplicateType).toBeNull();
+      expect(out[801].duplicateType).toBeNull();
+    });
+
+    it('does not let video frames use up the image budget', () => {
+      const frames = Array.from({ length: 900 }, (_, i) => ({
+        path: '/v.mp4', media_type: 'video', score: 0.5, timestamp_seconds: i, embedding: null,
+      }));
+      const out = annotateDuplicates([
+        ...frames,
+        img('/a.jpg', { embedding: BASE }),
+        img('/b.jpg', { embedding: unit(0.99) }),
+      ]);
+      expect(out).toHaveLength(902);
+      expect(out[900]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/b.jpg'] });
+      expect(out[901]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg'] });
+    });
+
+    it('still stops after the first 800 images when frames are interleaved', () => {
+      const frames = Array.from({ length: 50 }, (_, i) => ({
+        path: '/v.mp4', media_type: 'video', score: 0.5, timestamp_seconds: i,
+      }));
+      const out = annotateDuplicates([
+        ...frames,
+        ...filler(800),
+        img('/a.jpg', { embedding: BASE }),
+        img('/b.jpg', { embedding: unit(0.99) }),
+      ]);
+      expect(out[850].duplicateType).toBeNull();
+      expect(out[851].duplicateType).toBeNull();
+    });
+  });
+});
+
+describe('groupVideoResults', () => {
+  const frame = (path, score, timestamp_seconds, extra = {}) => ({
+    path, media_type: 'video', score, timestamp_seconds, ...extra,
+  });
+
+  it('ignores images and returns [] when there are no videos', () => {
+    expect(groupVideoResults([])).toEqual([]);
+    expect(groupVideoResults([img('/a.jpg')])).toEqual([]);
+  });
+
+  it('groups frames by path and takes the name from the basename', () => {
+    const groups = groupVideoResults([
+      frame('C:\\vids\\one.mp4', 0.5, 1),
+      img('/a.jpg'),
+      frame('/vids/two.mp4', 0.4, 2),
+      frame('C:\\vids\\one.mp4', 0.6, 9),
+    ]);
+    expect(groups).toHaveLength(2);
+    const one = groups.find(g => g.path === 'C:\\vids\\one.mp4');
+    expect(one.name).toBe('one.mp4');
+    expect(one.frames).toHaveLength(2);
+    expect(groups.find(g => g.path === '/vids/two.mp4').name).toBe('two.mp4');
+  });
+
+  it('falls back to the full path when the basename is empty', () => {
+    const groups = groupVideoResults([frame('/vids/', 0.5, 1)]);
+    expect(groups[0].name).toBe('/vids/');
+  });
+
+  it('tracks the best frame and best score', () => {
+    const low = frame('/v.mp4', 0.3, 1);
+    const high = frame('/v.mp4', 0.8, 5);
+    const mid = frame('/v.mp4', 0.5, 9);
+    const [group] = groupVideoResults([low, high, mid]);
+    expect(group.bestScore).toBe(0.8);
+    expect(group.bestFrame).toBe(high);
+  });
+
+  it('keeps the first frame as best on ties and treats a missing score as 0', () => {
+    const first = frame('/v.mp4', 0.5, 1);
+    const second = frame('/v.mp4', 0.5, 2);
+    const noScore = { path: '/w.mp4', media_type: 'video' };
+    const groups = groupVideoResults([first, second, noScore]);
+    expect(groups[0].bestFrame).toBe(first);
+    expect(groups.find(g => g.path === '/w.mp4').bestScore).toBe(0);
+  });
+
+  it('sorts frames by score desc, then timestamp asc', () => {
+    const [group] = groupVideoResults([
+      frame('/v.mp4', 0.5, 30),
+      frame('/v.mp4', 0.9, 50),
+      frame('/v.mp4', 0.5, 10),
+      frame('/v.mp4', 0.5, 20),
+    ]);
+    expect(group.frames.map(f => [f.score, f.timestamp_seconds])).toEqual([
+      [0.9, 50], [0.5, 10], [0.5, 20], [0.5, 30],
+    ]);
+  });
+
+  it('sorts groups by best score desc', () => {
+    const groups = groupVideoResults([
+      frame('/a.mp4', 0.3, 1),
+      frame('/b.mp4', 0.9, 1),
+      frame('/c.mp4', 0.6, 1),
+      frame('/a.mp4', 0.4, 2),
+    ]);
+    expect(groups.map(g => g.path)).toEqual(['/b.mp4', '/c.mp4', '/a.mp4']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [frame('/v.mp4', 0.1, 5), frame('/v.mp4', 0.9, 1), img('/a.jpg')];
+    const snapshot = [...input];
+    groupVideoResults(input);
+    expect(input).toHaveLength(3);
+    input.forEach((item, i) => expect(item).toBe(snapshot[i]));
+  });
+
+  it('reports no expansion by default', () => {
+    const [group] = groupVideoResults([frame('/v.mp4', 0.5, 1)]);
+    expect(group).toMatchObject({ totalFrames: null, isExpanded: false });
+  });
+
+  describe('with expanded frames', () => {
+    it('merges the expansion into the group, sorted, with totalFrames and isExpanded', () => {
+      const shown = frame('/v.mp4', 0.6, 30, { id: 'a' });
+      const [group] = groupVideoResults([shown], {
+        '/v.mp4': {
+          frames: [frame('/v.mp4', 0.5, 10, { id: 'b' }), frame('/v.mp4', 0.5, 5, { id: 'c' }), frame('/v.mp4', 0.3, 1, { id: 'd' })],
+          totalFrames: 700,
+        },
+      });
+      expect(group.frames.map(f => f.id)).toEqual(['a', 'c', 'b', 'd']);
+      expect(group).toMatchObject({ totalFrames: 700, isExpanded: true, bestScore: 0.6 });
+      expect(group.bestFrame).toBe(shown);
+    });
+
+    it('dedupes frames by id, keeping the one from the search results', () => {
+      const shown = frame('/v.mp4', 0.6, 30, { id: 'a' });
+      const [group] = groupVideoResults([shown], {
+        '/v.mp4': { frames: [frame('/v.mp4', 0.6, 30, { id: 'a' }), frame('/v.mp4', 0.4, 2, { id: 'b' })], totalFrames: 2 },
+      });
+      expect(group.frames).toHaveLength(2);
+      expect(group.frames.find(f => f.id === 'a')).toBe(shown);
+    });
+
+    it('dedupes by path and timestamp when frames have no id', () => {
+      const [group] = groupVideoResults([frame('/v.mp4', 0.6, 30)], {
+        '/v.mp4': { frames: [frame('/v.mp4', 0.6, 30), frame('/v.mp4', 0.4, 31)], totalFrames: 2 },
+      });
+      expect(group.frames.map(f => f.timestamp_seconds)).toEqual([30, 31]);
+    });
+
+    it('takes the best frame and score over the merged frames', () => {
+      const better = frame('/v.mp4', 0.95, 9, { id: 'z' });
+      const [group] = groupVideoResults([frame('/v.mp4', 0.6, 30, { id: 'a' })], {
+        '/v.mp4': { frames: [better], totalFrames: 2 },
+      });
+      expect(group.bestScore).toBe(0.95);
+      expect(group.bestFrame).toBe(better);
+      expect(group.frames[0]).toBe(better);
+    });
+
+    it('does not reorder the groups when an expansion has a better frame', () => {
+      const results = [frame('/a.mp4', 0.9, 1, { id: 'a1' }), frame('/b.mp4', 0.5, 1, { id: 'b1' })];
+      const before = groupVideoResults(results).map(g => g.path);
+      const after = groupVideoResults(results, {
+        '/b.mp4': { frames: [frame('/b.mp4', 0.99, 7, { id: 'b2' })], totalFrames: 2 },
+      });
+      expect(before).toEqual(['/a.mp4', '/b.mp4']);
+      expect(after.map(g => g.path)).toEqual(before);
+      expect(after[1].bestScore).toBe(0.99);
+      expect(after[1]).not.toHaveProperty('searchBestScore');
+    });
+
+    it('ignores a path that has no group in the results', () => {
+      const groups = groupVideoResults([frame('/a.mp4', 0.9, 1)], {
+        '/other.mp4': { frames: [frame('/other.mp4', 0.8, 1)], totalFrames: 1 },
+      });
+      expect(groups.map(g => g.path)).toEqual(['/a.mp4']);
+      expect(groups[0].isExpanded).toBe(false);
+    });
+
+    it('leaves other groups unexpanded and does not mutate the input', () => {
+      const results = [frame('/a.mp4', 0.9, 1, { id: 'a1' }), frame('/b.mp4', 0.5, 1, { id: 'b1' })];
+      const expansion = { '/a.mp4': { frames: [frame('/a.mp4', 0.4, 5, { id: 'a2' })], totalFrames: 2 } };
+      const groups = groupVideoResults(results, expansion);
+      expect(groups[0].isExpanded).toBe(true);
+      expect(groups[1]).toMatchObject({ isExpanded: false, totalFrames: null });
+      expect(results).toHaveLength(2);
+      expect(expansion['/a.mp4'].frames).toHaveLength(1);
+    });
+  });
+});
+
+describe('countSearchResults', () => {
+  it('counts every image and each video once', () => {
+    const frame = (path, ts) => ({ path, media_type: 'video', timestamp_seconds: ts });
+    expect(countSearchResults([
+      img('/a.jpg'), frame('/v.mp4', 1), frame('/v.mp4', 2), frame('/w.mp4', 1), img('/b.jpg'),
+    ])).toBe(4);
+    expect(countSearchResults([])).toBe(0);
+    expect(countSearchResults(null)).toBe(0);
+  });
+});
+
+describe('getImageResults', () => {
+  it('filters out videos', () => {
+    const a = img('/a.jpg');
+    const v = { path: '/v.mp4', media_type: 'video' };
+    const noType = { path: '/x.jpg' };
+    expect(getImageResults([a, v, noType])).toEqual([a, noType]);
+    expect(getImageResults([])).toEqual([]);
+  });
+});

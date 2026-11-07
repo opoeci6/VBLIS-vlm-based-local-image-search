@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { CheckCircle2, AlertCircle, XCircle, RotateCcw, Trash2, ChevronDown, ChevronRight, History } from 'lucide-react';
 import { formatDuration, formatTimeAgo } from '../../utils/formatters';
 

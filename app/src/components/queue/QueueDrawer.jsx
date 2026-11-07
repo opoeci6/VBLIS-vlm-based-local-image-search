@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { X, Layers, Play, Pause, Clock, History, Loader2, RefreshCw, AlertTriangle, ArrowRight } from 'lucide-react';
+import { useState } from 'react';
+import { X, Layers, Play, Pause, Clock, History, Loader2, AlertTriangle, ArrowRight } from 'lucide-react';
 import { ActiveTaskCard } from './ActiveTaskCard';
 import { QueuedTaskList } from './QueuedTaskList';
 import { TaskHistoryList } from './TaskHistoryList';
 import { StopQueueModal } from './StopQueueModal';
+import { hasModelDependentTask, isModelDependentTask } from '../../utils/taskTypes';
 
 export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpenSettings }) => {
   const [activeTab, setActiveTab] = useState('all');
@@ -37,10 +38,10 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
 
   const effectiveMismatch = (modelMismatch?.isMismatch || modelMismatch?.is_mismatch)
     ? modelMismatch
-    : !activeModel && (pendingTasks.length > 0 || activeTask)
+    : !activeModel && hasModelDependentTask(activeTask, pendingTasks)
     ? {
         isMismatch: true,
-        queued_model: pendingTasks[0]?.model_id || activeTask?.model_id || 'unknown',
+        queued_model: pendingTasks.find(isModelDependentTask)?.model_id || (isModelDependentTask(activeTask) ? activeTask.model_id : null) || 'unknown',
         active_model: null,
         reason: 'no_model_loaded'
       }

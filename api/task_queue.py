@@ -6,6 +6,9 @@ import threading
 from enum import Enum
 from typing import Optional, List, Dict, Any
 
+import paths
+import cache_store
+
 
 class TaskType(str, Enum):
     INDEX_FOLDERS = "INDEX_FOLDERS"
@@ -14,6 +17,26 @@ class TaskType(str, Enum):
     REBUILD_VIDEO_THUMBNAILS = "REBUILD_VIDEO_THUMBNAILS"
     PRUNE_DELETED = "PRUNE_DELETED"
     CLEAR_CACHE = "CLEAR_CACHE"
+    SCAN_MEDIA_INFO = "SCAN_MEDIA_INFO"
+
+
+# Task types that need an AI model loaded before they can run
+MODEL_DEPENDENT_TASK_TYPES = frozenset({
+    TaskType.INDEX_FOLDERS,
+    TaskType.REINDEX_FOLDER,
+    TaskType.BATCH_REINDEX,
+})
+
+# PRUNE_DELETED stays in the enum because persisted queues may still hold it, but nothing runs it
+SUPPORTED_TASK_TYPES = frozenset(TaskType) - {TaskType.PRUNE_DELETED}
+
+
+def is_supported_task_type(task_type) -> bool:
+    return task_type in SUPPORTED_TASK_TYPES
+
+
+class UnknownTaskTypeError(ValueError):
+    pass
 
 
 class TaskStatus(str, Enum):
@@ -82,6 +105,8 @@ class Task:
         elif task_type == TaskType.CLEAR_CACHE:
             target = payload.get("target", "all")
             return f"Clear {target.capitalize()} Cache"
+        elif task_type == TaskType.SCAN_MEDIA_INFO:
+            return "Read media details"
         return str(task_type.value)
 
     def is_paused(self) -> bool:
@@ -154,8 +179,8 @@ class Task:
         task_type_str = d.get("type", "INDEX_FOLDERS")
         try:
             task_type = TaskType(task_type_str)
-        except Exception:
-            task_type = TaskType.INDEX_FOLDERS
+        except ValueError:
+            raise UnknownTaskTypeError(f"Unknown task type: {task_type_str!r}")
 
         task = cls(
             task_type=task_type,
@@ -195,7 +220,7 @@ class TaskQueueManager:
         if persistence_path is not None:
             self.persistence_path = persistence_path
         else:
-            data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+            data_dir = str(paths.DATA_DIR)
             os.makedirs(data_dir, exist_ok=True)
             self.persistence_path = os.path.join(data_dir, "task_queue.json")
 
@@ -250,19 +275,20 @@ class TaskQueueManager:
         return self.current_model_id
 
     def _check_model_mismatch(self):
-        """Checks if pending tasks expect a model different from the active model."""
+        """Checks if pending tasks that need a model expect one different from the active model."""
         active_m = self._get_active_model_id()
         is_ready = self._is_model_loaded()
+        model_tasks = [task for task in self.pending_queue if task.type in MODEL_DEPENDENT_TASK_TYPES]
 
         if not active_m or not is_ready:
-            # If no model is currently active/loaded, warn if tasks exist
-            if self.pending_queue:
-                queued_m = self.pending_queue[0].model_id or "unknown"
+            # If no model is currently active/loaded, warn if tasks that need one exist
+            if model_tasks:
+                queued_m = model_tasks[0].model_id or "unknown"
                 self.model_mismatch_warning = {
                     "is_mismatch": True,
                     "queued_model": queued_m,
                     "active_model": None,
-                    "mismatched_count": len(self.pending_queue),
+                    "mismatched_count": len(model_tasks),
                     "reason": "no_model_loaded"
                 }
             else:
@@ -270,7 +296,7 @@ class TaskQueueManager:
             return
 
         mismatches = []
-        for task in self.pending_queue:
+        for task in model_tasks:
             if task.model_id and task.model_id != active_m:
                 mismatches.append({
                     "task_id": task.id,
@@ -289,15 +315,6 @@ class TaskQueueManager:
             }
         else:
             self.model_mismatch_warning = None
-
-    def retarget_tasks_to_model(self, new_model_id: str):
-        """Retargets all queued/pending tasks to adopt the specified active model."""
-        with self.lock:
-            for task in self.pending_queue:
-                task.model_id = new_model_id
-            self.current_model_id = new_model_id
-            self._check_model_mismatch()
-            self.save_to_disk()
 
     def save_to_disk(self):
         if not self.persistence_path:
@@ -320,6 +337,15 @@ class TaskQueueManager:
             except Exception as e:
                 print(f"[TaskQueue] Failed to save queue to {self.persistence_path}: {e}")
 
+    @staticmethod
+    def _task_from_persisted(d: Dict[str, Any]) -> Optional[Task]:
+        """Rebuild one persisted task, or None (with a warning) if its type is no longer known."""
+        try:
+            return Task.from_dict(d)
+        except UnknownTaskTypeError as e:
+            print(f"[TaskQueue] Skipping persisted task {d.get('id')}: {e}")
+            return None
+
     def load_from_disk(self, current_active_model: Optional[str] = None):
         """Hydrate queue state from disk with crash recovery and model mismatch checks."""
         if current_active_model is not None:
@@ -331,7 +357,7 @@ class TaskQueueManager:
         target_path = self.persistence_path
         legacy_path = None
         if not target_path or not os.path.exists(target_path):
-            legacy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "task_queue.json")
+            legacy_path = os.path.join(str(paths.CACHE_DIR), "task_queue.json")
             if os.path.exists(legacy_path):
                 target_path = legacy_path
             else:
@@ -347,13 +373,17 @@ class TaskQueueManager:
                 raw_pending = data.get("pending_tasks", [])
                 raw_history = data.get("history", [])
 
-                self.history = [Task.from_dict(d) for d in raw_history[:self.max_history]]
-                self.pending_queue = [Task.from_dict(d) for d in raw_pending]
+                self.history = [
+                    t for t in (self._task_from_persisted(d) for d in raw_history[:self.max_history]) if t
+                ]
+                self.pending_queue = [
+                    t for t in (self._task_from_persisted(d) for d in raw_pending) if t
+                ]
 
                 interrupted_task = None
                 if raw_active_task:
-                    t = Task.from_dict(raw_active_task)
-                    if t.status in (TaskStatus.RUNNING, TaskStatus.PAUSED, TaskStatus.QUEUED):
+                    t = self._task_from_persisted(raw_active_task)
+                    if t and t.status in (TaskStatus.RUNNING, TaskStatus.PAUSED, TaskStatus.QUEUED):
                         t.status = TaskStatus.QUEUED
                         interrupted_task = t
 
@@ -396,7 +426,7 @@ class TaskQueueManager:
         priority: str = "bottom",
         model_id: Optional[str] = None
     ) -> Task:
-        assigned_model = model_id or self._get_active_model_id()
+        assigned_model = (model_id or self._get_active_model_id()) if task_type in MODEL_DEPENDENT_TASK_TYPES else None
         task = Task(task_type=task_type, payload=payload, title=title, model_id=assigned_model)
         with self.lock:
             if priority == "top":
@@ -407,6 +437,22 @@ class TaskQueueManager:
             self.save_to_disk()
             self._wake_event.set()
         return task
+
+    def enqueue_unique(
+        self,
+        task_type: TaskType,
+        payload: Dict[str, Any],
+        title: str = "",
+        priority: str = "bottom"
+    ) -> "tuple[Task, bool]":
+        """Enqueue a task unless one of the same type is already pending. Returns (task, created); when not
+        created, the task is the pending one. A running task does not count: what it had already read when
+        the request came may be out of date, so the request queues one follow-up."""
+        with self.lock:
+            for task in self.pending_queue:
+                if task.type == task_type:
+                    return task, False
+            return self.enqueue(task_type, payload, title=title, priority=priority), True
 
     def is_folder_in_queue(self, folder_path: str) -> Optional[Dict[str, Any]]:
         """Check if a folder path is already in active task or pending queue."""
@@ -493,9 +539,9 @@ class TaskQueueManager:
 
             if action in ("start", "resume", "adopt_active_model"):
                 has_model_dependent_tasks = any(
-                    t.type in (TaskType.INDEX_FOLDERS, TaskType.REINDEX_FOLDER, TaskType.BATCH_REINDEX, TaskType.PRUNE_DELETED)
+                    t.type in MODEL_DEPENDENT_TASK_TYPES
                     for t in self.pending_queue
-                ) or (self.active_task and self.active_task.type in (TaskType.INDEX_FOLDERS, TaskType.REINDEX_FOLDER, TaskType.BATCH_REINDEX, TaskType.PRUNE_DELETED))
+                ) or (self.active_task and self.active_task.type in MODEL_DEPENDENT_TASK_TYPES)
 
                 if has_model_dependent_tasks and not is_ready:
                     self.worker_state = WorkerState.PAUSED
@@ -539,8 +585,9 @@ class TaskQueueManager:
         with self.lock:
             self.current_model_id = new_model_id
             for task in self.pending_queue:
-                task.model_id = new_model_id
-            if self.active_task:
+                if task.type in MODEL_DEPENDENT_TASK_TYPES:
+                    task.model_id = new_model_id
+            if self.active_task and self.active_task.type in MODEL_DEPENDENT_TASK_TYPES:
                 self.active_task.model_id = new_model_id
             self._check_model_mismatch()
             self.save_to_disk()
@@ -600,7 +647,7 @@ class TaskQueueManager:
                 task_type=target.type,
                 payload=dict(target.payload),
                 title=target.title,
-                model_id=self._get_active_model_id()
+                model_id=self._get_active_model_id() if target.type in MODEL_DEPENDENT_TASK_TYPES else None
             )
             self.pending_queue.append(new_task)
             self._check_model_mismatch()
@@ -642,12 +689,7 @@ class TaskQueueManager:
                 if self.worker_state != WorkerState.PAUSED and self.active_task is None:
                     if self.pending_queue:
                         next_task = self.pending_queue[0]
-                        requires_model = next_task.type in (
-                            TaskType.INDEX_FOLDERS,
-                            TaskType.REINDEX_FOLDER,
-                            TaskType.BATCH_REINDEX,
-                            TaskType.PRUNE_DELETED,
-                        )
+                        requires_model = next_task.type in MODEL_DEPENDENT_TASK_TYPES
                         if requires_model and not self._is_model_loaded():
                             print(f"[TaskQueue] Cannot run task {next_task.id}: No AI model loaded in memory. Pausing worker.")
                             self.worker_state = WorkerState.PAUSED
@@ -691,30 +733,27 @@ class TaskQueueManager:
 
         try:
             print(f"[TaskQueue] Starting task {task.id} ({task.type.value}): '{task.title}'")
+            # A cancel from an earlier run must not abort this one (not every task type resets it itself)
+            self.indexer.cancel_requested = False
             if task.type == TaskType.INDEX_FOLDERS:
                 folder_paths = task.payload.get("folder_paths", [])
                 self.indexer.batch_index_folders(folder_paths, task_context=task)
             elif task.type == TaskType.REINDEX_FOLDER:
                 folder_path = task.payload.get("folder_path", "")
-                if hasattr(self.indexer, "reindex_folder"):
-                    self.indexer.reindex_folder(folder_path, task_context=task)
-                else:
-                    self.indexer.reindex_directory(folder_path, task_context=task)
+                self.indexer.reindex_directory(folder_path, task_context=task)
             elif task.type == TaskType.BATCH_REINDEX:
                 folder_paths = task.payload.get("folder_paths", [])
                 self.indexer.batch_reindex_folders(folder_paths, task_context=task)
             elif task.type == TaskType.REBUILD_VIDEO_THUMBNAILS:
                 self.indexer.regenerate_video_thumbnails(task_context=task)
-            elif task.type == TaskType.PRUNE_DELETED:
-                if hasattr(self.indexer, "prune_deleted_files"):
-                    self.indexer.prune_deleted_files(task_context=task)
+            elif task.type == TaskType.SCAN_MEDIA_INFO:
+                self.indexer.scan_media_info(task_context=task)
             elif task.type == TaskType.CLEAR_CACHE:
-                from .indexer import safe_clear_cache
                 target = task.payload.get("target", "all")
-                safe_clear_cache(target=target)
+                cache_store.safe_clear_cache(target=target)
                 task.update_progress(1, 1, f"Cleared {target} cache")
             else:
-                task.add_error(f"Unsupported task type: {task.type}")
+                task.add_error(f"Unsupported task type: {task.type.value}")
         except Exception as e:
             print(f"[TaskQueue] Task {task.id} execution error: {e}")
             task.add_error(str(e))

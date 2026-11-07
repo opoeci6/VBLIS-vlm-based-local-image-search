@@ -1,5 +1,5 @@
-import React from 'react';
-import { Play, Pause, Square, Folder, Video, RefreshCw, Layers, AlertCircle, FileText } from 'lucide-react';
+import { Play, Pause, Square, Layers, AlertCircle } from 'lucide-react';
+import { getTaskTypeIcon } from './taskIcon';
 import { formatDuration } from '../../utils/formatters';
 
 export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'modern' }) => {
@@ -22,19 +22,6 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
   const isModern = uiTheme === 'modern';
   const isPaused = task.status === 'paused' || task.is_paused;
 
-  const getTypeIcon = () => {
-    switch (task.type) {
-      case 'INDEX_FOLDERS':
-      case 'REINDEX_FOLDER':
-      case 'BATCH_REINDEX':
-        return <Folder className="w-4 h-4 text-indigo-500" />;
-      case 'REBUILD_VIDEO_THUMBNAILS':
-        return <Video className="w-4 h-4 text-cyan-500" />;
-      default:
-        return <RefreshCw className="w-4 h-4 text-emerald-500" />;
-    }
-  };
-
   return (
     <div
       className={`p-4 rounded-2xl border transition-all duration-200 ${
@@ -55,7 +42,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
                 : 'icon-tile border border-current'
             }`}
           >
-            {getTypeIcon()}
+            {getTaskTypeIcon(task.type)}
           </div>
           <div className="min-w-0">
             <h4 className="text-xs font-bold text-neutral-900 dark:text-white truncate">

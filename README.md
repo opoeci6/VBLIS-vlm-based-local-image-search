@@ -15,7 +15,7 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 - **Index Caching**: The index is cached on disk and can be refreshed or removed in the settings. Thumbnails are also cached for faster loading.
 - **Multiple Model Support**: Choose between high-performance models like `google/siglip2-base-patch16-224` and `openai/clip-vit-base-patch32`.
 - **GPU Acceleration**: Built-in support for NVIDIA GPUs via CUDA for lightning-fast inference.
-- **HEIC/HEIF Support**: Full support for modern image formats commonly used on high-end cameras and iPhones.
+- **HEIC/HEIF and AVIF Support**: Full support for modern image formats commonly used on high-end cameras, iPhones and the web.
 - **Dark & Light Mode**: A sleek, modern interface that adjusts to your preference.
 
 ## How to Use
@@ -28,16 +28,18 @@ Or use the portable version `VBLIS-win-0.0.1.zip`, unzip the zip file and launch
 > [!TIP]
 > VBLIS partially supports search while indexing. You can search while the app is indexing your folders, but the results will be limited to the images that have been indexed so far.
 5. **GPU Settings**: If you have an NVIDIA GPU, ensure GPU acceleration is enabled in the settings for optimal performance.
-6. **Result Filtering**: You can adjust the number of results to display and the minimum matching score in the settings.
-7. **Model Management**: You can download, switch, and delete models in the settings.
-8. **Index and Cache Management**: You can clear the index and cache in the settings.
+6. **Result Filtering**: In the settings you can adjust how many results to display (a video counts as one result and brings its best frames; open it and use **Find more frames** to see all of its matching frames) and two minimums: a **match score** for text searches (with SigLIP models, how sure the model is that a result fits your words) and a **similarity** for image searches (how visually close a result is to the dropped image).
+7. **Search Filters**: The **Filters** button next to the search bar narrows any search to images or videos, chosen folders, a date range (the date a photo or video was taken, or the file's modified date when it has none), orientation, file format and a minimum resolution. Changing a filter updates the current results right away. Date, orientation and resolution come from media details that VBLIS reads while indexing; for folders indexed with an older version, use **Read details now** in the Filters panel.
+8. **Model Management**: You can download, switch, and delete models in the settings.
+9. **Index and Cache Management**: You can clear the index and cache in the settings.
 
 ## TODO / Roadmap
 
 - [x] Support for more Vision-Language Models.
 - [x] Enhanced GPU acceleration settings (quantization, memory management).
 - [ ] Support for non-NVIDIA GPUs (MPS for Mac, Vulkan/DirectML for AMD/Intel).
-- [ ] Advanced filtering (by date, folder, or image properties).
+- [ ] Interface translations (i18n).
+- [x] Advanced filtering (by date, folder, or image properties).
 - [x] Image-to-Video searching.
 
 

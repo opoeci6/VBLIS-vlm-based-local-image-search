@@ -1,4 +1,3 @@
-import React from 'react';
 import { Layers, Loader2, Pause, Clock } from 'lucide-react';
 
 export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {

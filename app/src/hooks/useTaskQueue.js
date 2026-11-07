@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { keepIfEqual } from '../utils/jsonEqual';
+import { apiFetch } from '../utils/api';
 
 export const useTaskQueue = (API_BASE, setToast) => {
   const [activeTask, setActiveTask] = useState(null);
@@ -16,12 +18,12 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/queue`);
+      const res = await apiFetch(`${API_BASE}/queue`);
       if (!res.ok) return;
       const data = await res.json();
-      setActiveTask(data.active_task);
-      setPendingTasks(data.pending_tasks || []);
-      setHistory(data.history || []);
+      setActiveTask(keepIfEqual(data.active_task));
+      setPendingTasks(keepIfEqual(data.pending_tasks || []));
+      setHistory(keepIfEqual(data.history || []));
       setWorkerState(data.worker_state || 'running');
       setPendingCount(data.pending_count || 0);
       setHistoryCount(data.history_count || 0);
@@ -38,7 +40,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
             reason: rawMismatch.reason || ''
           }
         : null;
-      setModelMismatch(normalizedMismatch);
+      setModelMismatch(keepIfEqual(normalizedMismatch));
       setActiveModel(data.active_model || null);
 
       // Toast when an active task completes
@@ -59,7 +61,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         }
       }
       prevActiveTaskId.current = data.active_task ? data.active_task.id : null;
-    } catch (err) {
+    } catch {
       // Backend polling error ignored silently
     }
   }, [API_BASE, setToast]);
@@ -73,7 +75,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
   const enqueueFolderIndexing = useCallback(async (folderPaths, priority = 'bottom') => {
     if (!folderPaths || folderPaths.length === 0) return null;
     try {
-      const res = await fetch(`${API_BASE}/queue/enqueue`, {
+      const res = await apiFetch(`${API_BASE}/queue/enqueue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -101,7 +103,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         setToast?.({ message: `Queue error: ${data.detail || res.statusText}`, type: 'error' });
         return null;
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Failed to connect to task queue.', type: 'error' });
       return null;
     }
@@ -109,7 +111,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const cancelTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/cancel`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/cancel`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: 'Task cancellation requested.', type: 'info' });
@@ -117,14 +119,14 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to cancel task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error cancelling task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
   const pauseTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/pause`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/pause`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: 'Task paused.', type: 'info' });
@@ -132,14 +134,14 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to pause task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error pausing task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
   const resumeTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/resume`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/resume`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: 'Task resumed.', type: 'success' });
@@ -147,14 +149,14 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to resume task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error resuming task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
   const controlWorker = useCallback(async (action, adoptModel = false) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/control`, {
+      const res = await apiFetch(`${API_BASE}/queue/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, adopt_model: adoptModel })
@@ -177,14 +179,14 @@ export const useTaskQueue = (API_BASE, setToast) => {
         });
         fetchQueue();
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Failed to send worker control signal.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
   const moveTask = useCallback(async (taskId, direction) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/move`, {
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/move`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction })
@@ -202,7 +204,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
     setPendingTasks(newOrderedTasks);
     try {
       const taskIds = newOrderedTasks.map((t) => t.id);
-      const res = await fetch(`${API_BASE}/queue/reorder`, {
+      const res = await apiFetch(`${API_BASE}/queue/reorder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_ids: taskIds })
@@ -218,7 +220,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
 
   const retryTask = useCallback(async (taskId) => {
     try {
-      const res = await fetch(`${API_BASE}/queue/${taskId}/retry`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/queue/${taskId}/retry`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setToast?.({ message: `Re-queued task: ${data.task?.title || ''}`, type: 'success' });
@@ -226,14 +228,14 @@ export const useTaskQueue = (API_BASE, setToast) => {
       } else {
         setToast?.({ message: data.detail || 'Failed to retry task.', type: 'error' });
       }
-    } catch (err) {
+    } catch {
       setToast?.({ message: 'Network error retrying task.', type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
   const clearHistory = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/queue/history`, { method: 'DELETE' });
+      const res = await apiFetch(`${API_BASE}/queue/history`, { method: 'DELETE' });
       if (res.ok) {
         setToast?.({ message: 'Cleared task history.', type: 'info' });
         fetchQueue();
