@@ -38,6 +38,7 @@ Or use the portable version `VBLIS-win-0.0.1.zip`, unzip the zip file and launch
 - [x] Support for more Vision-Language Models.
 - [x] Enhanced GPU acceleration settings (quantization, memory management).
 - [ ] Support for non-NVIDIA GPUs (MPS for Mac, Vulkan/DirectML for AMD/Intel).
+- [ ] Interface translations (i18n).
 - [x] Advanced filtering (by date, folder, or image properties).
 - [x] Image-to-Video searching.
 
