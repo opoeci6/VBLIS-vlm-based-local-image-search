@@ -4,12 +4,12 @@ import os
 import re
 import struct
 from datetime import datetime
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 import pillow_heif
 
 pillow_heif.register_heif_opener()
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".avif"}
 
 
 # macOS leaves metadata next to real files when it writes to a non-Apple drive or into a zip: "._<name>"
@@ -111,14 +111,48 @@ def decode_heif(path) -> Image.Image:
     """Decode a HEIC/HEIF file to a PIL image, applying its EXIF orientation."""
     return _decode_heif_with_orientation(path)[0]
 
-def _is_heif_source(source) -> bool:
-    if isinstance(source, (str, os.PathLike)):
-        return os.path.splitext(os.fspath(source))[1].lower() in (".heic", ".heif")
+def _ftyp_brands(head: bytes) -> set:
+    """The major and compatible brands of the ftyp box that starts an ISO BMFF file (HEIF, AVIF)."""
+    if head[4:8] != b"ftyp":
+        return set()
+    size = min(int.from_bytes(head[:4], "big"), len(head))
+    return {head[8:12]} | {head[i:i + 4] for i in range(16, size - 3, 4)}
+
+_AVIF_BRANDS = {b"avif", b"avis"}
+
+def _read_head(source, size=64) -> bytes:
+    """The first bytes of a binary file object, which is left at its start."""
     try:
         source.seek(0)
-        return pillow_heif.is_supported(source)
+        return source.read(size)
     finally:
         source.seek(0)
+
+def _is_heif_source(source) -> bool:
+    """True for HEIC/HEIF, which pillow_heif decodes. AVIF uses the same container, but this pillow_heif has no
+    AV1 decoder, so AVIF goes to Pillow's own AVIF plugin."""
+    if isinstance(source, (str, os.PathLike)):
+        return os.path.splitext(os.fspath(source))[1].lower() in (".heic", ".heif")
+    head = _read_head(source)
+    brands = _ftyp_brands(head)  # empty unless the data starts with an ftyp box
+    return (bool(brands) and pillow_heif.get_file_mimetype(head).startswith("image/hei")
+            and not brands & _AVIF_BRANDS)
+
+def _is_avif_source(source) -> bool:
+    if isinstance(source, (str, os.PathLike)):
+        return os.path.splitext(os.fspath(source))[1].lower() == ".avif"
+    return bool(_ftyp_brands(_read_head(source)) & _AVIF_BRANDS)
+
+def _open_with_pillow(source):
+    """Image.open, with an AVIF tried by Pillow's AVIF plugin first. pillow_heif's HEIF opener is registered at
+    startup, so ahead of that plugin, and it also claims AVIFs whose major brand is the generic "mif1", which
+    it then can't decode."""
+    if _is_avif_source(source):
+        try:
+            return Image.open(source, formats=["AVIF"])
+        except UnidentifiedImageError:
+            pass  # not an AVIF after all (a misnamed file): every plugin gets a try
+    return Image.open(source)
 
 def open_image_upright(source):
     """Open an image (path or binary file object) with its EXIF orientation applied and pixels loaded.
@@ -126,7 +160,7 @@ def open_image_upright(source):
     if _is_heif_source(source):
         img, orientation = _decode_heif_with_orientation(source)
         return img, _rotates(orientation)
-    img = Image.open(source)
+    img = _open_with_pillow(source)
     try:
         if _rotates(img.getexif().get(_EXIF_ORIENTATION_TAG, 1)):
             upright = ImageOps.exif_transpose(img)
@@ -143,7 +177,7 @@ def read_orientation(path) -> int:
     if _is_heif_source(path):
         heif_file = pillow_heif.open_heif(path)  # .data would decode, so only .info is touched
         return _parse_exif_orientation(heif_file.info.get("exif", b"") or b"")
-    with Image.open(path) as img:
+    with _open_with_pillow(path) as img:
         return img.getexif().get(_EXIF_ORIENTATION_TAG, 1)
 
 # Header-only metadata probing. The date and GPS helpers are shared with media_video.
@@ -269,7 +303,7 @@ def probe_image_info(path) -> dict:
         heif_file = pillow_heif.open_heif(path)  # .data would decode, so only .size and .info are touched
         (width, height), exif_bytes = heif_file.size, heif_file.info.get("exif") or b""
     else:
-        with Image.open(path) as img:
+        with _open_with_pillow(path) as img:
             (width, height), exif_bytes = img.size, img.info.get("exif") or b""
     info = _read_exif(exif_bytes)
     if info["orientation"] in (5, 6, 7, 8):

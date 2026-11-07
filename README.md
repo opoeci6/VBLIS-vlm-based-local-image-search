@@ -15,7 +15,7 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 - **Index Caching**: The index is cached on disk and can be refreshed or removed in the settings. Thumbnails are also cached for faster loading.
 - **Multiple Model Support**: Choose between high-performance models like `google/siglip2-base-patch16-224` and `openai/clip-vit-base-patch32`.
 - **GPU Acceleration**: Built-in support for NVIDIA GPUs via CUDA for lightning-fast inference.
-- **HEIC/HEIF Support**: Full support for modern image formats commonly used on high-end cameras and iPhones.
+- **HEIC/HEIF and AVIF Support**: Full support for modern image formats commonly used on high-end cameras, iPhones and the web.
 - **Dark & Light Mode**: A sleek, modern interface that adjusts to your preference.
 
 ## How to Use

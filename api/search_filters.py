@@ -17,6 +17,7 @@ FORMAT_GROUPS = {
     "webp": ("WebP", "image", (".webp",)),
     "bmp": ("BMP", "image", (".bmp",)),
     "heic": ("HEIC", "image", (".heic", ".heif")),
+    "avif": ("AVIF", "image", (".avif",)),
     "mp4": ("MP4", "video", (".mp4",)),
     "m4v": ("M4V", "video", (".m4v",)),
     "mov": ("MOV", "video", (".mov",)),

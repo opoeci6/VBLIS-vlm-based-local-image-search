@@ -17,6 +17,7 @@ export const FORMAT_LABELS = {
   webp: 'WebP',
   bmp: 'BMP',
   heic: 'HEIC',
+  avif: 'AVIF',
   mp4: 'MP4',
   m4v: 'M4V',
   mov: 'MOV',
