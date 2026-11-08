@@ -1,4 +1,5 @@
 import { AlertTriangle, X, ShieldAlert, Layers, Trash2, CheckCircle2 } from 'lucide-react';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 export const ModelSwitchWarningModal = ({
   isOpen,
@@ -12,11 +13,13 @@ export const ModelSwitchWarningModal = ({
   onClose,
   uiTheme = 'modern'
 }) => {
+  const backdropDismiss = useBackdropDismiss(onClose);
+
   if (!isOpen) return null;
   const isModern = uiTheme === 'modern';
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-150" onClick={onClose}>
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-150" {...backdropDismiss}>
       <div
         className={`w-full max-w-md p-6 rounded-3xl shadow-2xl border transition-all animate-in zoom-in-95 duration-150 ${
           isModern

@@ -1,17 +1,31 @@
-import { FolderOpen, X, Sparkles, Copy, Video } from 'lucide-react';
+import { FolderOpen, X, Sparkles, Copy, ClipboardCopy, Video } from 'lucide-react';
 import { API_BASE } from '../../config';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { cn } from '../../utils/cn';
+import { copyText } from '../../utils/electron';
 import { formatBytes, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { formatScorePercent, isSimilarityKind } from '../../utils/scoreLabel';
 
 export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiTheme }) => {
+  const backdropDismiss = useBackdropDismiss(() => setSelectedImage(null));
+
   if (!(selectedImage)) return null;
+
+  const handleCopyPath = async (e) => {
+    e.stopPropagation();
+    const res = await copyText(selectedImage.path);
+    if (res?.success) {
+      setToast({ message: 'Path copied', type: 'success' });
+    } else {
+      setToast({ message: res?.error || 'Failed to copy the path.', type: 'error' });
+    }
+  };
 
   return (
     <div
       className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 py-8 overflow-y-auto animate-in fade-in duration-200 custom-scrollbar"
-      onClick={() => setSelectedImage(null)}
+      {...backdropDismiss}
     >
       <div className="fixed top-12 right-6 flex gap-4 z-[90]">
         {window.electronAPI && (
@@ -34,6 +48,7 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
             e.stopPropagation();
             setSelectedImage(null);
           }}
+          aria-label="Close"
           className="p-2 bg-white/20 dark:bg-neutral-800/80 hover:bg-white/30 dark:hover:bg-neutral-700 text-white rounded-xl transition-all backdrop-blur-md border border-white/20 dark:border-neutral-700"
         >
           <X className="w-5 h-5" />
@@ -102,12 +117,28 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
             </div>
           )
         )}
-        <p className={cn(
-          "text-xs break-all max-w-3xl mx-auto",
-          uiTheme === 'modern' ? "text-neutral-300 font-sans" : "text-neutral-400 font-mono"
-        )}>
-          {selectedImage.path}
-        </p>
+        <div className="flex items-start justify-center gap-2 max-w-3xl mx-auto">
+          <p className={cn(
+            "text-xs break-all min-w-0",
+            uiTheme === 'modern' ? "text-neutral-300 font-sans" : "text-neutral-400 font-mono"
+          )}>
+            {selectedImage.path}
+          </p>
+          <button
+            type="button"
+            onClick={handleCopyPath}
+            aria-label="Copy path"
+            title="Copy path"
+            className={cn(
+              "flex-shrink-0 p-1 transition-all",
+              uiTheme === 'modern'
+                ? "rounded-md bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white border border-white/15"
+                : "rounded-none bg-black border border-white text-white font-mono hover:bg-white hover:text-black"
+            )}
+          >
+            <ClipboardCopy className="w-3.5 h-3.5" />
+          </button>
+        </div>
         {selectedImage.isDuplicate && (
           <div className="mt-2 space-y-1.5">
             {selectedImage.otherPaths.map(p => (

@@ -1,15 +1,18 @@
 import { memo } from 'react';
 import { FolderOpen, Loader2, AlertTriangle, X, RefreshCw } from 'lucide-react';
 import { FolderContentRow } from './FolderContentRow';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { cn } from '../../utils/cn';
 
 export const FolderContentsModal = memo(function FolderContentsModal({ showFolderContents, browsingFolder, folderContents, isFetchingFolderContents, isCleaningGhostRecords, setIsCleaningGhostRecords, folderVisibleLimit, setFolderVisibleLimit, handleCloseFolderContents, handleReindexFolder, setSelectedImage, setToast, uiTheme }) {
+  const backdropDismiss = useBackdropDismiss(handleCloseFolderContents);
+
   if (!(showFolderContents && browsingFolder)) return null;
 
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
-      onClick={handleCloseFolderContents}
+      {...backdropDismiss}
     >
       <div
         className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl w-[820px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"

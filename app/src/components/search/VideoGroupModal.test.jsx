@@ -86,6 +86,13 @@ describe('VideoGroupModal', () => {
     expect(props.setSelectedVideoGroup).toHaveBeenCalledWith(null);
   });
 
+  it('stays open when a drag from inside the panel ends on the backdrop', () => {
+    const { props, container } = renderModal();
+    fireEvent.mouseDown(screen.getByText('clip.mp4'));
+    fireEvent.click(container.firstChild);
+    expect(props.setSelectedVideoGroup).not.toHaveBeenCalled();
+  });
+
   it('closes with the close button', () => {
     const { props } = renderModal();
     fireEvent.click(screen.getByLabelText('Close video results'));

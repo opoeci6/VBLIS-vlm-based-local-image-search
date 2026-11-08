@@ -124,6 +124,15 @@ describe('TerminalResultsModal', () => {
     expect(props.handleCloseSearchResults).toHaveBeenCalledTimes(2);
   });
 
+  it('stays open when a drag from inside the panel ends on the backdrop', () => {
+    const props = makeProps();
+    const { container } = render(<TerminalResultsModal {...props} />);
+
+    fireEvent.mouseDown(screen.getByText('Search Results'));
+    fireEvent.click(container.firstChild);
+    expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+  });
+
   it('loads more results and attaches the terminal sentinel', () => {
     const props = makeProps({ imageResults: makeImages(100), visibleResultsCount: 80 });
     render(<TerminalResultsModal {...props} />);

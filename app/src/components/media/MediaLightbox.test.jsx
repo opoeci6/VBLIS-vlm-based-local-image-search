@@ -133,9 +133,48 @@ describe('MediaLightbox', () => {
     });
   });
 
+  describe('copy path', () => {
+    it.each(['modern', 'terminal'])('copies the path and confirms with a toast (%s theme)', async (uiTheme) => {
+      window.electronAPI = { copyText: vi.fn().mockResolvedValue({ success: true }) };
+      const { props } = renderLightbox(imageResult(), { uiTheme });
+      fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+      await waitFor(() => expect(props.setToast).toHaveBeenCalledWith({ message: 'Path copied', type: 'success' }));
+      expect(window.electronAPI.copyText).toHaveBeenCalledWith('/pics/a.jpg');
+    });
+
+    it('shows an error toast when the copy fails', async () => {
+      window.electronAPI = { copyText: vi.fn().mockResolvedValue({ success: false, error: 'Nothing to copy.' }) };
+      const { props } = renderLightbox(imageResult());
+      fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+      await waitFor(() => expect(props.setToast).toHaveBeenCalledWith({ message: 'Nothing to copy.', type: 'error' }));
+    });
+
+    it('does not close the lightbox', async () => {
+      window.electronAPI = { copyText: vi.fn().mockResolvedValue({ success: true }) };
+      const { props } = renderLightbox(imageResult());
+      fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+      await waitFor(() => expect(props.setToast).toHaveBeenCalled());
+      expect(props.setSelectedImage).not.toHaveBeenCalled();
+    });
+  });
+
   describe('closing', () => {
     it('closes on a backdrop click', () => {
       const { props, container } = renderLightbox(imageResult());
+      fireEvent.click(container.firstChild);
+      expect(props.setSelectedImage).toHaveBeenCalledWith(null);
+    });
+
+    it('stays open when a drag from the path text ends on the backdrop', () => {
+      const { props, container } = renderLightbox(imageResult());
+      fireEvent.mouseDown(screen.getByText('/pics/a.jpg'));
+      fireEvent.click(container.firstChild);
+      expect(props.setSelectedImage).not.toHaveBeenCalled();
+    });
+
+    it('closes on a press and release on the backdrop', () => {
+      const { props, container } = renderLightbox(imageResult());
+      fireEvent.mouseDown(container.firstChild);
       fireEvent.click(container.firstChild);
       expect(props.setSelectedImage).toHaveBeenCalledWith(null);
     });
@@ -148,7 +187,7 @@ describe('MediaLightbox', () => {
 
     it('closes with the close button', () => {
       const { props } = renderLightbox(imageResult());
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
       expect(props.setSelectedImage).toHaveBeenCalledWith(null);
     });
   });

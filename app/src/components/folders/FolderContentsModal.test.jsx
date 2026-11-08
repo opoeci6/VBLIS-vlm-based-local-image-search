@@ -82,6 +82,13 @@ describe('FolderContentsModal', () => {
     expect(props.handleCloseFolderContents).toHaveBeenCalledTimes(2);
   });
 
+  it('stays open when a drag from inside the panel ends on the backdrop', () => {
+    const { props, container } = renderModal();
+    fireEvent.mouseDown(screen.getByText('Folder Contents'));
+    fireEvent.click(container.firstChild);
+    expect(props.handleCloseFolderContents).not.toHaveBeenCalled();
+  });
+
   describe('ghost records', () => {
     const withMissing = () => ({ folderContents: makeContents({ missing_on_disk_count: 2 }) });
 

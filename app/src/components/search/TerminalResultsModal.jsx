@@ -1,11 +1,14 @@
 import { memo } from 'react';
 import { Search, FolderOpen, Loader2, Image as ImageIcon, X } from 'lucide-react';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { VideoResultFolder } from './VideoResultFolder';
 import { SearchResultCard } from './SearchResultCard';
 import { ActiveFilterChips } from './filters/ActiveFilterChips';
 import { SearchFiltersButton } from './filters/SearchFiltersButton';
 
 export const TerminalResultsModal = memo(function TerminalResultsModal({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage, filterChips, onClearFilters, activeFilterCount = 0, filtersOpen = false, onToggleFilters }) {
+  const backdropDismiss = useBackdropDismiss(handleCloseSearchResults);
+
   if (!(showSearchResults && results.length > 0 && uiTheme === 'terminal')) return null;
 
   // Counted like Max Results: every image once, every video once (not its frames).
@@ -14,7 +17,7 @@ export const TerminalResultsModal = memo(function TerminalResultsModal({ showSea
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/90 p-6 animate-in fade-in duration-200"
-      onClick={handleCloseSearchResults}
+      {...backdropDismiss}
     >
       <div
         className="flex max-h-[86vh] w-full max-w-7xl flex-col border border-white bg-black"
