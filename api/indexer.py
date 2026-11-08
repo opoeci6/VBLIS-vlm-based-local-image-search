@@ -35,10 +35,14 @@ from search_session import (
 
 paths.ensure_dirs()
 
-# How many leading image results the frontend runs duplicate detection on: they carry their embedding for the
-# visual pass, which caps itself at a literal 800 in annotateDuplicates (app/src/utils/searchResults.js), so
-# this must match that cap. The exact-copy lookup (`copies`, see _attach_exact_copies) covers the same head.
+# How many leading image results duplicate detection covers. The backend owns this cap for both kinds: the
+# exact-copy lookup (`copies`, see _attach_exact_copies) and the visual groups (`visual_group`, see
+# _assign_visual_groups) look at the first DUPLICATE_CHECK_LIMIT image results only.
 DUPLICATE_CHECK_LIMIT = 800
+
+# Two head images are visual duplicates when the dot product of their stored (unit length) embeddings is at
+# least this; the pairs join through union-find, so a chain of such pairs is one group.
+VISUAL_DUPLICATE_THRESHOLD = 0.985
 
 # A search asks Chroma for at least this many candidates (distances only). A text query sits far from every
 # image embedding, so the HNSW graph finds its true best matches only when it searches wide: measured in round S
@@ -216,21 +220,16 @@ def _walk_ranking(collection, ids, scores, cut, top_k, metas_by_id, file_exists,
         pos = end
     return found, items
 
-def _format_search_result(record_id, meta, score, score_kind, embedding=None):
+def _format_search_result(record_id, meta, score, score_kind):
     filepath = meta.get("path")
     file_hash = meta.get("hash")
 
-    # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
+    # If hash is missing from metadata, compute on the fly so duplicate detection always works
     if not file_hash:
         try:
             file_hash = compute_file_hash(filepath)
         except Exception:
             pass
-
-    if hasattr(embedding, "tolist"):
-        embedding = embedding.tolist()
-    elif isinstance(embedding, (list, tuple)):
-        embedding = [float(x) for x in embedding]
 
     return {
         "id": record_id,
@@ -241,8 +240,7 @@ def _format_search_result(record_id, meta, score, score_kind, embedding=None):
         "scene_id": meta.get("scene_id"),
         "sampling_reason": meta.get("sampling_reason"),
         "score": None if score is None else float(score),
-        "score_kind": score_kind,
-        "embedding": embedding
+        "score_kind": score_kind
     }
 
 def _walk_file_entries(top):
@@ -1684,8 +1682,9 @@ class Indexer:
     @staticmethod
     def _finish_results(collection, found, score_kind, file_exists):
         """The formatted results of `found`, a flat list of (record_id, metadata, score) in result order: the
-        first DUPLICATE_CHECK_LIMIT images carry their embedding and their exact copies."""
-        # Embeddings are only needed for the images the frontend runs duplicate detection on
+        first DUPLICATE_CHECK_LIMIT images carry their exact copies (`copies`) and, when they belong to a group
+        of visual duplicates, its number (`visual_group`). No result carries its embedding."""
+        # Embeddings are only needed for the images the duplicate detection covers
         embeddings_by_id = {}
         head_ids = []
         for record_id, meta, _ in found:
@@ -1701,17 +1700,64 @@ class Indexer:
                     embeddings_by_id[record_id] = emb
 
         # Formatted first: a hash computed on the fly (a record without one) is then reused for the copy lookup
-        formatted = [
-            _format_search_result(record_id, meta, score, score_kind, embeddings_by_id.get(record_id))
-            for record_id, meta, score in found
-        ]
-        Indexer._attach_exact_copies(collection, formatted, set(head_ids), file_exists)
+        # and for telling copies from look-alikes
+        formatted = [_format_search_result(record_id, meta, score, score_kind) for record_id, meta, score in found]
+        head_id_set = set(head_ids)
+        Indexer._assign_visual_groups(formatted, head_id_set, embeddings_by_id)
+        Indexer._attach_exact_copies(collection, formatted, head_id_set, file_exists)
         return formatted
 
-    def browse_library(self, filters=None, sort="newest", top_k=50):
+    @staticmethod
+    def _assign_visual_groups(formatted, head_ids, embeddings_by_id):
+        """Sets `visual_group` (an int) on the head image results that have a visual duplicate in the head. Pairs
+        whose embeddings have a dot product of at least VISUAL_DUPLICATE_THRESHOLD are joined, except pairs with
+        the same non-empty hash (exact copies are shown as such, see `copies`); joined pairs merge into groups
+        (a chain is one group). Groups are numbered 0, 1, ... by the first member in result order. A head image
+        without an embedding joins no group. A failing computation leaves the results as they are."""
+        head = [r for r in formatted if r["id"] in head_ids and r["media_type"] != "video"
+                and embeddings_by_id.get(r["id"]) is not None]
+        if len(head) < 2:
+            return
+        try:
+            vectors = np.asarray([embeddings_by_id[r["id"]] for r in head], dtype=np.float32)
+            if vectors.ndim != 2:
+                return
+            pairs = np.argwhere(np.triu((vectors @ vectors.T) >= np.float32(VISUAL_DUPLICATE_THRESHOLD), 1))
+        except Exception as e:
+            print(f"[Warning] Indexer: could not group the visually similar search results: {e}")
+            return
+
+        parent = list(range(len(head)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for i, j in pairs.tolist():
+            if head[i].get("hash") and head[i]["hash"] == head[j].get("hash"):
+                continue
+            root_i, root_j = find(i), find(j)
+            if root_i != root_j:
+                # The smaller index stays the root, so a root is always the first member of its group
+                parent[max(root_i, root_j)] = min(root_i, root_j)
+
+        roots = [find(i) for i in range(len(head))]
+        sizes = {}
+        for root in roots:
+            sizes[root] = sizes.get(root, 0) + 1
+        numbers = {}
+        for result, root in zip(head, roots):
+            if sizes[root] < 2:
+                continue
+            result["visual_group"] = numbers.setdefault(root, len(numbers))
+
+    def browse_library(self, filters=None, sort="newest", top_k=None):
         """The indexed library of the active model without a query, by date taken (newest or oldest first), in
         the shape of search results (score None, score_kind "none", plus `taken_at`). `total` counts the items
-        (an image, or a video however many frames it has) that match before the top_k cut. Files that are
+        (an image, or a video however many frames it has) that match before the top_k cut; top_k None (the
+        default) means no cut. Files that are
         gone and records the filters reject are skipped; undated items come last in both orders."""
         collection = self._search_collection()
         if collection.count() == 0:
@@ -1762,7 +1808,7 @@ class Indexer:
 
         found = []
         taken_by_id = {}
-        for _, taken_at, is_video, records in ordered[:max(top_k, 0)]:
+        for _, taken_at, is_video, records in (ordered if top_k is None else ordered[:max(top_k, 0)]):
             if is_video:
                 records = sorted(records, key=lambda r: r[1].get("timestamp_seconds") or 0.0)[:VIDEO_FRAMES_PER_RESULT]
             else:
