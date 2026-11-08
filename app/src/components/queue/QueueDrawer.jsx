@@ -4,11 +4,13 @@ import { ActiveTaskCard } from './ActiveTaskCard';
 import { QueuedTaskList } from './QueuedTaskList';
 import { TaskHistoryList } from './TaskHistoryList';
 import { StopQueueModal } from './StopQueueModal';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { hasModelDependentTask, isModelDependentTask } from '../../utils/taskTypes';
 
 export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpenSettings }) => {
   const [activeTab, setActiveTab] = useState('all');
   const isModern = uiTheme === 'modern';
+  const backdropDismiss = useBackdropDismiss(onClose);
 
   if (!isOpen) return null;
 
@@ -67,7 +69,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
     <>
       <div
         className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
-        onClick={onClose}
+        {...backdropDismiss}
       >
         {/* Modal Dialog Card */}
         <div

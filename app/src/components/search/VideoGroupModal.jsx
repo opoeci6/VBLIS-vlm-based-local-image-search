@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FolderOpen, Images, Loader2, X } from 'lucide-react';
 import { VideoFrameCard } from './VideoFrameCard';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { useProgressiveList } from '../../hooks/useProgressiveList';
 import { cn } from '../../utils/cn';
 import { formatScorePercent, isSimilarityKind } from '../../utils/scoreLabel';
@@ -19,12 +20,14 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
   const frames = selectedVideoGroup?.frames ?? [];
   const { sentinelRef } = useProgressiveList({ items: frames, visibleCount, setVisibleCount });
 
+  const backdropDismiss = useBackdropDismiss(() => setSelectedVideoGroup(null));
+
   if (!(selectedVideoGroup)) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 dark:bg-black/85 backdrop-blur-md p-6 animate-in fade-in duration-200"
-      onClick={() => setSelectedVideoGroup(null)}
+      {...backdropDismiss}
     >
       <div
         className={cn(

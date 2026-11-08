@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueueDrawer } from './QueueDrawer';
 
 const scanTask = { id: 1, type: 'SCAN_MEDIA_INFO', title: 'Read media details', status: 'pending', progress: 0, model_id: null };
@@ -27,7 +27,7 @@ const makeQueue = (extra = {}) => ({
   ...extra,
 });
 
-const renderDrawer = (queue) => render(<QueueDrawer isOpen onClose={vi.fn()} queue={queue} onOpenSettings={vi.fn()} />);
+const renderDrawer = (queue, onClose = vi.fn()) => render(<QueueDrawer isOpen onClose={onClose} queue={queue} onOpenSettings={vi.fn()} />);
 
 describe('QueueDrawer no-model banner', () => {
   afterEach(cleanup);
@@ -67,5 +67,27 @@ describe('QueueDrawer no-model banner', () => {
   it('is hidden when a model is loaded', () => {
     renderDrawer(makeQueue({ pendingTasks: [indexTask], pendingCount: 1, activeModel: 'org/model-a' }));
     expect(screen.queryByText('No AI Model Loaded in Memory')).toBeNull();
+  });
+});
+
+describe('QueueDrawer backdrop', () => {
+  afterEach(cleanup);
+
+  it('closes on a backdrop click but not on a click inside the drawer', () => {
+    const onClose = vi.fn();
+    const { container } = renderDrawer(makeQueue(), onClose);
+    fireEvent.click(screen.getByText('Task Queue Manager'));
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(container.firstChild);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays open when a drag from inside the drawer ends on the backdrop', () => {
+    const onClose = vi.fn();
+    const { container } = renderDrawer(makeQueue(), onClose);
+    fireEvent.mouseDown(screen.getByText('Task Queue Manager'));
+    fireEvent.click(container.firstChild);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

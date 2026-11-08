@@ -78,6 +78,20 @@ describe('useMediaSearch', () => {
       expect(result.current.videoGroups[0]).toMatchObject({ path: '/v.mp4', name: 'v.mp4', bestScore: 0.7 });
     });
 
+    it('turns the copies of a result into its otherPaths', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({
+        results: [imageHit('/a.jpg', { hash: 'h', copies: ['/e/a.jpg'] }), imageHit('/b.jpg', { hash: 'x', copies: [], embedding: [0, 1] })],
+      }));
+      const { result } = render();
+      await submit(result, 'a cat');
+      await runSearch(result);
+
+      expect(result.current.results[0]).toMatchObject({ duplicateType: 'exact', isDuplicate: true, otherPaths: ['/e/a.jpg'] });
+      expect(result.current.results[0]).not.toHaveProperty('copies');
+      expect(result.current.results[1]).toMatchObject({ isDuplicate: false, otherPaths: [] });
+      expect(result.current.imageResults.map(r => r.path)).toEqual(['/a.jpg', '/b.jpg']); // copies are no tiles
+    });
+
     it('sends top_k 20000 when maxResults is 0 and uses the chosen min score', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ results: [] }));
       const { result } = render();

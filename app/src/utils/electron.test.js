@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getPathForFile, isDirectory } from './electron';
+import { copyText, getPathForFile, isDirectory } from './electron';
 
 describe('electron helpers', () => {
   afterEach(() => {
     delete window.electronAPI;
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe('getPathForFile', () => {
@@ -41,6 +42,42 @@ describe('electron helpers', () => {
     it('returns false when electronAPI lacks the method', async () => {
       window.electronAPI = {};
       await expect(isDirectory('/some/dir')).resolves.toBe(false);
+    });
+  });
+
+  describe('copyText', () => {
+    it('copies through electronAPI.copyText', async () => {
+      const copy = vi.fn().mockResolvedValue({ success: true });
+      window.electronAPI = { copyText: copy };
+      await expect(copyText('/pics/a.jpg')).resolves.toEqual({ success: true });
+      expect(copy).toHaveBeenCalledWith('/pics/a.jpg');
+    });
+
+    it('passes on a failure reported by the main process', async () => {
+      window.electronAPI = { copyText: vi.fn().mockResolvedValue({ success: false, error: 'Nothing to copy.' }) };
+      await expect(copyText('')).resolves.toEqual({ success: false, error: 'Nothing to copy.' });
+    });
+
+    it('falls back to navigator.clipboard without electronAPI', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      await expect(copyText('hello')).resolves.toEqual({ success: true });
+      expect(writeText).toHaveBeenCalledWith('hello');
+    });
+
+    it('reports that the clipboard is unavailable', async () => {
+      vi.stubGlobal('navigator', {});
+      await expect(copyText('hello')).resolves.toEqual({ success: false, error: 'Clipboard is not available.' });
+    });
+
+    it('turns a rejection into a failure result', async () => {
+      window.electronAPI = { copyText: vi.fn().mockRejectedValue(new Error('ipc blew up')) };
+      await expect(copyText('hello')).resolves.toEqual({ success: false, error: 'ipc blew up' });
+    });
+
+    it('turns a navigator.clipboard rejection into a failure result', async () => {
+      vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
+      await expect(copyText('hello')).resolves.toEqual({ success: false, error: 'denied' });
     });
   });
 });

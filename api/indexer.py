@@ -35,8 +35,9 @@ from search_session import (
 
 paths.ensure_dirs()
 
-# How many leading search results carry their embedding for the frontend's visual-duplicate detection.
-# Must match maxVisualLimit in app/src/utils/searchResults.js.
+# How many leading image results the frontend runs duplicate detection on: they carry their embedding for the
+# visual pass, which caps itself at a literal 800 in annotateDuplicates (app/src/utils/searchResults.js), so
+# this must match that cap. The exact-copy lookup (`copies`, see _attach_exact_copies) covers the same head.
 DUPLICATE_CHECK_LIMIT = 800
 
 # A search asks Chroma for at least this many candidates (distances only). A text query sits far from every
@@ -1693,7 +1694,39 @@ class Indexer:
                 for record_id, emb in zip(fetched["ids"], fetched_embeddings):
                     embeddings_by_id[record_id] = emb
 
-        return [
+        # Formatted first: a hash computed on the fly (a record without one) is then reused for the copy lookup
+        formatted = [
             _format_search_result(record_id, meta, score, scorer.kind, embeddings_by_id.get(record_id))
             for record_id, meta, score in found
         ]
+        self._attach_exact_copies(collection, formatted, set(head_ids), file_exists)
+        return formatted
+
+    @staticmethod
+    def _attach_exact_copies(collection, formatted, head_ids, file_exists):
+        """Adds `copies` to the image results of the head: the other indexed files with the same SHA-256 hash,
+        wherever they are in the library (the frontend's exact-copy badge must not depend on Max Results).
+        Copies are not filtered by the search filters; only files that are gone are dropped. A failing lookup
+        leaves the results as they are."""
+        head = [r for r in formatted if r["id"] in head_ids and r["media_type"] != "video"]
+        hashes = sorted({r["hash"] for r in head if r.get("hash")})
+        if not hashes:
+            return
+        try:
+            fetched = collection.get(where={"hash": {"$in": hashes}}, include=["metadatas"])
+            paths_by_hash = {}
+            for meta in fetched.get("metadatas") or []:
+                path = meta.get("path") if meta else None
+                # A video frame's hash is not a file hash
+                if not path or _is_video(meta) or not meta.get("hash"):
+                    continue
+                if not file_exists.isfile(path):
+                    continue
+                paths_by_hash.setdefault(meta["hash"], {}).setdefault(os.path.normcase(path), path)
+        except Exception as e:
+            print(f"[Warning] Indexer: could not look up exact copies of the search results: {e}")
+            return
+        for result in head:
+            own = os.path.normcase(result["path"]) if result.get("path") else None
+            by_key = paths_by_hash.get(result.get("hash"), {})
+            result["copies"] = [by_key[key] for key in sorted(by_key) if key != own]
