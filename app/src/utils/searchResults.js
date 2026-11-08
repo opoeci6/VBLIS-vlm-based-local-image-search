@@ -12,17 +12,21 @@ export const annotateDuplicates = (dataResults) => {
     return sum;
   };
 
-  // 1. Group exact file duplicates by SHA-256 hash
+  // 1. Group exact file duplicates by SHA-256 hash. The group of a hash holds the paths of the results with
+  // that hash and every copy the backend found in the whole library (`copies`, only on the leading results),
+  // each path once, in order of first appearance. A hash is an exact duplicate when its group has 2+ paths.
   const exactHashGroups = {};
   results.forEach(res => {
     if (res.media_type !== 'video' && res.hash) {
-      if (!exactHashGroups[res.hash]) exactHashGroups[res.hash] = [];
-      exactHashGroups[res.hash].push(res.path);
+      if (!exactHashGroups[res.hash]) exactHashGroups[res.hash] = new Set();
+      const group = exactHashGroups[res.hash];
+      group.add(res.path);
+      (res.copies || []).forEach(copyPath => group.add(copyPath));
     }
   });
 
   const exactDupeHashes = new Set(
-    Object.keys(exactHashGroups).filter(h => exactHashGroups[h].length > 1)
+    Object.keys(exactHashGroups).filter(h => exactHashGroups[h].size > 1)
   );
 
   // 2. Pairwise Cosine Similarity for Visual Duplicates (Threshold >= 0.985)
@@ -117,14 +121,14 @@ export const annotateDuplicates = (dataResults) => {
     if (isExact) {
       duplicateType = 'exact';
       dupeColor = exactColorMap[res.hash];
-      otherPaths = exactHashGroups[res.hash].filter(p => p !== res.path);
+      otherPaths = Array.from(exactHashGroups[res.hash]).filter(p => p !== res.path);
     } else if (isVisual) {
       duplicateType = 'visual';
       dupeColor = visualColorMap.get(idx);
       otherPaths = visualPathsMap.get(idx) || [];
     }
 
-    const { embedding, ...cleanRes } = res;
+    const { embedding, copies, ...cleanRes } = res;
 
     return {
       ...cleanRes,

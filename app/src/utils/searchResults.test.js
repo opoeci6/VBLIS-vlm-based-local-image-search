@@ -27,6 +27,82 @@ describe('annotateDuplicates', () => {
     expect(out[2]).toMatchObject({ isDuplicate: false, duplicateType: null, dupeColor: null, otherPaths: [] });
   });
 
+  describe('exact copies from the whole library', () => {
+    it('treats a single result with copies as exact, otherPaths being the copies', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1', copies: ['/e/a.jpg', '/f/a.jpg'] }),
+        img('/b.jpg', { hash: 'h2', copies: [] }),
+      ]);
+      expect(out[0]).toMatchObject({
+        isDuplicate: true, duplicateType: 'exact', otherPaths: ['/e/a.jpg', '/f/a.jpg'], dupeColor: '#0078d4',
+      });
+      expect(out[1]).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] });
+    });
+
+    it('lists a copy that is also a result once, without the own path', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1', copies: ['/b.jpg', '/c.jpg'] }),
+        img('/b.jpg', { hash: 'h1', copies: ['/a.jpg', '/c.jpg'] }),
+      ]);
+      expect(out[0].otherPaths).toEqual(['/b.jpg', '/c.jpg']);
+      expect(out[1].otherPaths).toEqual(['/a.jpg', '/c.jpg']);
+    });
+
+    it('gives both same-hash results the full group when only one carries copies', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1' }),
+        img('/b.jpg', { hash: 'h1', copies: ['/a.jpg', '/c.jpg'] }),
+      ]);
+      expect(out[0]).toMatchObject({ duplicateType: 'exact', otherPaths: ['/b.jpg', '/c.jpg'] });
+      expect(out[1]).toMatchObject({ duplicateType: 'exact', otherPaths: ['/a.jpg', '/c.jpg'] });
+    });
+
+    it('gives a result without copies the group brought by another result of its hash', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1', copies: ['/c.jpg'] }),
+        img('/x.jpg', { hash: 'h2' }),
+        img('/b.jpg', { hash: 'h1' }),
+      ]);
+      expect(out[2]).toMatchObject({ duplicateType: 'exact', dupeColor: out[0].dupeColor, otherPaths: ['/a.jpg', '/c.jpg'] });
+      expect(out[1]).toMatchObject({ isDuplicate: false, otherPaths: [] });
+    });
+
+    it('colors exact hashes in order of first appearance', () => {
+      const out = annotateDuplicates([
+        img('/x.jpg', { hash: 'h2', copies: ['/x2.jpg'] }),
+        img('/a.jpg', { hash: 'h1', copies: ['/a2.jpg'] }),
+      ]);
+      expect(out[0].dupeColor).toBe('#0078d4');
+      expect(out[1].dupeColor).toBe('#ec4899');
+    });
+
+    it('strips copies from the output and does not mutate the input', () => {
+      const input = [img('/a.jpg', { hash: 'h1', copies: ['/b.jpg'] })];
+      const out = annotateDuplicates(input);
+      expect(out[0]).not.toHaveProperty('copies');
+      expect(input[0].copies).toEqual(['/b.jpg']);
+    });
+
+    it('ignores copies of videos', () => {
+      const out = annotateDuplicates([
+        { path: '/v.mp4', media_type: 'video', hash: 'hv', copies: ['/v2.mp4'], score: 0.9 },
+      ]);
+      expect(out[0]).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] });
+      expect(out[0]).not.toHaveProperty('copies');
+    });
+
+    it('still runs the visual pass, with exact winning over visual', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1', embedding: BASE, copies: ['/a2.jpg'] }),
+        img('/b.jpg', { hash: 'h2', embedding: unit(0.99), copies: [] }),
+        img('/c.jpg', { hash: 'h3', embedding: unit(0.99), copies: [] }),
+      ]);
+      expect(out[0]).toMatchObject({ duplicateType: 'exact', otherPaths: ['/a2.jpg'] });
+      expect(out[1]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/c.jpg'] });
+      expect(out[2]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/b.jpg'] });
+    });
+  });
+
   it('gives different exact groups different colors', () => {
     const out = annotateDuplicates([
       img('/a.jpg', { hash: 'h1' }),
