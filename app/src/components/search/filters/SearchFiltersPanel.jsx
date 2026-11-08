@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
 import { cn } from '../../../utils/cn';
 import {
+  DUPLICATE_KINDS,
+  DUPLICATE_LABELS,
   MEGAPIXEL_CHOICES,
   ORIENTATIONS,
   ORIENTATION_LABELS,
@@ -134,6 +136,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
     datePreset, dateFrom, dateTo, setDatePreset, setCustomDate,
     orientations, toggleOrientation, formats, toggleFormat,
     minMegapixels, setMinMegapixels,
+    duplicates, toggleDuplicate,
     activeCount, clearAll,
     options, optionsLoading, optionsError, loadOptions, readDetailsNow, isStartingScan,
     scanActive, missingDetails, detailsFilterActive
@@ -243,6 +246,22 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
         {options && formatEntries.length === 0 && (
           <p className="text-xs text-neutral-500 dark:text-neutral-400">No formats found</p>
         )}
+      </Section>
+
+      <Section title="Duplicates">
+        <div className="flex flex-wrap gap-2">
+          {DUPLICATE_KINDS.map(kind => {
+            const count = options?.duplicates?.[kind];
+            return (
+              <FilterToggle key={kind} pressed={duplicates.includes(kind)} onClick={() => toggleDuplicate(kind)}>
+                {DUPLICATE_LABELS[kind]}{typeof count === 'number' ? ` (${formatCount(count)})` : ''}
+              </FilterToggle>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+          Copies and look-alikes anywhere in your library. The first look-alike check after indexing can take a few seconds.
+        </p>
       </Section>
 
       <Section title="Minimum resolution">

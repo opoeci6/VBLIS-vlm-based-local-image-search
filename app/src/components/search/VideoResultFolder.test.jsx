@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { VideoResultFolder } from './VideoResultFolder';
+import { formatTakenDate } from '../../utils/formatters';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -100,5 +101,48 @@ describe('VideoResultFolder', () => {
     const group = makeGroup();
     render(<VideoResultFolder group={group} idx={0} onSelect={() => {}} uiTheme={uiTheme} />);
     expect(screen.getByText('VIDEO')).toBeTruthy();
+  });
+});
+
+describe('VideoResultFolder without a score (library view)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const makeLibraryGroup = (takenAt = '2024-03-12T10:00:00') => {
+    const path = `/videos/library-card-${++counter}.mp4`;
+    const frames = [5, 20].map(timestamp_seconds => (
+      { path, media_type: 'video', score: null, score_kind: 'none', taken_at: takenAt, timestamp_seconds }
+    ));
+    return { path, name: `library-card-${counter}.mp4`, frames, bestScore: 0, bestFrame: frames[0] };
+  };
+
+  it('hides BEST and shows the date taken', () => {
+    render(<VideoResultFolder group={makeLibraryGroup()} idx={0} onSelect={() => {}} />);
+    expect(screen.queryByText(/BEST/)).toBeNull();
+    expect(screen.getByText(formatTakenDate('2024-03-12T10:00:00'))).toBeTruthy();
+  });
+
+  it('shows neither when the date is unknown', () => {
+    render(<VideoResultFolder group={makeLibraryGroup(null)} idx={0} onSelect={() => {}} />);
+    expect(screen.queryByText(/BEST/)).toBeNull();
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it('counts "N frames" instead of "returned frames"', () => {
+    render(<VideoResultFolder group={makeLibraryGroup()} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText('2 frames')).toBeTruthy();
+    expect(screen.queryByText(/returned/)).toBeNull();
+  });
+
+  it('says "1 frame" for a single frame', () => {
+    const group = makeLibraryGroup();
+    render(<VideoResultFolder group={{ ...group, frames: [group.frames[0]] }} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText('1 frame')).toBeTruthy();
   });
 });

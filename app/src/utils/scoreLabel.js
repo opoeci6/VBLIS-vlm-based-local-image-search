@@ -35,3 +35,6 @@ export const formatScoreLabel = (score, kind) => {
 
 // "97% MATCH" / "84% SIMILAR"
 export const formatScoreLabelUpper = (score, kind) => `${formatScorePercent(score)} ${scoreWord(kind).toUpperCase()}`;
+
+// True when the item carries a score. Browsing the library gives items score: null, which must not read as "0%".
+export const hasScore = (item) => typeof item?.score === 'number' && Number.isFinite(item.score);

@@ -3,13 +3,18 @@ import { AsciiLogo } from '../common/AsciiLogo';
 
 // `missingDetails`: files without media details that the active date/orientation/resolution filters
 // skip (0 when none of those filters is active); the hint offers to read them.
-export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetails = 0, scanActive = false, onReadDetails }) => {
+// `browsing`: the library was shown without a query (an empty Search), so there is no query to retry.
+export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetails = 0, scanActive = false, onReadDetails, browsing = false }) => {
   if (filtersActive) {
     return (
       <div className="flex flex-col items-center justify-center mt-32 gap-3">
         <Search className="w-16 h-16 mb-1 text-neutral-400 dark:text-neutral-600 opacity-50" />
-        <p className="text-xl text-neutral-800 dark:text-neutral-300 font-bold">No matches with the current filters</p>
-        <p className="text-sm text-neutral-500 dark:text-neutral-500 font-medium">Remove a filter or try a different query.</p>
+        <p className="text-xl text-neutral-800 dark:text-neutral-300 font-bold">
+          {browsing ? 'Nothing in your library matches the current filters' : 'No matches with the current filters'}
+        </p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-500 font-medium">
+          {browsing ? 'Remove a filter to see more of your library.' : 'Remove a filter or try a different query.'}
+        </p>
         {missingDetails > 0 && (
           <div className="flex flex-col items-center gap-2" data-testid="no-matches-details-hint">
             <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">
@@ -38,6 +43,14 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
         >
           Clear filters
         </button>
+      </div>
+    );
+  }
+  if (browsing) {
+    return (
+      <div className="flex flex-col items-center justify-center mt-32 opacity-50">
+        <Search className="w-16 h-16 mb-4 text-neutral-400 dark:text-neutral-600" />
+        <p className="text-xl text-neutral-800 dark:text-neutral-300 font-bold">Nothing to browse yet: add a folder to index it.</p>
       </div>
     );
   }
@@ -140,6 +153,7 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
               ? `${indexedFolders.length} folder${indexedFolders.length > 1 ? 's are' : ' is'} ready. Search your media using natural language.`
               : 'Select a folder to extract intelligence, then search your memories using natural language.'}
           </p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">Press Search with an empty box to browse your library.</p>
           <div className="flex items-center gap-2 mt-1">
             <button
               onClick={() => setShowSettings(true)}
@@ -173,6 +187,7 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
               ? `${indexedFolders.length} folder${indexedFolders.length > 1 ? 's are' : ' is'} ready. Search your media using natural language.`
               : 'Select a folder to extract intelligence, then search your memories using natural language.'}
           </p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">Press Search with an empty box to browse your library.</p>
           <div className="flex items-center gap-2 mt-2">
             <button
               onClick={() => setShowSettings(true)}

@@ -3,14 +3,17 @@ import { API_BASE } from '../../config';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { cn } from '../../utils/cn';
 import { copyText } from '../../utils/electron';
-import { formatBytes, formatVideoTimestamp } from '../../utils/formatters';
+import { formatBytes, formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
-import { formatScorePercent, isSimilarityKind } from '../../utils/scoreLabel';
+import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
 
 export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiTheme }) => {
   const backdropDismiss = useBackdropDismiss(() => setSelectedImage(null));
 
   if (!(selectedImage)) return null;
+
+  // An item from the library view (no query) has no score: show when it was taken instead.
+  const takenDate = formatTakenDate(selectedImage.taken_at);
 
   const handleCopyPath = async (e) => {
     e.stopPropagation();
@@ -66,10 +69,13 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
       />
 
       <div className="mt-6 text-center" onClick={(e) => e.stopPropagation()}>
-        {!selectedImage.isBrowsing && selectedImage.score !== undefined && (
+        {!selectedImage.isBrowsing && hasScore(selectedImage) && (
           <p className="text-xl font-medium text-white mb-2">
             {isSimilarityKind(selectedImage.score_kind) ? 'Similarity' : 'Match Score'}: {formatScorePercent(selectedImage.score)}
           </p>
+        )}
+        {!selectedImage.isBrowsing && !hasScore(selectedImage) && takenDate && (
+          <p className="text-xl font-medium text-white mb-2">Taken {takenDate}</p>
         )}
         {selectedImage.isBrowsing && (
           <div className="mb-2">

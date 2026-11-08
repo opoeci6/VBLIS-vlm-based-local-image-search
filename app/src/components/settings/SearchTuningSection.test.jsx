@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SearchTuningSection } from './SearchTuningSection';
 
 const renderSection = (overrides = {}) => {
-  const props = { minScore: 0.2, setMinScore: vi.fn(), minSimilarity: 0.7, setMinSimilarity: vi.fn(), maxResults: 50, setMaxResults: vi.fn(), ...overrides };
+  const props = { minScore: 0.2, setMinScore: vi.fn(), minSimilarity: 0.7, setMinSimilarity: vi.fn(), maxResults: 50, setMaxResults: vi.fn(), resetSearchTuning: vi.fn(), ...overrides };
   const utils = render(<SearchTuningSection {...props} />);
   return { props, sliders: utils.container.querySelectorAll('input[type="range"]'), ...utils };
 };
@@ -22,6 +22,11 @@ describe('SearchTuningSection', () => {
     expect(screen.getByText(/Each video counts as one result/)).toBeTruthy();
     expect(screen.getByText(/Higher numbers may consume more system memory/)).toBeTruthy();
     expect(screen.queryByText(/Warning: Unlimited/)).toBeNull();
+  });
+
+  it('says in the Max Results help that the library view always shows everything', () => {
+    renderSection();
+    expect(screen.getByText('Each video counts as one result. Higher numbers may consume more system memory. The library view always shows everything.')).toBeTruthy();
   });
 
   it('parses slider values into numbers', () => {
@@ -54,5 +59,24 @@ describe('SearchTuningSection', () => {
   it('treats a string zero as unlimited too', () => {
     renderSection({ maxResults: '0' });
     expect(screen.getByText('Unlimited')).toBeTruthy();
+  });
+
+  describe('Reset to defaults', () => {
+    it('is disabled while all three values are the defaults', () => {
+      renderSection({ minScore: 0.1, minSimilarity: 0.7, maxResults: 50 });
+      expect(screen.getByRole('button', { name: 'Reset to defaults' }).disabled).toBe(true);
+    });
+
+    it.each([
+      ['minScore', { minScore: 0.2 }],
+      ['minSimilarity', { minSimilarity: 0.8 }],
+      ['maxResults', { maxResults: 0 }],
+    ])('is enabled when %s differs and calls the handler', (_name, overrides) => {
+      const { props } = renderSection({ minScore: 0.1, minSimilarity: 0.7, maxResults: 50, ...overrides });
+      const button = screen.getByRole('button', { name: 'Reset to defaults' });
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+      expect(props.resetSearchTuning).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   formatBytes,
   formatDuration,
+  formatTakenDate,
   formatTimeAgo,
   formatVideoTimestamp,
 } from './formatters';
@@ -163,5 +164,41 @@ describe('formatTimeAgo', () => {
     atNow();
     expect(formatTimeAgo(nowSec - 86400)).toBe('1d ago');
     expect(formatTimeAgo(nowSec - 3 * 86400 - 5)).toBe('3d ago');
+  });
+});
+
+describe('formatTakenDate', () => {
+  const expected = (year, monthIndex, day) => new Date(year, monthIndex, day)
+    .toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+  it('formats the date part as a short local date', () => {
+    const text = formatTakenDate('2024-03-12T15:45:10');
+    expect(text).toBe(expected(2024, 2, 12));
+    expect(text).toContain('2024');
+  });
+
+  it('does not shift a time at midnight or just before it to another day', () => {
+    expect(formatTakenDate('2024-03-12T00:00:00')).toBe(expected(2024, 2, 12));
+    expect(formatTakenDate('2024-03-12T23:59:59')).toBe(expected(2024, 2, 12));
+    expect(formatTakenDate('2023-12-31T23:59:59')).toBe(expected(2023, 11, 31));
+    expect(formatTakenDate('2024-01-01T00:00:00')).toBe(expected(2024, 0, 1));
+  });
+
+  it('accepts a bare date', () => {
+    expect(formatTakenDate('2024-03-12')).toBe(expected(2024, 2, 12));
+  });
+
+  it('returns an empty string for null, undefined and non-strings', () => {
+    expect(formatTakenDate(null)).toBe('');
+    expect(formatTakenDate(undefined)).toBe('');
+    expect(formatTakenDate(1710000000)).toBe('');
+  });
+
+  it('returns an empty string for text that is not a date', () => {
+    expect(formatTakenDate('')).toBe('');
+    expect(formatTakenDate('yesterday')).toBe('');
+    expect(formatTakenDate('2024-13-01T00:00:00')).toBe('');
+    expect(formatTakenDate('2024-02-30T00:00:00')).toBe('');
+    expect(formatTakenDate('2024-3-12')).toBe('');
   });
 });

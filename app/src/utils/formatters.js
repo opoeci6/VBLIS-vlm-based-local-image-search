@@ -38,3 +38,15 @@ export const formatTimeAgo = (timestamp) => {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 };
+
+// "12 Mar 2024" style local date from a "YYYY-MM-DDTHH:MM:SS" wall time. The date is built from its own
+// parts, so a time zone can never shift it to the day before or after. '' for null or an invalid value.
+export const formatTakenDate = (takenAt) => {
+  if (typeof takenAt !== 'string') return '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/.exec(takenAt);
+  if (!match) return '';
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};

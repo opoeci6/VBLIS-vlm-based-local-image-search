@@ -4,14 +4,6 @@ export const annotateDuplicates = (dataResults) => {
   const results = dataResults || [];
   if (results.length === 0) return [];
 
-  // Helper: Fast dot product for normalized vectors
-  const vectorDot = (a, b) => {
-    if (!a || !b || a.length !== b.length) return 0;
-    let sum = 0;
-    for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
-    return sum;
-  };
-
   // 1. Group exact file duplicates by SHA-256 hash. The group of a hash holds the paths of the results with
   // that hash and every copy the backend found in the whole library (`copies`, only on the leading results),
   // each path once, in order of first appearance. A hash is an exact duplicate when its group has 2+ paths.
@@ -29,53 +21,44 @@ export const annotateDuplicates = (dataResults) => {
     Object.keys(exactHashGroups).filter(h => exactHashGroups[h].size > 1)
   );
 
-  // 2. Pairwise Cosine Similarity for Visual Duplicates (Threshold >= 0.985)
-  // Run full pairwise on the top image results (up to 800) to keep JS thread non-blocking for 4k+ sets.
-  // Video frames are skipped (and carry no embedding), so they must not eat into that budget.
-  const VISUAL_THRESHOLD = 0.985;
-  // Union-find over result indices so that similarity chains merge into one group
-  const parent = new Map(); // index -> parent index; only indices in a similar pair are present
-  const findRoot = (x) => {
-    let root = x;
+  // 2. Visual duplicates: an image result lists the other library paths that look near-identical
+  // (`visual_copies`, only on the leading image results). Results and listed paths are joined into
+  // groups (union-find), so two results that list each other or a shared path end up in one group.
+  // Videos are never tagged.
+  const parent = new Map();
+  const find = (path) => {
+    if (!parent.has(path)) parent.set(path, path);
+    let root = path;
     while (parent.get(root) !== root) root = parent.get(root);
-    while (parent.get(x) !== root) {
-      const next = parent.get(x);
-      parent.set(x, root);
-      x = next;
+    let node = path;
+    while (parent.get(node) !== root) {
+      const next = parent.get(node);
+      parent.set(node, root);
+      node = next;
     }
     return root;
   };
-  const union = (a, b) => {
-    if (!parent.has(a)) parent.set(a, a);
-    if (!parent.has(b)) parent.set(b, b);
-    const rootA = findRoot(a);
-    const rootB = findRoot(b);
-    if (rootA !== rootB) parent.set(rootB, rootA);
+  const union = (first, second) => {
+    const a = find(first);
+    const b = find(second);
+    if (a !== b) parent.set(b, a);
   };
-  const candidateIndices = [];
-  for (let i = 0; i < results.length && candidateIndices.length < 800; i++) {
-    if (results[i].media_type !== 'video') candidateIndices.push(i);
-  }
+  results.forEach(res => {
+    if (res.media_type === 'video') return;
+    find(res.path);
+    (res.visual_copies || []).forEach(copyPath => union(res.path, copyPath));
+  });
 
-  for (let a = 0; a < candidateIndices.length; a++) {
-    const i = candidateIndices[a];
-    const itemA = results[i];
-    if (!itemA.embedding) continue;
-
-    for (let b = a + 1; b < candidateIndices.length; b++) {
-      const j = candidateIndices[b];
-      const itemB = results[j];
-      if (!itemB.embedding) continue;
-
-      // Skip if already exact hash match
-      if (itemA.hash && itemB.hash && itemA.hash === itemB.hash) continue;
-
-      const sim = vectorDot(itemA.embedding, itemB.embedding);
-      if (sim >= VISUAL_THRESHOLD) {
-        union(i, j);
-      }
-    }
-  }
+  // Paths of each group (the results and every listed copy), each once, in order of first appearance.
+  const visualPaths = new Map(); // root -> Set of paths
+  results.forEach(res => {
+    if (res.media_type === 'video') return;
+    const root = find(res.path);
+    if (!visualPaths.has(root)) visualPaths.set(root, new Set());
+    const group = visualPaths.get(root);
+    group.add(res.path);
+    (res.visual_copies || []).forEach(copyPath => group.add(copyPath));
+  });
 
   // Color Palettes
   const exactColors = ['#0078d4', '#ec4899', '#10b981', '#f59e0b']; // System blue / Pink / Emerald / Amber
@@ -88,31 +71,20 @@ export const annotateDuplicates = (dataResults) => {
     exactIdx++;
   });
 
-  // Connected components, ordered by smallest member index (Map preserves insertion order
-  // and indices are visited ascending, so each component is created at its smallest member).
-  const componentsByRoot = new Map();
-  Array.from(parent.keys()).sort((a, b) => a - b).forEach(idx => {
-    const root = findRoot(idx);
-    if (!componentsByRoot.has(root)) componentsByRoot.set(root, []);
-    componentsByRoot.get(root).push(idx);
-  });
-  const visualGroups = Array.from(componentsByRoot.values());
-
-  const visualColorMap = new Map();
-  const visualPathsMap = new Map();
-  visualGroups.forEach((indices, gIdx) => {
-    const color = visualColors[gIdx % visualColors.length];
-    const paths = indices.map(idx => results[idx].path);
-    indices.forEach(idx => {
-      visualColorMap.set(idx, color);
-      visualPathsMap.set(idx, paths.filter(p => p !== results[idx].path));
-    });
+  // Groups with another path in them are visual duplicates; colors follow the order of each group's first result.
+  const visualRootColors = new Map();
+  results.forEach(res => {
+    if (res.media_type === 'video') return;
+    const root = find(res.path);
+    if (visualRootColors.has(root) || visualPaths.get(root).size < 2) return;
+    visualRootColors.set(root, visualColors[visualRootColors.size % visualColors.length]);
   });
 
-  // 3. Map final enhanced result objects (strip heavy raw embeddings to save memory)
-  return results.map((res, idx) => {
+  // 3. Map final enhanced result objects (the raw backend fields they were built from are dropped)
+  return results.map(res => {
     const isExact = !!(res.hash && exactDupeHashes.has(res.hash));
-    const isVisual = !isExact && visualColorMap.has(idx);
+    const visualRoot = res.media_type === 'video' ? null : find(res.path);
+    const isVisual = !isExact && visualRoot !== null && visualRootColors.has(visualRoot);
 
     let duplicateType = null;
     let dupeColor = null;
@@ -124,11 +96,11 @@ export const annotateDuplicates = (dataResults) => {
       otherPaths = Array.from(exactHashGroups[res.hash]).filter(p => p !== res.path);
     } else if (isVisual) {
       duplicateType = 'visual';
-      dupeColor = visualColorMap.get(idx);
-      otherPaths = visualPathsMap.get(idx) || [];
+      dupeColor = visualRootColors.get(visualRoot);
+      otherPaths = Array.from(visualPaths.get(visualRoot)).filter(p => p !== res.path);
     }
 
-    const { embedding, copies, ...cleanRes } = res;
+    const { embedding, copies, visual_copies, visual_group, ...cleanRes } = res;
 
     return {
       ...cleanRes,

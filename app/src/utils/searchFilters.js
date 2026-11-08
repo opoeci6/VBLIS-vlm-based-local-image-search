@@ -28,6 +28,13 @@ export const FORMAT_LABELS = {
 
 export const MEGAPIXEL_CHOICES = [2, 8, 12, 24];
 
+export const DUPLICATE_KINDS = ['exact', 'visual'];
+
+export const DUPLICATE_LABELS = {
+  exact: 'Exact copies',
+  visual: 'Visual duplicates',
+};
+
 const EN_DASH = '\u2013';
 const GTE = '\u2265';
 
@@ -178,6 +185,7 @@ export function buildRequestFilters(state) {
   if (state.orientations.length > 0) filters.orientations = inCanonicalOrder(state.orientations, ORIENTATIONS);
   if (state.formats.length > 0) filters.formats = sortedFormats(state.formats);
   if (state.minMegapixels) filters.min_megapixels = state.minMegapixels;
+  if (state.duplicates?.length > 0) filters.duplicates = inCanonicalOrder(state.duplicates, DUPLICATE_KINDS);
   return Object.keys(filters).length > 0 ? filters : null;
 }
 
@@ -190,6 +198,7 @@ export function countActiveFilters(state) {
     state.orientations.length > 0,
     state.formats.length > 0,
     Boolean(state.minMegapixels),
+    state.duplicates?.length > 0,
   ].filter(Boolean).length;
 }
 
@@ -232,5 +241,12 @@ export function buildFilterChips(state, actions, formatLabels) {
   if (state.minMegapixels) {
     chips.push({ key: 'megapixels', label: `${GTE} ${state.minMegapixels} MP`, onRemove: actions.removeMegapixels });
   }
+  inCanonicalOrder(state.duplicates ?? [], DUPLICATE_KINDS).forEach(kind => {
+    chips.push({
+      key: `duplicates:${kind}`,
+      label: DUPLICATE_LABELS[kind],
+      onRemove: () => actions.removeDuplicate(kind),
+    });
+  });
   return chips;
 }
