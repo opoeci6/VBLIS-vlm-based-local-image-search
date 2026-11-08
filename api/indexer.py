@@ -240,7 +240,7 @@ def _format_search_result(record_id, meta, score, score_kind, embedding=None):
         "timestamp_seconds": meta.get("timestamp_seconds"),
         "scene_id": meta.get("scene_id"),
         "sampling_reason": meta.get("sampling_reason"),
-        "score": float(score),
+        "score": None if score is None else float(score),
         "score_kind": score_kind,
         "embedding": embedding
     }
@@ -1679,6 +1679,12 @@ class Indexer:
                 break
             n = min(total, max(2 * n, math.ceil(1.25 * n * top_k / max(items, 1))), 8 * n)
 
+        return self._finish_results(collection, found, scorer.kind, file_exists)
+
+    @staticmethod
+    def _finish_results(collection, found, score_kind, file_exists):
+        """The formatted results of `found`, a flat list of (record_id, metadata, score) in result order: the
+        first DUPLICATE_CHECK_LIMIT images carry their embedding and their exact copies."""
         # Embeddings are only needed for the images the frontend runs duplicate detection on
         embeddings_by_id = {}
         head_ids = []
@@ -1696,11 +1702,79 @@ class Indexer:
 
         # Formatted first: a hash computed on the fly (a record without one) is then reused for the copy lookup
         formatted = [
-            _format_search_result(record_id, meta, score, scorer.kind, embeddings_by_id.get(record_id))
+            _format_search_result(record_id, meta, score, score_kind, embeddings_by_id.get(record_id))
             for record_id, meta, score in found
         ]
-        self._attach_exact_copies(collection, formatted, set(head_ids), file_exists)
+        Indexer._attach_exact_copies(collection, formatted, set(head_ids), file_exists)
         return formatted
+
+    def browse_library(self, filters=None, sort="newest", top_k=50):
+        """The indexed library of the active model without a query, by date taken (newest or oldest first), in
+        the shape of search results (score None, score_kind "none", plus `taken_at`). `total` counts the items
+        (an image, or a video however many frames it has) that match before the top_k cut. Files that are
+        gone and records the filters reject are skipped; undated items come last in both orders."""
+        collection = self._search_collection()
+        if collection.count() == 0:
+            return {"results": [], "total": 0}
+        scan = collection.get(include=["metadatas"])  # the call CachedCollection caches; its dicts are shared
+        record_filter = compile_filters(filters, self.media_registry.snapshot)
+        facts = self.media_registry.snapshot().facts
+        file_exists = _FileExistenceCache()
+
+        # normcased path -> [path of its first record, is_video, [(record_id, meta)]]: one record of an image,
+        # every frame record of a video
+        entries = {}
+        for record_id, meta in zip(scan.get("ids") or [], scan.get("metadatas") or []):
+            path = meta.get("path") if meta else None
+            if not path:
+                continue
+            key = os.path.normcase(path)
+            is_video = _is_video(meta)
+            entry = entries.get(key)
+            if entry is None:
+                entries[key] = [path, is_video, [(record_id, meta)]]
+            elif is_video and entry[1]:
+                entry[2].append((record_id, meta))
+
+        items = []  # (normcased path, taken_at or None, is_video, records)
+        for key, (path, is_video, records) in entries.items():
+            if record_filter is not None and not record_filter.allows_path(path, is_video):
+                continue
+            if not file_exists.isfile(path):
+                continue
+            fact = facts.get(MediaRegistry.key_for(path))
+            taken_at = fact.taken_at if fact is not None and fact.taken_at else None
+            if taken_at is None:
+                for _, meta in records:
+                    mtime_ns = meta.get("mtime_ns")
+                    if isinstance(mtime_ns, (int, float)) and not isinstance(mtime_ns, bool):
+                        taken_at = media_sync._mtime_date(mtime_ns)[0]
+                        break
+            items.append((key, taken_at, is_video, records))
+
+        newest = sort != "oldest"
+        dated = sorted((item for item in items if item[1] is not None), key=lambda item: item[0])
+        # sort is stable, also with reverse=True: equal dates stay in path order
+        dated.sort(key=lambda item: item[1], reverse=newest)
+        undated = sorted((item for item in items if item[1] is None), key=lambda item: item[0])
+        ordered = dated + undated
+        total = len(ordered)
+
+        found = []
+        taken_by_id = {}
+        for _, taken_at, is_video, records in ordered[:max(top_k, 0)]:
+            if is_video:
+                records = sorted(records, key=lambda r: r[1].get("timestamp_seconds") or 0.0)[:VIDEO_FRAMES_PER_RESULT]
+            else:
+                records = records[:1]
+            for record_id, meta in records:
+                found.append((record_id, meta, None))
+                taken_by_id[record_id] = taken_at
+
+        results = self._finish_results(collection, found, "none", file_exists)
+        for result in results:
+            result["taken_at"] = taken_by_id.get(result["id"])
+        return {"results": results, "total": total}
 
     @staticmethod
     def _attach_exact_copies(collection, formatted, head_ids, file_exists):

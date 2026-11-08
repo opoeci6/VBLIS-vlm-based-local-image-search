@@ -210,34 +210,35 @@ body {
   stroke: var(--terminal-foreground) !important;
 }
 
-/* Terminal Button Hover & Active States: Pure high-contrast color inversion */
-.terminal-theme button:not(:disabled):hover,
-.terminal-theme button:not(:disabled):hover *,
-.terminal-theme button:not(:disabled):hover [class*="text-"],
-.terminal-theme button:not(:disabled):active,
-.terminal-theme button:not(:disabled):active *,
-.terminal-theme button:not(:disabled):active [class*="text-"] {
+/* Terminal Button Hover & Active States: Pure high-contrast color inversion. Buttons that are disabled or
+   aria-disabled (blocked filter rows) do not react. */
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover *,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover [class*="text-"],
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):active,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):active *,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):active [class*="text-"] {
   color: var(--terminal-background) !important;
   -webkit-text-fill-color: var(--terminal-background) !important;
   border-color: var(--terminal-foreground) !important;
 }
 
-.terminal-theme button:not(:disabled):hover,
-.terminal-theme button:not(:disabled):active {
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):active {
   background-color: var(--terminal-foreground) !important;
   background: var(--terminal-foreground) !important;
 }
 
-.terminal-theme button:not(:disabled):hover *,
-.terminal-theme button:not(:disabled):hover [class*="bg-"],
-.terminal-theme button:not(:disabled):active *,
-.terminal-theme button:not(:disabled):active [class*="bg-"] {
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover *,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover [class*="bg-"],
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):active *,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):active [class*="bg-"] {
   background-color: transparent !important;
   background: transparent !important;
 }
 
-.terminal-theme button:not(:disabled):hover svg,
-.terminal-theme button:not(:disabled):active svg {
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover svg,
+.terminal-theme button:not(:disabled):not([aria-disabled="true"]):active svg {
   stroke: var(--terminal-background) !important;
 }
 

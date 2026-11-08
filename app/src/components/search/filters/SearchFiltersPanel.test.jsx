@@ -279,6 +279,44 @@ describe('SearchFiltersPanel', () => {
       expect(screen.getByRole('button', { name: /^Backup/ }).getAttribute('aria-pressed')).toBe('false');
     });
 
+    it('styles a missing row that is not selected like the folder explorer and blocks the cursor', async () => {
+      await renderPanel();
+      const backup = screen.getByRole('button', { name: /^Backup/ });
+      for (const cls of ['border-rose-200', 'dark:border-rose-500/30', 'bg-rose-50/50', 'dark:bg-rose-500/5', 'hover:bg-rose-50/50', 'dark:hover:bg-rose-500/5', 'cursor-not-allowed']) {
+        expect(backup.className).toContain(cls);
+      }
+      expect(backup.className).not.toContain('hover:bg-gray-50');
+      expect(backup.className).not.toContain('border-gray-200');
+      expect(backup.className).not.toContain('cursor-pointer');
+    });
+
+    it('keeps the pressed look and a pointer cursor on a missing row that is still selected', async () => {
+      await renderPanel();
+      act(() => latest.current.toggleFolder('E:\\Backup'));
+      const backup = screen.getByRole('button', { name: /^Backup/ });
+      expect(backup.className).toContain('bg-indigo-50');
+      expect(backup.className).toContain('border-indigo-300');
+      expect(backup.className).toContain('cursor-pointer');
+      expect(backup.className).not.toContain('cursor-not-allowed');
+      expect(backup.className).not.toContain('bg-rose-50');
+      expect(backup.className).not.toContain('border-rose-200');
+    });
+
+    it('leaves connected rows and included rows as they were', async () => {
+      await renderPanel();
+      const photos = screen.getByRole('button', { name: /^Photos/ });
+      expect(photos.className).toContain('cursor-pointer');
+      expect(photos.className).toContain('hover:bg-gray-50');
+      expect(photos.className).not.toContain('rose');
+
+      fireEvent.click(photos);
+      fireEvent.click(screen.getByRole('button', { name: 'Expand Photos' }));
+      const included = inRegion('Folders').getByRole('button', { name: /^2024/ });
+      expect(included.getAttribute('aria-disabled')).toBe('true');
+      expect(included.className).toContain('cursor-default');
+      expect(included.className).not.toContain('rose');
+    });
+
     it('lists missing roots after the connected ones, keeping the order within each group', async () => {
       const root = (name, exists) => ({ path: `D:\\${name}`, name, exists, image_count: 1, video_count: 0, item_count: 1, subfolders: [] });
       await renderPanel({ indexedFolders: [root('Gone1', false), root('Zeta', true), root('Gone2', false), root('Alpha', true)] });

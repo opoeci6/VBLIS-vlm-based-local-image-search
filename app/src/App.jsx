@@ -85,6 +85,7 @@ function App() {
     setMinSimilarity,
     maxResults,
     setMaxResults,
+    resetSearchTuning,
     visibleResultsCount,
     setVisibleResultsCount,
     imageSearchContext,
@@ -289,6 +290,7 @@ function App() {
         setMinSimilarity={setMinSimilarity}
         maxResults={maxResults}
         setMaxResults={setMaxResults}
+        resetSearchTuning={resetSearchTuning}
         showConfirmClear={showConfirmClear}
         setShowConfirmClear={setShowConfirmClear}
         handleClearCache={handleClearCache}

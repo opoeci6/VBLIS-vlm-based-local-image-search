@@ -3,9 +3,30 @@ import { API_BASE } from '../config';
 import { annotateDuplicates, groupVideoResults, getImageResults, countSearchResults } from '../utils/searchResults';
 import { useProgressiveList } from './useProgressiveList';
 import { apiFetch } from '../utils/api';
+import { readJson, writeJson } from '../utils/storage';
 
 // Wait this long after the last filter change before re-running the current search.
 const FILTER_RERUN_DELAY_MS = 250;
+
+export const SEARCH_TUNING_DEFAULTS = { minScore: 0.10, minSimilarity: 0.70, maxResults: 50 };
+
+const SEARCH_TUNING_KEY = 'search_tuning';
+
+const isNumberInRange = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+
+// Each saved field is checked on its own against its slider's range; a bad one falls back to its default.
+const loadSearchTuning = () => {
+  const saved = readJson(SEARCH_TUNING_KEY, null);
+  const source = saved && typeof saved === 'object' ? saved : {};
+  const { minScore, minSimilarity, maxResults } = source;
+  return {
+    minScore: isNumberInRange(minScore, 0.01, 0.95) ? minScore : SEARCH_TUNING_DEFAULTS.minScore,
+    minSimilarity: isNumberInRange(minSimilarity, 0.30, 0.95) ? minSimilarity : SEARCH_TUNING_DEFAULTS.minSimilarity,
+    maxResults: isNumberInRange(maxResults, 0, 250) && Number.isInteger(maxResults) && maxResults % 5 === 0
+      ? maxResults
+      : SEARCH_TUNING_DEFAULTS.maxResults,
+  };
+};
 
 const postJson = (path, body) => apiFetch(`${API_BASE}${path}`, {
   method: 'POST',
@@ -21,9 +42,11 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [minScore, setMinScore] = useState(0.10);
-  const [minSimilarity, setMinSimilarity] = useState(0.70);
-  const [maxResults, setMaxResults] = useState(50);
+  // The three search sliders are remembered across restarts.
+  const [savedTuning] = useState(loadSearchTuning);
+  const [minScore, setMinScore] = useState(savedTuning.minScore);
+  const [minSimilarity, setMinSimilarity] = useState(savedTuning.minSimilarity);
+  const [maxResults, setMaxResults] = useState(savedTuning.maxResults);
   const [visibleResultsCount, setVisibleResultsCount] = useState(80);
   const [imageSearchContext, setImageSearchContext] = useState(null);
   // Request body of the last submitted text search, so it can be re-run after the index changes.
@@ -58,6 +81,16 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   filtersKeyRef.current = filtersKey;
   const rerunForFiltersRef = useRef(null);
   const filterRerunTimer = useRef(null);
+
+  useEffect(() => {
+    writeJson(SEARCH_TUNING_KEY, { minScore, minSimilarity, maxResults });
+  }, [minScore, minSimilarity, maxResults]);
+
+  const resetSearchTuning = useCallback(() => {
+    setMinScore(SEARCH_TUNING_DEFAULTS.minScore);
+    setMinSimilarity(SEARCH_TUNING_DEFAULTS.minSimilarity);
+    setMaxResults(SEARCH_TUNING_DEFAULTS.maxResults);
+  }, []);
 
   const imageResults = useMemo(
     () => getImageResults(results),
@@ -456,6 +489,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     setMinSimilarity,
     maxResults,
     setMaxResults,
+    resetSearchTuning,
     visibleResultsCount,
     setVisibleResultsCount,
     imageSearchContext,

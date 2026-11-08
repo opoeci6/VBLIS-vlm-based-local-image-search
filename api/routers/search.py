@@ -1,5 +1,5 @@
 import io
-from typing import Optional
+from typing import Literal, Optional
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel, Field, ValidationError, model_validator
 import app_state
@@ -22,6 +22,11 @@ class SearchRefQuery(BaseModel):
     top_k: int = 50
     # No default: whether it is a match probability or a cosine similarity depends on the query behind the ref
     min_score: float = Field(..., ge=0.0, le=1.0)
+    filters: Optional[SearchFilters] = None
+
+class BrowseQuery(BaseModel):
+    sort: Literal["newest", "oldest"] = "newest"
+    top_k: int = Field(50, ge=1, le=20000)
     filters: Optional[SearchFilters] = None
 
 class SearchVideoQuery(BaseModel):
@@ -93,5 +98,12 @@ def search_video_frames(req: SearchVideoQuery):
         return app_state.indexer.expand_video(req.path, req.min_score, req.query_ref, req.query)
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/browse")
+def browse_library(req: BrowseQuery):
+    try:
+        return app_state.indexer.browse_library(filters=req.filters, sort=req.sort, top_k=req.top_k)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

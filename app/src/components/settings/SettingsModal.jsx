@@ -6,7 +6,7 @@ import { SearchTuningSection } from './SearchTuningSection';
 import { IndexDangerZone } from './IndexDangerZone';
 import { ThumbnailCacheSection } from './ThumbnailCacheSection';
 
-export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiTheme, gpuSettings, status, isSwitchingGpu, handleToggleGpu, handleUpdatePerformanceSettings, models, pendingModel, handleUnloadModel, isUnloadingModel, handleModelSwitch, isSwitchingModel, setPendingModel, handleDownloadModel, handleCancelDownload, showConfirmDeleteModel, setShowConfirmDeleteModel, deleteIndexWithModel, setDeleteIndexWithModel, handleDeleteModel, isDeletingModel, minScore, setMinScore, minSimilarity, setMinSimilarity, maxResults, setMaxResults, showConfirmClear, setShowConfirmClear, handleClearCache, isClearing, cacheStats, showConfirmClearThumbnails, setShowConfirmClearThumbnails, handleClearThumbnailCache, isClearingThumbnails, handleRebuildVideoThumbnails, isTriggeringRebuildThumbnails }) => {
+export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiTheme, gpuSettings, status, isSwitchingGpu, handleToggleGpu, handleUpdatePerformanceSettings, models, pendingModel, handleUnloadModel, isUnloadingModel, handleModelSwitch, isSwitchingModel, setPendingModel, handleDownloadModel, handleCancelDownload, showConfirmDeleteModel, setShowConfirmDeleteModel, deleteIndexWithModel, setDeleteIndexWithModel, handleDeleteModel, isDeletingModel, minScore, setMinScore, minSimilarity, setMinSimilarity, maxResults, setMaxResults, resetSearchTuning, showConfirmClear, setShowConfirmClear, handleClearCache, isClearing, cacheStats, showConfirmClearThumbnails, setShowConfirmClearThumbnails, handleClearThumbnailCache, isClearingThumbnails, handleRebuildVideoThumbnails, isTriggeringRebuildThumbnails }) => {
   if (!(showSettings)) return null;
 
   return (
@@ -67,6 +67,7 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
               setMinSimilarity={setMinSimilarity}
               maxResults={maxResults}
               setMaxResults={setMaxResults}
+              resetSearchTuning={resetSearchTuning}
             />
 
             <IndexDangerZone

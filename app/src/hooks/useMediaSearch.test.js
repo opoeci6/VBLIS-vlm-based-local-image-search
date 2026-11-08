@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useMediaSearch } from './useMediaSearch';
+import { useMediaSearch, SEARCH_TUNING_DEFAULTS } from './useMediaSearch';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -37,6 +37,7 @@ describe('useMediaSearch', () => {
   let fetchMock;
 
   beforeEach(() => {
+    localStorage.clear();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -1365,6 +1366,81 @@ describe('useMediaSearch', () => {
         expect(hook.result.current.videoGroups[0].isExpanded).toBe(false);
         expect(hook.result.current.videoGroups[0].frames.map(f => f.id)).toEqual(['new']);
       });
+    });
+  });
+
+  describe('search tuning persistence', () => {
+    const KEY = 'search_tuning';
+    const saved = () => JSON.parse(localStorage.getItem(KEY));
+    const values = (result) => ({ minScore: result.current.minScore, minSimilarity: result.current.minSimilarity, maxResults: result.current.maxResults });
+
+    it('starts at the defaults when nothing is saved', () => {
+      const { result } = render();
+      expect(values(result)).toEqual(SEARCH_TUNING_DEFAULTS);
+      expect(SEARCH_TUNING_DEFAULTS).toEqual({ minScore: 0.10, minSimilarity: 0.70, maxResults: 50 });
+    });
+
+    it('restores saved values', () => {
+      localStorage.setItem(KEY, JSON.stringify({ minScore: 0.35, minSimilarity: 0.82, maxResults: 120 }));
+      const { result } = render();
+      expect(values(result)).toEqual({ minScore: 0.35, minSimilarity: 0.82, maxResults: 120 });
+    });
+
+    it('keeps a saved 0 (Unlimited)', () => {
+      localStorage.setItem(KEY, JSON.stringify({ minScore: 0.35, minSimilarity: 0.82, maxResults: 0 }));
+      const { result } = render();
+      expect(result.current.maxResults).toBe(0);
+    });
+
+    it.each([
+      ['minScore out of range', { minScore: 0.99 }, { minScore: 0.10 }],
+      ['minScore below range', { minScore: 0 }, { minScore: 0.10 }],
+      ['minScore of the wrong type', { minScore: '0.5' }, { minScore: 0.10 }],
+      ['minSimilarity out of range', { minSimilarity: 0.2 }, { minSimilarity: 0.70 }],
+      ['minSimilarity null', { minSimilarity: null }, { minSimilarity: 0.70 }],
+      ['maxResults out of range', { maxResults: 300 }, { maxResults: 50 }],
+      ['maxResults negative', { maxResults: -5 }, { maxResults: 50 }],
+      ['maxResults not a multiple of 5', { maxResults: 7 }, { maxResults: 50 }],
+      ['maxResults of the wrong type', { maxResults: '100' }, { maxResults: 50 }],
+    ])('falls back for %s without touching the other fields', (_name, bad, expectedFallback) => {
+      localStorage.setItem(KEY, JSON.stringify({ minScore: 0.35, minSimilarity: 0.82, maxResults: 120, ...bad }));
+      const { result } = render();
+      expect(values(result)).toEqual({ minScore: 0.35, minSimilarity: 0.82, maxResults: 120, ...expectedFallback });
+    });
+
+    it('uses the defaults for missing fields, bad JSON and non-object values', () => {
+      localStorage.setItem(KEY, JSON.stringify({ minScore: 0.4 }));
+      expect(values(render().result)).toEqual({ ...SEARCH_TUNING_DEFAULTS, minScore: 0.4 });
+
+      localStorage.setItem(KEY, '{broken');
+      expect(values(render().result)).toEqual(SEARCH_TUNING_DEFAULTS);
+
+      localStorage.setItem(KEY, '42');
+      expect(values(render().result)).toEqual(SEARCH_TUNING_DEFAULTS);
+    });
+
+    it('persists a value when it changes', () => {
+      const { result } = render();
+      act(() => { result.current.setMinScore(0.5); });
+      expect(saved()).toEqual({ minScore: 0.5, minSimilarity: 0.7, maxResults: 50 });
+      act(() => { result.current.setMinSimilarity(0.6); result.current.setMaxResults(0); });
+      expect(saved()).toEqual({ minScore: 0.5, minSimilarity: 0.6, maxResults: 0 });
+    });
+
+    it('resetSearchTuning restores the defaults and saves them', () => {
+      localStorage.setItem(KEY, JSON.stringify({ minScore: 0.35, minSimilarity: 0.82, maxResults: 120 }));
+      const { result } = render();
+      act(() => { result.current.resetSearchTuning(); });
+      expect(values(result)).toEqual(SEARCH_TUNING_DEFAULTS);
+      expect(saved()).toEqual(SEARCH_TUNING_DEFAULTS);
+    });
+
+    it('returns a stable resetSearchTuning', () => {
+      const { result, rerender } = render();
+      const first = result.current.resetSearchTuning;
+      act(() => { result.current.setMinScore(0.5); });
+      rerender();
+      expect(result.current.resetSearchTuning).toBe(first);
     });
   });
 });

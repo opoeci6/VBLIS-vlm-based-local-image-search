@@ -20,6 +20,11 @@ const FolderNode = ({ path, name, count, exists, depth, nodes, selected, expande
   // stays pressed and can still be deselected.
   const missing = exists === false;
   const blocked = included || (missing && !isSelected);
+  // Same red as the folder explorer's missing rows; hover keeps it. A missing row that is still
+  // selected keeps the pressed look and a pointer cursor so it can be deselected.
+  const missingLook = missing && !isSelected
+    ? 'cursor-not-allowed border-rose-200 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/5 hover:bg-rose-50/50 dark:hover:bg-rose-500/5'
+    : '';
   const hasChildren = nodes.length > 0;
   const isExpanded = expanded.has(path);
 
@@ -44,7 +49,7 @@ const FolderNode = ({ path, name, count, exists, depth, nodes, selected, expande
           aria-disabled={blocked ? true : undefined}
           onClick={() => { if (!blocked) onToggle(path); }}
           title={missing ? `${name} is missing or inaccessible on disk` : path}
-          className={`min-w-0 flex-1 justify-between text-left ${blocked ? 'cursor-default' : ''}`}
+          className={`min-w-0 flex-1 justify-between text-left ${included ? 'cursor-default' : ''} ${missingLook}`}
         >
           <span className={`truncate ${missing ? 'text-rose-600 dark:text-rose-400' : ''}`}>{name}</span>
           <span className="flex flex-shrink-0 items-center gap-2 font-normal">
