@@ -94,7 +94,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "include": "installer/installer.nsh",
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "differentialPackage": false
     }
   }
 }
