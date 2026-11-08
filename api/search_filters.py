@@ -34,6 +34,7 @@ SQUARE_TOLERANCE = 0.01  # |w - h| <= 1% of the longer side counts as square
 
 FormatId = Literal[tuple(FORMAT_GROUPS)]  # one Literal of every format id, so the two can't drift
 Orientation = Literal["landscape", "portrait", "square"]
+DuplicateKind = Literal["exact", "visual"]
 FolderPath = Annotated[str, StringConstraints(min_length=1, max_length=MAX_FOLDER_LENGTH)]
 
 
@@ -51,8 +52,11 @@ class SearchFilters(BaseModel):
     orientations: list[Orientation] = Field(default_factory=list)
     formats: list[FormatId] = Field(default_factory=list)
     min_megapixels: Optional[float] = Field(None, gt=0, le=MAX_MEGAPIXELS)
+    # Images that have an exact copy ("exact") and/or a visually similar image ("visual") elsewhere in the library
+    # (an item passes when any chosen kind applies); empty is no filter
+    duplicates: list[DuplicateKind] = Field(default_factory=list)
 
-    @field_validator("orientations", "formats")
+    @field_validator("orientations", "formats", "duplicates")
     @classmethod
     def _dedupe(cls, values):
         return _unique(values)
@@ -71,23 +75,32 @@ class SearchFilters(BaseModel):
 
     @property
     def is_active(self) -> bool:
-        return (self.media_type is not None or bool(self.folders) or bool(self.formats) or self.needs_facts)
+        return (self.media_type is not None or bool(self.folders) or bool(self.formats) or bool(self.duplicates)
+                or self.needs_facts)
 
 
-def compile_filters(filters: Optional[SearchFilters], snapshot_fn: Callable) -> Optional["RecordFilter"]:
+def compile_filters(filters: Optional[SearchFilters], snapshot_fn: Callable,
+                    duplicates_fn: Optional[Callable] = None) -> Optional["RecordFilter"]:
     """The RecordFilter of one search; None when there is nothing to filter. The registry snapshot is read
-    once, and only when the filter needs per-file facts."""
+    once, and only when the filter needs per-file facts. `duplicates_fn()` is called once, and only when the
+    filter asks for duplicates; it returns the predicate (path) -> bool that says whether an image has an
+    existing exact copy / visual look-alike (the indexer builds it for the search)."""
     if filters is None or not filters.is_active:
         return None
     facts = snapshot_fn().facts if filters.needs_facts else None
-    return RecordFilter(filters, facts)
+    duplicates = duplicates_fn() if filters.duplicates and duplicates_fn is not None else None
+    return RecordFilter(filters, facts, duplicates)
 
 
 class RecordFilter:
     """Answers allows_path(path, is_video) for the files of one search (the instance lives for one search:
     answers are memoized and the facts are a snapshot). Checks run cheapest first."""
 
-    def __init__(self, filters: SearchFilters, facts: Optional[Mapping] = None):
+    def __init__(self, filters: SearchFilters, facts: Optional[Mapping] = None,
+                 duplicates: Optional[Callable[[str], bool]] = None):
+        if filters.duplicates and duplicates is None:
+            raise ValueError("A duplicates filter needs the duplicates predicate")
+        self._duplicates = duplicates if filters.duplicates else None
         self._media_type = filters.media_type
         self._extensions = None
         if filters.formats:
@@ -109,10 +122,16 @@ class RecordFilter:
             key = self._keys.get(path)
             if key is None:
                 key = self._keys[path] = MediaRegistry.key_for(path)
-            answer = self._answers[answer_key] = self._allows(key, is_video)
+            answer = self._allows(key, is_video)
+            if answer and self._duplicates is not None:
+                # The most expensive check, so last; only an image can pass (see _allows)
+                answer = bool(self._duplicates(path))
+            self._answers[answer_key] = answer
         return answer
 
     def _allows(self, key: str, is_video: bool) -> bool:
+        if self._duplicates is not None and is_video:
+            return False
         if self._media_type is not None and (self._media_type == "video") != is_video:
             return False
         if self._extensions is not None and os.path.splitext(key)[1].lower() not in self._extensions:
@@ -154,15 +173,18 @@ def empty_filter_options(registry_available: bool) -> dict:
         "total_files": 0, "with_details": 0, "unavailable": 0, "missing_details": 0,
         "media_types": {"image": 0, "video": 0}, "formats": [], "years": [], "date_range": None,
         "registry_available": registry_available,
+        "duplicates": {"exact": 0, "visual": None},
     }
 
 
-def filter_options(scan: Mapping, snapshot, selected_roots, registry_available: bool) -> dict:
+def filter_options(scan: Mapping, snapshot, selected_roots, registry_available: bool,
+                   duplicates: Optional[Mapping] = None) -> dict:
     """What the filter panel offers: the distinct files of the collection (`scan` is a full
     `collection.get(include=["metadatas"])`) counted by media type, format and year taken. `unavailable`
     counts files under a selected folder that can't be reached right now (an unplugged drive);
     `missing_details` counts the other files that have no media details yet, which reading the details
-    (the media scan) can fill in."""
+    (the media scan) can fill in. `duplicates` is the indexer's {"exact": n, "visual": n or None} (the image
+    files that have an existing exact copy / visual partner; None while no visual index exists)."""
     facts = snapshot.facts
     roots = []  # (root key, root path, is a directory right now; None until asked)
     for root in selected_roots:
@@ -226,4 +248,5 @@ def filter_options(scan: Mapping, snapshot, selected_roots, registry_available: 
         "years": [{"year": year, "count": year_counts[year]} for year in sorted(year_counts, reverse=True)],
         "date_range": {"from": first_day, "to": last_day} if first_day is not None else None,
         "registry_available": registry_available,
+        "duplicates": dict(duplicates) if duplicates is not None else {"exact": 0, "visual": None},
     }

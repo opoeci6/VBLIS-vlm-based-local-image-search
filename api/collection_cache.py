@@ -19,6 +19,13 @@ class CachedCollection:
         # Only reached for attributes the proxy does not define itself
         return getattr(self.__dict__["_collection"], name)
 
+    @property
+    def version(self):
+        """Counts the mutations made through the proxy; anything derived from the collection's content (see
+        duplicate_index) is current only while this number is unchanged."""
+        with self._lock:
+            return self._version
+
     @staticmethod
     def _is_full_metadata_scan(args, kwargs):
         return not args and set(kwargs) == {"include"} and kwargs["include"] == ["metadatas"]

@@ -27,6 +27,7 @@ const emptyState = {
   orientations: [],
   formats: [],
   minMegapixels: null,
+  duplicates: [],
 };
 
 describe('folder paths', () => {
@@ -157,6 +158,13 @@ describe('buildRequestFilters', () => {
     expect(countActiveFilters(state)).toBe(6);
   });
 
+  it('sends the duplicate kinds in a fixed order, only when some are chosen', () => {
+    expect(buildRequestFilters({ ...emptyState, duplicates: ['exact'] })).toEqual({ duplicates: ['exact'] });
+    expect(buildRequestFilters({ ...emptyState, duplicates: ['visual', 'exact'] })).toEqual({ duplicates: ['exact', 'visual'] });
+    expect(buildRequestFilters(emptyState)).toBeNull();
+    expect(countActiveFilters({ ...emptyState, duplicates: ['visual', 'exact'] })).toBe(1);
+  });
+
   it('sends only one date end when the other is empty', () => {
     expect(buildRequestFilters({ ...emptyState, datePreset: 'custom', dateFrom: '2024-01-01' }))
       .toEqual({ date_from: '2024-01-01' });
@@ -173,6 +181,7 @@ describe('buildFilterChips', () => {
     removeOrientations: () => {},
     removeFormats: () => {},
     removeMegapixels: () => {},
+    removeDuplicate: () => {},
   };
   const labels = (state) => buildFilterChips({ ...emptyState, ...state }, actions).map(chip => chip.label);
 
@@ -183,6 +192,12 @@ describe('buildFilterChips', () => {
     expect(labels({ orientations: ['square', 'portrait'] })).toEqual(['Portrait, Square']);
     expect(labels({ formats: ['jpeg', 'heic', 'webm'] })).toEqual(['HEIC, JPEG, WebM']);
     expect(labels({ minMegapixels: 12 })).toEqual(['\u2265 12 MP']);
+  });
+
+  it('labels the duplicate kinds, exact first', () => {
+    expect(labels({ duplicates: ['exact'] })).toEqual(['Exact copies']);
+    expect(labels({ duplicates: ['visual'] })).toEqual(['Visual duplicates']);
+    expect(labels({ duplicates: ['visual', 'exact'] })).toEqual(['Exact copies', 'Visual duplicates']);
   });
 
   it('labels the date presets and custom ranges', () => {
@@ -199,8 +214,8 @@ describe('buildFilterChips', () => {
   });
 
   it('gives each chip a unique key', () => {
-    const chips = buildFilterChips({ ...emptyState, mediaType: 'image', folders: ['/a', '/b'], minMegapixels: 2 }, actions);
-    expect(new Set(chips.map(chip => chip.key)).size).toBe(4);
+    const chips = buildFilterChips({ ...emptyState, mediaType: 'image', folders: ['/a', '/b'], minMegapixels: 2, duplicates: ['exact', 'visual'] }, actions);
+    expect(new Set(chips.map(chip => chip.key)).size).toBe(6);
   });
 describe('formats from the backend', () => {
   it('sends any format id, sorted, including ones the app does not know', () => {

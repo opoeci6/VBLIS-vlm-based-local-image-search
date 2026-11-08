@@ -89,9 +89,9 @@ describe('annotateDuplicates', () => {
 
     it('still builds visual groups, with exact winning over visual', () => {
       const out = annotateDuplicates([
-        img('/a.jpg', { hash: 'h1', visual_group: 0, copies: ['/a2.jpg'] }),
-        img('/b.jpg', { hash: 'h2', visual_group: 0, copies: [] }),
-        img('/c.jpg', { hash: 'h3', visual_group: 0, copies: [] }),
+        img('/a.jpg', { hash: 'h1', visual_copies: ['/b.jpg', '/c.jpg'], copies: ['/a2.jpg'] }),
+        img('/b.jpg', { hash: 'h2', visual_copies: ['/a.jpg', '/c.jpg'], copies: [] }),
+        img('/c.jpg', { hash: 'h3', visual_copies: ['/a.jpg', '/b.jpg'], copies: [] }),
       ]);
       expect(out[0]).toMatchObject({ duplicateType: 'exact', otherPaths: ['/a2.jpg'] });
       expect(out[1]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/c.jpg'] });
@@ -110,62 +110,94 @@ describe('annotateDuplicates', () => {
     expect(out[2].dupeColor).toBe('#ec4899');
   });
 
-  describe('visual groups from the backend', () => {
-    it('tags the members of a visual_group as visual, with the other members as otherPaths', () => {
+  describe('visual groups from visual_copies', () => {
+    it('tags a result whose look-alikes are only in the library, with them as otherPaths', () => {
       const out = annotateDuplicates([
-        img('/a.jpg', { hash: 'h1', visual_group: 0 }),
-        img('/b.jpg', { hash: 'h2', visual_group: 0 }),
-        img('/c.jpg', { hash: 'h3', visual_group: 0 }),
+        img('/a.jpg', { hash: 'h1', visual_copies: ['/lib/a1.jpg', '/lib/a2.jpg'] }),
+        img('/b.jpg', { hash: 'h2', visual_copies: [] }),
+        img('/c.jpg', { hash: 'h3' }),
       ]);
-      expect(out[0]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/b.jpg', '/c.jpg'], dupeColor: '#f59e0b' });
-      expect(out[1]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg', '/c.jpg'], dupeColor: '#f59e0b' });
-      expect(out[2]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg', '/b.jpg'], dupeColor: '#f59e0b' });
-    });
-
-    it('does not tag results without a visual_group', () => {
-      const out = annotateDuplicates([
-        img('/a.jpg', { hash: 'h1', visual_group: 0 }),
-        img('/b.jpg', { hash: 'h2' }),
-        img('/c.jpg', { hash: 'h3', visual_group: 0 }),
-      ]);
+      expect(out[0]).toMatchObject({
+        duplicateType: 'visual', isDuplicate: true, otherPaths: ['/lib/a1.jpg', '/lib/a2.jpg'], dupeColor: '#f59e0b',
+      });
       expect(out[1]).toMatchObject({ isDuplicate: false, duplicateType: null, dupeColor: null, otherPaths: [] });
-      expect(out[0].otherPaths).toEqual(['/c.jpg']);
+      expect(out[2]).toMatchObject({ isDuplicate: false, duplicateType: null, dupeColor: null, otherPaths: [] });
     });
 
-    it('colors groups in order of their first member, whatever their numbers', () => {
+    it('joins results that list each other into one group, listing every path but its own once', () => {
       const out = annotateDuplicates([
-        img('/a.jpg', { visual_group: 7 }),
-        img('/b.jpg', { visual_group: 2 }),
-        img('/c.jpg', { visual_group: 7 }),
-        img('/d.jpg', { visual_group: 2 }),
-        img('/e.jpg', { visual_group: 4 }),
-        img('/f.jpg', { visual_group: 4 }),
+        img('/a.jpg', { visual_copies: ['/b.jpg', '/lib/x.jpg'] }),
+        img('/b.jpg', { visual_copies: ['/a.jpg', '/lib/x.jpg'] }),
+        img('/c.jpg', { visual_copies: ['/a.jpg'] }),
+      ]);
+      expect(out[0]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/b.jpg', '/lib/x.jpg', '/c.jpg'] });
+      expect(out[1]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/lib/x.jpg', '/c.jpg'] });
+      expect(out[2]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/b.jpg', '/lib/x.jpg'] });
+      expect(new Set(out.map(item => item.dupeColor)).size).toBe(1);
+    });
+
+    it('joins results linked only through a shared library path into one group', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { visual_copies: ['/lib/shared.jpg'] }),
+        img('/b.jpg', { visual_copies: ['/lib/shared.jpg'] }),
+      ]);
+      expect(out[0]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/lib/shared.jpg', '/b.jpg'] });
+      expect(out[1]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/lib/shared.jpg'] });
+      expect(out[0].dupeColor).toBe(out[1].dupeColor);
+    });
+
+    it('joins results linked through a chain of listed paths', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { visual_copies: ['/lib/1.jpg'] }),
+        img('/b.jpg', { visual_copies: ['/lib/1.jpg', '/lib/2.jpg'] }),
+        img('/c.jpg', { visual_copies: ['/lib/2.jpg'] }),
+      ]);
+      expect(new Set(out.map(item => item.dupeColor)).size).toBe(1);
+      expect(out[0].otherPaths).toEqual(['/lib/1.jpg', '/b.jpg', '/lib/2.jpg', '/c.jpg']);
+    });
+
+    it('keeps results with different look-alikes in different groups', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { visual_copies: ['/lib/a.jpg'] }),
+        img('/b.jpg', { visual_copies: ['/lib/b.jpg'] }),
+      ]);
+      expect(out[0].otherPaths).toEqual(['/lib/a.jpg']);
+      expect(out[1].otherPaths).toEqual(['/lib/b.jpg']);
+      expect(out[0].dupeColor).not.toBe(out[1].dupeColor);
+    });
+
+    it('colors groups in order of their first result', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { visual_copies: ['/lib/x.jpg'] }),
+        img('/b.jpg', { visual_copies: ['/lib/y.jpg'] }),
+        img('/c.jpg', { visual_copies: ['/lib/x.jpg'] }),
+        img('/d.jpg', { visual_copies: ['/lib/y.jpg'] }),
+        img('/e.jpg', { visual_copies: ['/lib/z.jpg'] }),
       ]);
       expect(out[0].dupeColor).toBe('#f59e0b');
       expect(out[2].dupeColor).toBe('#f59e0b');
       expect(out[1].dupeColor).toBe('#10b981');
       expect(out[3].dupeColor).toBe('#10b981');
       expect(out[4].dupeColor).toBe('#f97316');
-      expect(out[5].dupeColor).toBe('#f97316');
-      expect(out[0].otherPaths).toEqual(['/c.jpg']);
-      expect(out[1].otherPaths).toEqual(['/d.jpg']);
-      expect(out[5].otherPaths).toEqual(['/e.jpg']);
     });
 
     it('cycles the palette after four groups', () => {
-      const input = Array.from({ length: 10 }, (_, i) => img(`/g${Math.floor(i / 2)}-${i % 2}.jpg`, { visual_group: Math.floor(i / 2) }));
+      const input = Array.from({ length: 5 }, (_, i) => img(`/g${i}.jpg`, { visual_copies: [`/lib/g${i}.jpg`] }));
       const out = annotateDuplicates(input);
-      expect(out[8].dupeColor).toBe(out[0].dupeColor);
-      expect(out[6].dupeColor).not.toBe(out[8].dupeColor);
+      expect(out[4].dupeColor).toBe(out[0].dupeColor);
+      expect(out[3].dupeColor).not.toBe(out[4].dupeColor);
     });
 
-    it('ignores a group with a single member', () => {
-      const out = annotateDuplicates([img('/a.jpg', { visual_group: 0 })]);
-      expect(out[0]).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] });
+    it('ignores empty or own-path-only visual_copies', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { visual_copies: [] }),
+        img('/b.jpg', { visual_copies: ['/b.jpg'] }),
+      ]);
+      out.forEach(item => expect(item).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] }));
     });
 
-    it('never tags videos, even with the same hash or a visual_group', () => {
-      const video = (path) => ({ path, media_type: 'video', hash: 'hv', visual_group: 0, score: 0.9 });
+    it('never tags videos, even with visual_copies or a shared hash', () => {
+      const video = (path) => ({ path, media_type: 'video', hash: 'hv', visual_copies: ['/lib/x.jpg'], score: 0.9 });
       const out = annotateDuplicates([
         video('/v1.mp4'),
         video('/v2.mp4'),
@@ -176,11 +208,11 @@ describe('annotateDuplicates', () => {
       });
     });
 
-    it('prefers exact over visual when hashes match', () => {
+    it('prefers exact over visual when hashes match, and still lists exact results as look-alikes of others', () => {
       const out = annotateDuplicates([
-        img('/a.jpg', { hash: 'h1', visual_group: 0 }),
-        img('/b.jpg', { hash: 'h1', visual_group: 0 }),
-        img('/c.jpg', { hash: 'h2', visual_group: 0 }),
+        img('/a.jpg', { hash: 'h1', visual_copies: ['/c.jpg'] }),
+        img('/b.jpg', { hash: 'h1', visual_copies: ['/c.jpg'] }),
+        img('/c.jpg', { hash: 'h2', visual_copies: ['/a.jpg', '/b.jpg'] }),
       ]);
       expect(out[0].duplicateType).toBe('exact');
       expect(out[0].otherPaths).toEqual(['/b.jpg']);
@@ -189,15 +221,18 @@ describe('annotateDuplicates', () => {
     });
   });
 
-  it('strips copies, embedding and visual_group and preserves other fields', () => {
+  it('strips copies, embedding, visual_copies and a leftover visual_group and preserves other fields', () => {
     const out = annotateDuplicates([
-      img('/a.jpg', { embedding: [1, 0], copies: ['/z.jpg'], visual_group: 0, hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4 }),
-      img('/b.jpg', { visual_group: 0 }),
-      { path: '/v.mp4', media_type: 'video', embedding: [1, 0], visual_group: 0, copies: [], score: 0.1 },
+      img('/a.jpg', {
+        embedding: [1, 0], copies: ['/z.jpg'], visual_copies: ['/b.jpg'], visual_group: 0, hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4,
+      }),
+      img('/b.jpg', { visual_copies: ['/a.jpg'] }),
+      { path: '/v.mp4', media_type: 'video', embedding: [1, 0], visual_copies: ['/a.jpg'], copies: [], score: 0.1 },
     ]);
     out.forEach(item => {
       expect(item).not.toHaveProperty('embedding');
       expect(item).not.toHaveProperty('copies');
+      expect(item).not.toHaveProperty('visual_copies');
       expect(item).not.toHaveProperty('visual_group');
     });
     expect(out[0]).toMatchObject({ path: '/a.jpg', hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4 });
@@ -211,9 +246,9 @@ describe('annotateDuplicates', () => {
   });
 
   it('does not mutate the input items', () => {
-    const input = [img('/a.jpg', { visual_group: 0, copies: ['/b.jpg'] }), img('/c.jpg', { visual_group: 0 })];
+    const input = [img('/a.jpg', { visual_copies: ['/c.jpg'], copies: ['/b.jpg'] }), img('/c.jpg', { visual_copies: ['/a.jpg'] })];
     annotateDuplicates(input);
-    expect(input[0]).toHaveProperty('visual_group', 0);
+    expect(input[0].visual_copies).toEqual(['/c.jpg']);
     expect(input[0]).toHaveProperty('copies');
     expect(input[0]).not.toHaveProperty('isDuplicate');
   });

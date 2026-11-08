@@ -94,7 +94,7 @@ describe('SearchFiltersPanel', () => {
     await renderPanel();
     const dialog = screen.getByRole('dialog', { name: 'Search filters' });
     expect(dialog.getAttribute('aria-modal')).toBe('false');
-    ['Type', 'Folders', 'Date taken', 'Orientation', 'Format', 'Minimum resolution'].forEach(title => {
+    ['Type', 'Folders', 'Date taken', 'Orientation', 'Format', 'Duplicates', 'Minimum resolution'].forEach(title => {
       expect(within(dialog).getByRole('region', { name: title })).toBeTruthy();
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url) === `${API}/search/filter-options`)).toBe(true);
@@ -234,6 +234,76 @@ describe('SearchFiltersPanel', () => {
       fireEvent.click(screen.getByRole('button', { name: '2 MP' }));
       expect(pressed('12 MP')).toBe('false');
       expect(latest.current.requestFilters).toEqual({ min_megapixels: 2 });
+    });
+  });
+
+  describe('duplicates', () => {
+    const HELP = 'Copies and look-alikes anywhere in your library. The first look-alike check after indexing can take a few seconds.';
+
+    it('shows both toggles with their counts and the help line', async () => {
+      options = { ...OPTIONS, duplicates: { exact: 1234, visual: 56 } };
+      await renderPanel();
+      const region = inRegion('Duplicates');
+      expect(region.getByRole('button', { name: 'Exact copies (1,234)' })).toBeTruthy();
+      expect(region.getByRole('button', { name: 'Visual duplicates (56)' })).toBeTruthy();
+      expect(region.getByText(HELP)).toBeTruthy();
+      expect(pressed('Exact copies (1,234)', 'Duplicates')).toBe('false');
+      expect(pressed('Visual duplicates (56)', 'Duplicates')).toBe('false');
+    });
+
+    it('shows no visual count while the backend has not built its index', async () => {
+      options = { ...OPTIONS, duplicates: { exact: 7, visual: null } };
+      await renderPanel();
+      const region = inRegion('Duplicates');
+      expect(region.getByRole('button', { name: 'Exact copies (7)' })).toBeTruthy();
+      expect(region.getByRole('button', { name: 'Visual duplicates' })).toBeTruthy();
+    });
+
+    it('shows a zero count and works without any duplicates data', async () => {
+      options = { ...OPTIONS, duplicates: { exact: 0, visual: 0 } };
+      const { unmount } = await renderPanel();
+      expect(inRegion('Duplicates').getByRole('button', { name: 'Exact copies (0)' })).toBeTruthy();
+      expect(inRegion('Duplicates').getByRole('button', { name: 'Visual duplicates (0)' })).toBeTruthy();
+      unmount();
+
+      options = OPTIONS;
+      await renderPanel();
+      expect(inRegion('Duplicates').getByRole('button', { name: 'Exact copies' })).toBeTruthy();
+      expect(inRegion('Duplicates').getByRole('button', { name: 'Visual duplicates' })).toBeTruthy();
+    });
+
+    it('toggles the kinds independently and shows a chip for each', async () => {
+      options = { ...OPTIONS, duplicates: { exact: 3, visual: 4 } };
+      await renderPanel();
+      fireEvent.click(screen.getByRole('button', { name: 'Visual duplicates (4)' }));
+      expect(pressed('Visual duplicates (4)')).toBe('true');
+      expect(pressed('Exact copies (3)')).toBe('false');
+      expect(latest.current.requestFilters).toEqual({ duplicates: ['visual'] });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Exact copies (3)' }));
+      expect(pressed('Exact copies (3)')).toBe('true');
+      expect(latest.current.requestFilters).toEqual({ duplicates: ['exact', 'visual'] });
+      expect(latest.current.chips.map(chip => chip.label)).toEqual(['Exact copies', 'Visual duplicates']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Visual duplicates (4)' }));
+      expect(pressed('Visual duplicates (4)')).toBe('false');
+      expect(latest.current.requestFilters).toEqual({ duplicates: ['exact'] });
+    });
+
+    it('is cleared by Clear all', async () => {
+      await renderPanel();
+      fireEvent.click(screen.getByRole('button', { name: 'Exact copies' }));
+      expect(screen.getByRole('button', { name: 'Clear all' }).disabled).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      expect(latest.current.requestFilters).toBeNull();
+      expect(pressed('Exact copies')).toBe('false');
+    });
+
+    it('uses the shared toggle, so the terminal theme inverts the pressed state through aria-pressed', async () => {
+      await renderPanel();
+      const buttons = inRegion('Duplicates').getAllByRole('button');
+      expect(buttons).toHaveLength(2);
+      buttons.forEach(button => expect(button.hasAttribute('aria-pressed')).toBe(true));
     });
   });
 

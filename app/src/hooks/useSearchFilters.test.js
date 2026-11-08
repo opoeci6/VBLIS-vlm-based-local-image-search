@@ -80,6 +80,25 @@ describe('useSearchFilters', () => {
       expect(result.current.activeCount).toBe(6);
     });
 
+    it('sends the chosen duplicate kinds, in a fixed order, and counts them once', () => {
+      const { result } = render();
+      expect(result.current.duplicates).toEqual([]);
+
+      act(() => result.current.toggleDuplicate('visual'));
+      expect(result.current.requestFilters).toEqual({ duplicates: ['visual'] });
+      expect(result.current.activeCount).toBe(1);
+
+      act(() => result.current.toggleDuplicate('exact'));
+      expect(result.current.requestFilters).toEqual({ duplicates: ['exact', 'visual'] });
+      expect(result.current.activeCount).toBe(1);
+
+      act(() => result.current.toggleDuplicate('visual'));
+      expect(result.current.requestFilters).toEqual({ duplicates: ['exact'] });
+      act(() => result.current.toggleDuplicate('exact'));
+      expect(result.current.requestFilters).toBeNull();
+      expect(result.current.activeCount).toBe(0);
+    });
+
     it('toggles orientations and formats off again', () => {
       const { result } = render();
       act(() => result.current.toggleOrientation('portrait'));
@@ -120,11 +139,14 @@ describe('useSearchFilters', () => {
         result.current.toggleOrientation('square');
         result.current.toggleFormat('png');
         result.current.setMinMegapixels(2);
+        result.current.toggleDuplicate('exact');
+        result.current.toggleDuplicate('visual');
       });
-      expect(result.current.activeCount).toBe(6);
+      expect(result.current.activeCount).toBe(7);
       act(() => result.current.clearAll());
       expect(result.current.requestFilters).toBeNull();
       expect(result.current.activeCount).toBe(0);
+      expect(result.current.duplicates).toEqual([]);
       expect(result.current.datePreset).toBeNull();
       expect(result.current.dateFrom).toBeNull();
     });
@@ -157,6 +179,25 @@ describe('useSearchFilters', () => {
       remove('\u2265 12 MP');
       remove('Images only');
       expect(result.current.requestFilters).toEqual({ folders: ['/photos/b'] });
+    });
+  });
+
+  describe('duplicate chips', () => {
+    it('has one removable chip per chosen kind', () => {
+      const { result } = render();
+      act(() => {
+        result.current.toggleDuplicate('visual');
+        result.current.toggleDuplicate('exact');
+      });
+      expect(result.current.chips.map(chip => chip.label)).toEqual(['Exact copies', 'Visual duplicates']);
+
+      act(() => result.current.chips.find(chip => chip.label === 'Exact copies').onRemove());
+      expect(result.current.requestFilters).toEqual({ duplicates: ['visual'] });
+      expect(result.current.chips.map(chip => chip.label)).toEqual(['Visual duplicates']);
+
+      act(() => result.current.chips[0].onRemove());
+      expect(result.current.requestFilters).toBeNull();
+      expect(result.current.chips).toEqual([]);
     });
   });
 

@@ -28,6 +28,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   const [orientations, setOrientations] = useState([]);
   const [formats, setFormats] = useState([]);
   const [minMegapixels, setMinMegapixels] = useState(null);
+  const [duplicates, setDuplicates] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
 
   const [options, setOptions] = useState(null);
@@ -39,8 +40,8 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   setToastRef.current = setToast;
 
   const filterState = useMemo(
-    () => ({ mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels }),
-    [mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels]
+    () => ({ mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels, duplicates }),
+    [mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels, duplicates]
   );
 
   // Null while nothing is active; the same object while the filter state is unchanged.
@@ -80,6 +81,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
 
   const toggleOrientation = useCallback((value) => setOrientations(prev => toggleInList(prev, value)), []);
   const toggleFormat = useCallback((value) => setFormats(prev => toggleInList(prev, value)), []);
+  const toggleDuplicate = useCallback((value) => setDuplicates(prev => toggleInList(prev, value)), []);
 
   const clearAll = useCallback(() => {
     setMediaType(null);
@@ -90,6 +92,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     setOrientations(prev => (prev.length === 0 ? prev : []));
     setFormats(prev => (prev.length === 0 ? prev : []));
     setMinMegapixels(null);
+    setDuplicates(prev => (prev.length === 0 ? prev : []));
   }, []);
 
   const chipActions = useMemo(() => ({
@@ -102,7 +105,8 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     },
     removeOrientations: () => setOrientations([]),
     removeFormats: () => setFormats([]),
-    removeMegapixels: () => setMinMegapixels(null)
+    removeMegapixels: () => setMinMegapixels(null),
+    removeDuplicate: (kind) => setDuplicates(prev => prev.filter(item => item !== kind))
   }), []);
 
   // Labels of the formats in the index, as the backend names them. Keyed by a string so the chips
@@ -217,6 +221,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     orientations,
     formats,
     minMegapixels,
+    duplicates,
     requestFilters,
     activeCount,
     chips,
@@ -227,6 +232,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     toggleOrientation,
     toggleFormat,
     setMinMegapixels,
+    toggleDuplicate,
     clearAll,
     isOpen,
     open,

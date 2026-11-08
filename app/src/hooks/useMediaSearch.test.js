@@ -80,22 +80,23 @@ describe('useMediaSearch', () => {
       expect(result.current.videoGroups[0]).toMatchObject({ path: '/v.mp4', name: 'v.mp4', bestScore: 0.7 });
     });
 
-    it('builds visual duplicates from the visual_group of the results and drops the raw field', async () => {
+    it('builds visual duplicates from the visual_copies of the results and drops the raw field', async () => {
       fetchMock.mockResolvedValue(jsonResponse({
         results: [
-          imageHit('/a.jpg', { hash: 'h1', visual_group: 0 }),
+          imageHit('/a.jpg', { hash: 'h1', visual_copies: ['/c.jpg', '/lib/a-lookalike.jpg'] }),
           imageHit('/b.jpg', { hash: 'h2' }),
-          imageHit('/c.jpg', { hash: 'h3', visual_group: 0 }),
+          imageHit('/c.jpg', { hash: 'h3', visual_copies: ['/a.jpg'] }),
         ],
       }));
       const { result } = render();
       await submit(result, 'a cat');
       await runSearch(result);
 
-      expect(result.current.results[0]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/c.jpg'] });
+      expect(result.current.results[0]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/c.jpg', '/lib/a-lookalike.jpg'] });
       expect(result.current.results[1]).toMatchObject({ duplicateType: null, isDuplicate: false, otherPaths: [] });
-      expect(result.current.results[2]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg'] });
-      result.current.results.forEach(r => expect(r).not.toHaveProperty('visual_group'));
+      expect(result.current.results[2]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/lib/a-lookalike.jpg'] });
+      result.current.results.forEach(r => expect(r).not.toHaveProperty('visual_copies'));
+      expect(result.current.imageResults.map(r => r.path)).toEqual(['/a.jpg', '/b.jpg', '/c.jpg']); // look-alikes are no tiles
     });
 
     it('turns the copies of a result into its otherPaths', async () => {
@@ -948,6 +949,22 @@ describe('useMediaSearch', () => {
         expect(Object.keys(bodyOf(1))).toEqual(['query_ref', 'top_k', 'min_score']);
       });
 
+      it('re-runs the current text search with the duplicates key when it changes', async () => {
+        const hook = renderWith(FILTERS);
+        await textSearch(hook);
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'ref-2' }));
+        hook.rerender({ filters: { ...FILTERS, duplicates: ['exact'] } });
+        await settle();
+        expect(urlOf(1)).toBe(`${API}/search/ref`);
+        expect(bodyOf(1)).toEqual({ query_ref: 'ref-1', top_k: 50, min_score: 0.1, filters: { ...FILTERS, duplicates: ['exact'] } });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')], query_ref: 'ref-3' }));
+        hook.rerender({ filters: { ...FILTERS, duplicates: ['exact', 'visual'] } });
+        await settle();
+        expect(bodyOf(2).filters.duplicates).toEqual(['exact', 'visual']);
+      });
+
       it('sends one request for a burst of changes', async () => {
         const hook = renderWith(null);
         await textSearch(hook);
@@ -1767,6 +1784,19 @@ describe('useMediaSearch', () => {
         hook.rerender({ filters: null });
         await settle();
         expect(bodyOf(2)).toEqual({ sort: 'newest' });
+      });
+
+      it('a change to the duplicates filter re-runs /browse with the duplicates key', async () => {
+        const hook = renderWith(null);
+        await browse(hook, { results: [libraryItem('/a.jpg'), libraryItem('/b.jpg')], total: 2 });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [libraryItem('/b.jpg')], total: 1 }));
+        hook.rerender({ filters: { duplicates: ['visual'] } });
+        await settle();
+        expect(urlOf(1)).toBe(`${API}/browse`);
+        expect(bodyOf(1)).toEqual({ sort: 'newest', filters: { duplicates: ['visual'] } });
+        expect(hook.result.current.results.map(r => r.path)).toEqual(['/b.jpg']);
+        expect(hook.result.current.isBrowsing).toBe(true);
       });
 
       it('a filter change re-runs a browse that found nothing', async () => {
