@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { annotateDuplicates, countSearchResults, getImageResults, groupVideoResults } from './searchResults';
 
-// Unit vectors: dot(a, b) is the cosine similarity.
-const unit = (cos) => [cos, Math.sqrt(1 - cos * cos)];
-const BASE = [1, 0];
-
 const img = (path, extra = {}) => ({ path, media_type: 'image', score: 0.5, ...extra });
 
 describe('annotateDuplicates', () => {
@@ -91,11 +87,11 @@ describe('annotateDuplicates', () => {
       expect(out[0]).not.toHaveProperty('copies');
     });
 
-    it('still runs the visual pass, with exact winning over visual', () => {
+    it('still builds visual groups, with exact winning over visual', () => {
       const out = annotateDuplicates([
-        img('/a.jpg', { hash: 'h1', embedding: BASE, copies: ['/a2.jpg'] }),
-        img('/b.jpg', { hash: 'h2', embedding: unit(0.99), copies: [] }),
-        img('/c.jpg', { hash: 'h3', embedding: unit(0.99), copies: [] }),
+        img('/a.jpg', { hash: 'h1', visual_group: 0, copies: ['/a2.jpg'] }),
+        img('/b.jpg', { hash: 'h2', visual_group: 0, copies: [] }),
+        img('/c.jpg', { hash: 'h3', visual_group: 0, copies: [] }),
       ]);
       expect(out[0]).toMatchObject({ duplicateType: 'exact', otherPaths: ['/a2.jpg'] });
       expect(out[1]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/c.jpg'] });
@@ -114,93 +110,98 @@ describe('annotateDuplicates', () => {
     expect(out[2].dupeColor).toBe('#ec4899');
   });
 
-  it('tags near-identical embeddings with different hashes as visual', () => {
-    const out = annotateDuplicates([
-      img('/a.jpg', { hash: 'h1', embedding: BASE }),
-      img('/b.jpg', { hash: 'h2', embedding: unit(0.99) }),
-    ]);
-    expect(out[0]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/b.jpg'], dupeColor: '#f59e0b' });
-    expect(out[1]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg'], dupeColor: '#f59e0b' });
-  });
+  describe('visual groups from the backend', () => {
+    it('tags the members of a visual_group as visual, with the other members as otherPaths', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1', visual_group: 0 }),
+        img('/b.jpg', { hash: 'h2', visual_group: 0 }),
+        img('/c.jpg', { hash: 'h3', visual_group: 0 }),
+      ]);
+      expect(out[0]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/b.jpg', '/c.jpg'], dupeColor: '#f59e0b' });
+      expect(out[1]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg', '/c.jpg'], dupeColor: '#f59e0b' });
+      expect(out[2]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg', '/b.jpg'], dupeColor: '#f59e0b' });
+    });
 
-  it('treats the 0.985 boundary as visual and 0.98 as not', () => {
-    const at = annotateDuplicates([
-      img('/a.jpg', { embedding: [1, 0] }),
-      img('/b.jpg', { embedding: [0.985, 0] }),
-    ]);
-    expect(at[0].duplicateType).toBe('visual');
+    it('does not tag results without a visual_group', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1', visual_group: 0 }),
+        img('/b.jpg', { hash: 'h2' }),
+        img('/c.jpg', { hash: 'h3', visual_group: 0 }),
+      ]);
+      expect(out[1]).toMatchObject({ isDuplicate: false, duplicateType: null, dupeColor: null, otherPaths: [] });
+      expect(out[0].otherPaths).toEqual(['/c.jpg']);
+    });
 
-    const below = annotateDuplicates([
-      img('/a.jpg', { embedding: BASE }),
-      img('/b.jpg', { embedding: unit(0.98) }),
-    ]);
-    expect(below[0].duplicateType).toBeNull();
-    expect(below[1].duplicateType).toBeNull();
-  });
+    it('colors groups in order of their first member, whatever their numbers', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { visual_group: 7 }),
+        img('/b.jpg', { visual_group: 2 }),
+        img('/c.jpg', { visual_group: 7 }),
+        img('/d.jpg', { visual_group: 2 }),
+        img('/e.jpg', { visual_group: 4 }),
+        img('/f.jpg', { visual_group: 4 }),
+      ]);
+      expect(out[0].dupeColor).toBe('#f59e0b');
+      expect(out[2].dupeColor).toBe('#f59e0b');
+      expect(out[1].dupeColor).toBe('#10b981');
+      expect(out[3].dupeColor).toBe('#10b981');
+      expect(out[4].dupeColor).toBe('#f97316');
+      expect(out[5].dupeColor).toBe('#f97316');
+      expect(out[0].otherPaths).toEqual(['/c.jpg']);
+      expect(out[1].otherPaths).toEqual(['/d.jpg']);
+      expect(out[5].otherPaths).toEqual(['/e.jpg']);
+    });
 
-  it('merges visual groups transitively when a later pair bridges two groups', () => {
-    const at = (deg) => {
-      const t = (deg * Math.PI) / 180;
-      return [Math.cos(t), Math.sin(t)];
-    };
-    // Pairs 9 degrees apart are similar (cos ~0.9877); 18 and 27 degrees apart are not.
-    // Pair loop order: {0,3}, then {1,2}, then the bridge (2,3).
-    const out = annotateDuplicates([
-      img('/a.jpg', { hash: 'h0', embedding: at(0) }),
-      img('/b.jpg', { hash: 'h1', embedding: at(27) }),
-      img('/c.jpg', { hash: 'h2', embedding: at(18) }),
-      img('/d.jpg', { hash: 'h3', embedding: at(9) }),
-    ]);
-    out.forEach(item => expect(item.duplicateType).toBe('visual'));
-    expect(new Set(out.map(item => item.dupeColor)).size).toBe(1);
-    const all = ['/a.jpg', '/b.jpg', '/c.jpg', '/d.jpg'];
-    out.forEach(item => {
-      expect([...item.otherPaths].sort()).toEqual(all.filter(p => p !== item.path));
+    it('cycles the palette after four groups', () => {
+      const input = Array.from({ length: 10 }, (_, i) => img(`/g${Math.floor(i / 2)}-${i % 2}.jpg`, { visual_group: Math.floor(i / 2) }));
+      const out = annotateDuplicates(input);
+      expect(out[8].dupeColor).toBe(out[0].dupeColor);
+      expect(out[6].dupeColor).not.toBe(out[8].dupeColor);
+    });
+
+    it('ignores a group with a single member', () => {
+      const out = annotateDuplicates([img('/a.jpg', { visual_group: 0 })]);
+      expect(out[0]).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] });
+    });
+
+    it('never tags videos, even with the same hash or a visual_group', () => {
+      const video = (path) => ({ path, media_type: 'video', hash: 'hv', visual_group: 0, score: 0.9 });
+      const out = annotateDuplicates([
+        video('/v1.mp4'),
+        video('/v2.mp4'),
+        img('/a.jpg', { hash: 'hv' }),
+      ]);
+      out.forEach(item => {
+        expect(item).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] });
+      });
+    });
+
+    it('prefers exact over visual when hashes match', () => {
+      const out = annotateDuplicates([
+        img('/a.jpg', { hash: 'h1', visual_group: 0 }),
+        img('/b.jpg', { hash: 'h1', visual_group: 0 }),
+        img('/c.jpg', { hash: 'h2', visual_group: 0 }),
+      ]);
+      expect(out[0].duplicateType).toBe('exact');
+      expect(out[0].otherPaths).toEqual(['/b.jpg']);
+      expect(out[1].duplicateType).toBe('exact');
+      expect(out[2]).toMatchObject({ duplicateType: 'visual', otherPaths: ['/a.jpg', '/b.jpg'] });
     });
   });
 
-  it('orders visual groups by smallest member index for color assignment', () => {
+  it('strips copies, embedding and visual_group and preserves other fields', () => {
     const out = annotateDuplicates([
-      img('/a.jpg', { embedding: [1, 0] }),
-      img('/b.jpg', { embedding: [0, 1] }),
-      img('/c.jpg', { embedding: [1, 0] }),
-      img('/d.jpg', { embedding: [0, 1] }),
-    ]);
-    expect(out[0].dupeColor).toBe('#f59e0b');
-    expect(out[2].dupeColor).toBe('#f59e0b');
-    expect(out[1].dupeColor).toBe('#10b981');
-    expect(out[3].dupeColor).toBe('#10b981');
-  });
-
-  it('never tags videos, even with the same hash or embedding', () => {
-    const video = (path) => ({ path, media_type: 'video', hash: 'hv', embedding: BASE, score: 0.9 });
-    const out = annotateDuplicates([
-      video('/v1.mp4'),
-      video('/v2.mp4'),
-      img('/a.jpg', { hash: 'hv', embedding: BASE }),
+      img('/a.jpg', { embedding: [1, 0], copies: ['/z.jpg'], visual_group: 0, hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4 }),
+      img('/b.jpg', { visual_group: 0 }),
+      { path: '/v.mp4', media_type: 'video', embedding: [1, 0], visual_group: 0, copies: [], score: 0.1 },
     ]);
     out.forEach(item => {
-      expect(item).toMatchObject({ isDuplicate: false, duplicateType: null, otherPaths: [] });
+      expect(item).not.toHaveProperty('embedding');
+      expect(item).not.toHaveProperty('copies');
+      expect(item).not.toHaveProperty('visual_group');
     });
-  });
-
-  it('prefers exact over visual when hashes match', () => {
-    const out = annotateDuplicates([
-      img('/a.jpg', { hash: 'h1', embedding: BASE }),
-      img('/b.jpg', { hash: 'h1', embedding: BASE }),
-    ]);
-    expect(out[0].duplicateType).toBe('exact');
-    expect(out[1].duplicateType).toBe('exact');
-  });
-
-  it('strips embeddings and preserves other fields', () => {
-    const out = annotateDuplicates([
-      img('/a.jpg', { embedding: BASE, hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4 }),
-      { path: '/v.mp4', media_type: 'video', embedding: BASE, score: 0.1 },
-    ]);
-    out.forEach(item => expect(item).not.toHaveProperty('embedding'));
     expect(out[0]).toMatchObject({ path: '/a.jpg', hash: 'h1', score: 0.77, custom: 'x', timestamp_seconds: 4 });
-    expect(out[1]).toMatchObject({ path: '/v.mp4', media_type: 'video', score: 0.1 });
+    expect(out[2]).toMatchObject({ path: '/v.mp4', media_type: 'video', score: 0.1 });
   });
 
   it('keeps the output order equal to the input order', () => {
@@ -210,65 +211,11 @@ describe('annotateDuplicates', () => {
   });
 
   it('does not mutate the input items', () => {
-    const input = [img('/a.jpg', { embedding: BASE })];
+    const input = [img('/a.jpg', { visual_group: 0, copies: ['/b.jpg'] }), img('/c.jpg', { visual_group: 0 })];
     annotateDuplicates(input);
-    expect(input[0]).toHaveProperty('embedding');
+    expect(input[0]).toHaveProperty('visual_group', 0);
+    expect(input[0]).toHaveProperty('copies');
     expect(input[0]).not.toHaveProperty('isDuplicate');
-  });
-
-  describe('800-candidate cap', () => {
-    const filler = (n) => Array.from({ length: n }, (_, i) => img(`/f${i}.jpg`, { embedding: [0, 1] }));
-
-    it('tags a near-duplicate pair at indices 0 and 1', () => {
-      const input = [
-        img('/a.jpg', { embedding: BASE }),
-        img('/b.jpg', { embedding: unit(0.99) }),
-        ...filler(10),
-      ];
-      const out = annotateDuplicates(input);
-      expect(out[0].duplicateType).toBe('visual');
-      expect(out[1].duplicateType).toBe('visual');
-    });
-
-    it('does not tag the same pair at indices 800 and 801', () => {
-      const input = [
-        ...filler(800),
-        img('/a.jpg', { embedding: BASE }),
-        img('/b.jpg', { embedding: unit(0.99) }),
-      ];
-      const out = annotateDuplicates(input);
-      expect(out).toHaveLength(802);
-      expect(out[800].duplicateType).toBeNull();
-      expect(out[801].duplicateType).toBeNull();
-    });
-
-    it('does not let video frames use up the image budget', () => {
-      const frames = Array.from({ length: 900 }, (_, i) => ({
-        path: '/v.mp4', media_type: 'video', score: 0.5, timestamp_seconds: i, embedding: null,
-      }));
-      const out = annotateDuplicates([
-        ...frames,
-        img('/a.jpg', { embedding: BASE }),
-        img('/b.jpg', { embedding: unit(0.99) }),
-      ]);
-      expect(out).toHaveLength(902);
-      expect(out[900]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/b.jpg'] });
-      expect(out[901]).toMatchObject({ duplicateType: 'visual', isDuplicate: true, otherPaths: ['/a.jpg'] });
-    });
-
-    it('still stops after the first 800 images when frames are interleaved', () => {
-      const frames = Array.from({ length: 50 }, (_, i) => ({
-        path: '/v.mp4', media_type: 'video', score: 0.5, timestamp_seconds: i,
-      }));
-      const out = annotateDuplicates([
-        ...frames,
-        ...filler(800),
-        img('/a.jpg', { embedding: BASE }),
-        img('/b.jpg', { embedding: unit(0.99) }),
-      ]);
-      expect(out[850].duplicateType).toBeNull();
-      expect(out[851].duplicateType).toBeNull();
-    });
   });
 });
 
@@ -317,6 +264,26 @@ describe('groupVideoResults', () => {
     const groups = groupVideoResults([first, second, noScore]);
     expect(groups[0].bestFrame).toBe(first);
     expect(groups.find(g => g.path === '/w.mp4').bestScore).toBe(0);
+  });
+
+  it('keeps the order of first appearance and the time order of frames when nothing has a score', () => {
+    const browse = (path, timestamp_seconds) => ({
+      path, media_type: 'video', score: null, score_kind: 'none', timestamp_seconds, taken_at: '2024-03-12T10:00:00',
+    });
+    const results = [
+      browse('/z-newest.mp4', 0),
+      browse('/z-newest.mp4', 4),
+      browse('/a-middle.mp4', 2),
+      browse('/m-oldest.mp4', 1),
+      browse('/m-oldest.mp4', 9),
+      browse('/a-middle.mp4', 8),
+    ];
+    const groups = groupVideoResults(results);
+    expect(groups.map(g => g.path)).toEqual(['/z-newest.mp4', '/a-middle.mp4', '/m-oldest.mp4']);
+    expect(groups.map(g => g.frames.map(f => f.timestamp_seconds))).toEqual([[0, 4], [2, 8], [1, 9]]);
+    // Without scores the first frame stands for the video.
+    expect(groups[0].bestFrame).toBe(results[0]);
+    expect(groups[0].bestScore).toBe(0);
   });
 
   it('sorts frames by score desc, then timestamp asc', () => {

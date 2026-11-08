@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { VideoGroupModal } from './VideoGroupModal';
+import { formatTakenDate } from '../../utils/formatters';
 
 const makeGroup = () => {
   const path = '/videos/clip.mp4';
@@ -256,5 +257,32 @@ describe('VideoGroupModal', () => {
         type: 'error',
       }));
     });
+  });
+});
+
+describe('VideoGroupModal without scores (library view)', () => {
+  afterEach(cleanup);
+
+  const libraryGroup = () => {
+    const path = '/videos/clip.mp4';
+    const frames = [5, 20].map(timestamp_seconds => (
+      { path, media_type: 'video', score: null, score_kind: 'none', taken_at: '2024-03-12T10:00:00', timestamp_seconds }
+    ));
+    return { path, name: 'clip.mp4', frames, bestScore: 0, bestFrame: frames[0], isExpanded: false, totalFrames: null };
+  };
+
+  it('hides the best match and shows no percentages, without a Find more frames button', () => {
+    renderModal({ selectedVideoGroup: libraryGroup(), canFindMoreFrames: false });
+    expect(screen.getByText('clip.mp4')).toBeTruthy();
+    expect(screen.queryByText(/BEST/)).toBeNull();
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Find more frames/ })).toBeNull();
+    expect(renderedFrames()).toHaveLength(2);
+  });
+
+  it.each(['modern', 'terminal'])('renders the frames in the %s theme', (uiTheme) => {
+    renderModal({ selectedVideoGroup: libraryGroup(), canFindMoreFrames: false, uiTheme });
+    expect(screen.queryByText(/BEST/)).toBeNull();
+    expect(screen.getAllByText(formatTakenDate('2024-03-12T10:00:00'))).toHaveLength(2);
   });
 });

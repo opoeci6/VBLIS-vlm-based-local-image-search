@@ -48,7 +48,7 @@ export const SearchTuningSection = ({ minScore, setMinScore, minSimilarity, setM
           onChange={(e) => setMaxResults(parseInt(e.target.value))}
           className="terminal-range w-full cursor-pointer"
         />
-        <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Each video counts as one result. Higher numbers may consume more system memory.</p>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Each video counts as one result. Higher numbers may consume more system memory. The library view always shows everything.</p>
         {parseInt(maxResults) === 0 && (
           <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold mt-2 flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
             <AlertTriangle className="w-3 h-3" />

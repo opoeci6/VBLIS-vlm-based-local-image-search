@@ -69,8 +69,8 @@ const foldersPayload = {
 
 const searchPayload = {
   results: [
-    { path: '/photos/cat.jpg', media_type: 'image', score: 0.91, hash: 'h1', embedding: [1, 0] },
-    { path: '/photos/dog.jpg', media_type: 'image', score: 0.8, hash: 'h2', embedding: [0, 1] },
+    { path: '/photos/cat.jpg', media_type: 'image', score: 0.91, hash: 'h1' },
+    { path: '/photos/dog.jpg', media_type: 'image', score: 0.8, hash: 'h2' },
   ],
 };
 
@@ -675,6 +675,237 @@ describe('App (smoke)', () => {
       fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
       expect(await screen.findByText('No matches with the current filters')).toBeTruthy();
       expect(screen.queryByTestId('no-matches-details-hint')).toBeNull();
+    });
+  });
+
+  describe('browsing the library', () => {
+    const libraryPayload = (extra = {}) => ({
+      results: [
+        { path: '/photos/new.jpg', media_type: 'image', score: null, score_kind: 'none', taken_at: '2024-05-01T10:00:00', hash: 'n1' },
+        { path: '/photos/old.jpg', media_type: 'image', score: null, score_kind: 'none', taken_at: '2020-02-03T08:30:00', hash: 'o1' },
+      ],
+      total: 7,
+      ...extra,
+    });
+
+    // Routes /browse on top of the default mock and records every browse request.
+    const mockBrowseBackend = (payload = libraryPayload()) => {
+      const defaultImpl = fetchMock.getMockImplementation();
+      const calls = [];
+      fetchMock.mockImplementation(async (url, init) => {
+        const { pathname } = new URL(String(url));
+        if (pathname === '/browse' && init?.method === 'POST') {
+          const body = JSON.parse(init.body);
+          calls.push(body);
+          return json(typeof payload === 'function' ? payload(body) : payload);
+        }
+        return defaultImpl(url, init);
+      });
+      return calls;
+    };
+
+    const pressSearch = () => fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    const HINT = 'Currently browsing your library. Type a search to find something specific.';
+    const clearButton = () => screen.queryByRole('button', { name: 'Clear search text' });
+
+    it('shows the library for an empty Search, with the header, the hint and the date taken', async () => {
+      const calls = mockBrowseBackend();
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      expect(screen.getByText('Press Search with an empty box to browse your library.')).toBeTruthy();
+      expect(screen.queryByText(HINT)).toBeNull();
+
+      pressSearch();
+
+      await waitFor(() => expect(screen.getAllByAltText('Result')).toHaveLength(2));
+      // The library ignores Max Results: no top_k.
+      expect(calls).toEqual([{ sort: 'newest' }]);
+      expect(screen.getByRole('heading', { name: 'Library' })).toBeTruthy();
+      expect(screen.getByText('7 items')).toBeTruthy();
+      expect(screen.queryByText(/Showing/)).toBeNull();
+      // The hint sits under the Library header, not under the search box.
+      const hint = screen.getByText(HINT);
+      const heading = screen.getByRole('heading', { name: 'Library' });
+      expect(heading.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(hint.closest('header')).toBeNull();
+      expect(screen.queryByText('Ready to Search')).toBeNull();
+      expect(screen.queryByText(/% Match/)).toBeNull();
+    });
+
+    it('treats a box with only spaces like an empty one', async () => {
+      const calls = mockBrowseBackend();
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      fireEvent.change(screen.getByPlaceholderText(/Search images/), { target: { value: '   ' } });
+      fireEvent.submit(screen.getByPlaceholderText(/Search images/).closest('form'));
+      await waitFor(() => expect(calls).toHaveLength(1));
+      await waitFor(() => expect(screen.getAllByAltText('Result')).toHaveLength(2));
+    });
+
+    it('re-runs the browse in the other order with the toggle', async () => {
+      const calls = mockBrowseBackend((body) => libraryPayload({ results: body.sort === 'oldest' ? libraryPayload().results.slice().reverse() : libraryPayload().results }));
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      pressSearch();
+      await waitFor(() => expect(screen.getAllByAltText('Result')).toHaveLength(2));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Oldest first' }));
+      await waitFor(() => expect(calls).toHaveLength(2));
+      expect(calls[1]).toEqual({ sort: 'oldest' });
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Oldest first' }).getAttribute('aria-pressed')).toBe('true'));
+      expect(screen.getByText('7 items')).toBeTruthy();
+    });
+
+    it('hides the hint with its x and keeps it hidden until the next empty Search', async () => {
+      const calls = mockBrowseBackend();
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      pressSearch();
+      expect(await screen.findByText(HINT)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close hint' }));
+      expect(screen.queryByText(HINT)).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Oldest first' }));
+      await waitFor(() => expect(calls).toHaveLength(2));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Oldest first' }).getAttribute('aria-pressed')).toBe('true'));
+      expect(screen.queryByText(HINT)).toBeNull();
+
+      pressSearch();
+      await waitFor(() => expect(calls).toHaveLength(3));
+      expect(await screen.findByText(HINT)).toBeTruthy();
+    });
+
+    it('ends the browse when a text search follows', async () => {
+      mockBrowseBackend();
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      pressSearch();
+      await screen.findByText(HINT);
+
+      fireEvent.change(screen.getByPlaceholderText(/Search images/), { target: { value: 'cats' } });
+      pressSearch();
+      await waitFor(() => expect(screen.queryByRole('heading', { name: 'Library' })).toBeNull());
+      expect(screen.queryByText(HINT)).toBeNull();
+      expect(screen.getAllByAltText('Result')).toHaveLength(2);
+    });
+
+    it('says there is nothing to browse yet for an empty library', async () => {
+      mockBrowseBackend({ results: [], total: 0 });
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      pressSearch();
+      expect(await screen.findByText('Nothing to browse yet: add a folder to index it.')).toBeTruthy();
+      expect(screen.queryByText('Ready to Search')).toBeNull();
+    });
+
+    describe('the x in the search box', () => {
+      it('is hidden with no text and no results', async () => {
+        mockBrowseBackend();
+        render(<App />);
+        await screen.findByText('Ready to Search');
+        expect(clearButton()).toBeNull();
+      });
+
+      it('with only text, clears the text and nothing else, and refocuses the box', async () => {
+        mockBrowseBackend();
+        render(<App />);
+        await screen.findByText('Ready to Search');
+        const input = screen.getByPlaceholderText(/Search images/);
+        fireEvent.change(input, { target: { value: 'cats' } });
+        fireEvent.click(clearButton());
+        expect(input.value).toBe('');
+        expect(document.activeElement).toBe(input);
+        expect(screen.getByText('Ready to Search')).toBeTruthy();
+        expect(clearButton()).toBeNull();
+      });
+
+      it('after a browse, clears the library and returns to the main page', async () => {
+        mockBrowseBackend();
+        render(<App />);
+        await screen.findByText('Ready to Search');
+        pressSearch();
+        await screen.findByText(HINT);
+        expect(screen.getByPlaceholderText(/Search images/).value).toBe('');
+        expect(clearButton()).toBeTruthy();
+
+        fireEvent.click(clearButton());
+
+        expect(await screen.findByText('Ready to Search')).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Library' })).toBeNull();
+        expect(screen.queryByText(HINT)).toBeNull();
+        expect(screen.queryAllByAltText('Result')).toHaveLength(0);
+        expect(clearButton()).toBeNull();
+        expect(document.activeElement).toBe(screen.getByPlaceholderText(/Search images/));
+      });
+
+      it('after a text search, clears the text and the results', async () => {
+        mockBrowseBackend();
+        render(<App />);
+        await screen.findByText('Ready to Search');
+        const input = screen.getByPlaceholderText(/Search images/);
+        fireEvent.change(input, { target: { value: 'cats' } });
+        pressSearch();
+        await waitFor(() => expect(screen.getAllByAltText('Result')).toHaveLength(2));
+
+        fireEvent.click(clearButton());
+
+        expect(await screen.findByText('Ready to Search')).toBeTruthy();
+        expect(input.value).toBe('');
+        expect(screen.queryAllByAltText('Result')).toHaveLength(0);
+        expect(document.activeElement).toBe(input);
+      });
+
+      it('shows after a browse that came back empty and returns to the main page', async () => {
+        mockBrowseBackend({ results: [], total: 0 });
+        render(<App />);
+        await screen.findByText('Ready to Search');
+        pressSearch();
+        expect(await screen.findByText('Nothing to browse yet: add a folder to index it.')).toBeTruthy();
+        expect(clearButton()).toBeTruthy();
+
+        fireEvent.click(clearButton());
+
+        expect(await screen.findByText('Ready to Search')).toBeTruthy();
+        expect(screen.queryByText('Nothing to browse yet: add a folder to index it.')).toBeNull();
+        expect(clearButton()).toBeNull();
+      });
+
+      it('shows after a text search with no matches and returns to the main page', async () => {
+        const defaultImpl = fetchMock.getMockImplementation();
+        fetchMock.mockImplementation(async (url, init) => {
+          if (new URL(String(url)).pathname === '/search' && init?.method === 'POST') return json({ results: [] });
+          return defaultImpl(url, init);
+        });
+        render(<App />);
+        await screen.findByText('Ready to Search');
+        fireEvent.change(screen.getByPlaceholderText(/Search images/), { target: { value: 'unicorns' } });
+        pressSearch();
+        expect(await screen.findByText('No matches found')).toBeTruthy();
+
+        fireEvent.click(clearButton());
+
+        expect(await screen.findByText('Ready to Search')).toBeTruthy();
+        expect(screen.queryByText('No matches found')).toBeNull();
+      });
+    });
+
+    it('shows the library in the terminal console with its own toggle', async () => {
+      localStorage.setItem('ui_theme_style', 'terminal');
+      const calls = mockBrowseBackend();
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      pressSearch();
+
+      expect(await screen.findByText('BROWSING · NEWEST FIRST')).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Library' })).toBeTruthy();
+      expect(screen.getByText('7 ITEMS')).toBeTruthy();
+      expect(screen.getByText(HINT)).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Oldest first' }));
+      await waitFor(() => expect(calls).toHaveLength(2));
+      expect(calls[1].sort).toBe('oldest');
+      expect(await screen.findByText('BROWSING · OLDEST FIRST')).toBeTruthy();
     });
   });
 });

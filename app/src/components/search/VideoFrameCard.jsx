@@ -1,15 +1,17 @@
 import { useState, memo } from 'react';
-import { Video } from 'lucide-react';
+import { CalendarDays, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
-import { formatVideoTimestamp } from '../../utils/formatters';
+import { formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { API_BASE } from '../../config';
-import { formatScoreLabelUpper } from '../../utils/scoreLabel';
+import { formatScoreLabelUpper, hasScore } from '../../utils/scoreLabel';
 
 export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSelect, uiTheme = 'modern' }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';
+  // A library item (no query) has no score: its date taken stands in for it.
+  const takenDate = hasScore(frame) ? '' : formatTakenDate(frame.taken_at);
 
   return (
     <div
@@ -72,7 +74,14 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
       </div>
       <div className="flex items-center justify-between gap-3 p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
         <span>FRAME {index + 1}</span>
-        <span className="text-emerald-500 font-semibold">{formatScoreLabelUpper(frame.score, frame.score_kind)}</span>
+        {hasScore(frame) ? (
+          <span className="text-emerald-500 font-semibold">{formatScoreLabelUpper(frame.score, frame.score_kind)}</span>
+        ) : takenDate ? (
+          <span className="inline-flex items-center gap-1 font-semibold text-neutral-500 dark:text-neutral-400">
+            <CalendarDays className="w-3 h-3" aria-hidden="true" />
+            {takenDate}
+          </span>
+        ) : null}
       </div>
     </div>
   );

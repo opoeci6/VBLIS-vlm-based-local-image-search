@@ -175,3 +175,45 @@ describe('ReadyToSearch', () => {
     expect(button.disabled).toBe(true);
   });
 });
+
+describe('browse wording', () => {
+  afterEach(cleanup);
+
+  it.each(['modern', 'terminal'])('ReadyToSearch tells how to browse the library in the %s theme', (uiTheme) => {
+    render(
+      <ReadyToSearch
+        uiTheme={uiTheme}
+        indexedFolders={[]}
+        models={{ active_model: 'org/model-a' }}
+        setShowSettings={vi.fn()}
+        handleUnloadModel={vi.fn()}
+        isUnloadingModel={false}
+        status={{ is_indexing: false }}
+      />
+    );
+    expect(screen.getByText('Press Search with an empty box to browse your library.')).toBeTruthy();
+  });
+
+  it('NoMatches for a browse with filters offers Clear filters', () => {
+    const onClearFilters = vi.fn();
+    render(<NoMatches browsing filtersActive onClearFilters={onClearFilters} />);
+    expect(screen.getByText('Nothing in your library matches the current filters')).toBeTruthy();
+    expect(screen.queryByText(/No matches/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(onClearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it('NoMatches for a browse without filters says there is nothing to browse yet', () => {
+    render(<NoMatches browsing />);
+    expect(screen.getByText('Nothing to browse yet: add a folder to index it.')).toBeTruthy();
+    expect(screen.queryByText('No matches found')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+  });
+
+  it('NoMatches without browsing keeps its search wording', () => {
+    const { rerender } = render(<NoMatches />);
+    expect(screen.getByText('No matches found')).toBeTruthy();
+    rerender(<NoMatches filtersActive onClearFilters={vi.fn()} />);
+    expect(screen.getByText('No matches with the current filters')).toBeTruthy();
+  });
+});

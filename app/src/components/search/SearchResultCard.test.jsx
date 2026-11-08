@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SearchResultCard } from './SearchResultCard';
+import { formatTakenDate } from '../../utils/formatters';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -85,5 +86,31 @@ describe('SearchResultCard', () => {
     expect(screen.getByAltText('Result').getAttribute('src')).toBe(
       `${API}/image?path=C%3A%5Cpics%5Ccat.jpg&size=thumbnail`
     );
+  });
+});
+
+describe('SearchResultCard without a score (library view)', () => {
+  afterEach(cleanup);
+
+  const libraryRes = (extra = {}) => imageRes({ score: null, score_kind: 'none', taken_at: '2024-03-12T10:00:00', ...extra });
+
+  it('shows the date taken instead of a score label', () => {
+    render(<SearchResultCard res={libraryRes()} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText(formatTakenDate('2024-03-12T10:00:00'))).toBeTruthy();
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.getByText('cat.jpg')).toBeTruthy();
+  });
+
+  it('shows neither a score nor a date when the date is unknown', () => {
+    render(<SearchResultCard res={libraryRes({ taken_at: null })} idx={0} onSelect={() => {}} />);
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.queryByText(/Match|Similar/)).toBeNull();
+    expect(screen.getByText('cat.jpg')).toBeTruthy();
+  });
+
+  it('still shows the score for a search result', () => {
+    render(<SearchResultCard res={imageRes({ taken_at: '2024-03-12T10:00:00' })} idx={0} onSelect={() => {}} />);
+    expect(screen.getByText('87% Match')).toBeTruthy();
+    expect(screen.queryByText(formatTakenDate('2024-03-12T10:00:00'))).toBeNull();
   });
 });

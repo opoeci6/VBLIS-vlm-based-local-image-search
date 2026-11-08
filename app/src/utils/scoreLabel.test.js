@@ -4,7 +4,8 @@ import {
   scoreWord,
   isSimilarityKind,
   formatScoreLabel,
-  formatScoreLabelUpper
+  formatScoreLabelUpper,
+  hasScore
 } from './scoreLabel';
 
 describe('formatScorePercent', () => {
@@ -76,5 +77,22 @@ describe('score labels', () => {
     expect(formatScoreLabelUpper(0.976, 'match')).toBe('97% MATCH');
     expect(formatScoreLabelUpper(0.84, 'similarity')).toBe('84% SIMILAR');
     expect(formatScoreLabelUpper(undefined)).toBe('0% MATCH');
+  });
+});
+
+describe('hasScore', () => {
+  it('is true for a numeric score, including 0', () => {
+    expect(hasScore({ score: 0.7 })).toBe(true);
+    expect(hasScore({ score: 0 })).toBe(true);
+  });
+
+  it('is false for a library item without a score', () => {
+    expect(hasScore({ score: null, score_kind: 'none' })).toBe(false);
+    expect(hasScore({})).toBe(false);
+    expect(hasScore({ score: undefined })).toBe(false);
+    expect(hasScore({ score: '0.7' })).toBe(false);
+    expect(hasScore({ score: NaN })).toBe(false);
+    expect(hasScore(null)).toBe(false);
+    expect(hasScore(undefined)).toBe(false);
   });
 });

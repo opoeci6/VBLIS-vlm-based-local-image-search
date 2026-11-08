@@ -24,6 +24,11 @@ describe('SearchTuningSection', () => {
     expect(screen.queryByText(/Warning: Unlimited/)).toBeNull();
   });
 
+  it('says in the Max Results help that the library view always shows everything', () => {
+    renderSection();
+    expect(screen.getByText('Each video counts as one result. Higher numbers may consume more system memory. The library view always shows everything.')).toBeTruthy();
+  });
+
   it('parses slider values into numbers', () => {
     const { props, sliders } = renderSection();
     expect(sliders).toHaveLength(3);

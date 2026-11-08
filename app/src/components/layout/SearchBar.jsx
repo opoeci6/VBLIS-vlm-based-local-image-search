@@ -1,7 +1,7 @@
 import { Search, Loader2, X } from 'lucide-react';
 import { SearchFiltersButton } from '../search/filters/SearchFiltersButton';
 
-export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount = 0, filtersOpen = false, onToggleFilters }) => {
+export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount = 0, filtersOpen = false, onToggleFilters, hasSearchResults = false, onClearSearch }) => {
   return (
   <form onSubmit={handleSearch} className="flex-1 max-w-2xl w-full relative group flex gap-2">
     <div className="relative flex-1">
@@ -16,12 +16,14 @@ export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, se
         placeholder="Search images (e.g. 'golden retriever')..."
         className="w-full bg-white dark:bg-neutral-900/50 border border-gray-200 dark:border-neutral-800 rounded-2xl py-4 pl-12 pr-12 text-base outline-none transition-all duration-300 focus:bg-white dark:focus:bg-neutral-900 focus:border-indigo-400 dark:focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 placeholder:text-neutral-400 dark:placeholder:text-neutral-600 shadow-xl shadow-black/5 dark:shadow-black/20 text-neutral-900 dark:text-white"
       />
-      {query.length > 0 && (
+      {(query.length > 0 || hasSearchResults) && (
         <button
           type="button"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
-            setQuery('');
+            // With a search behind the box (results, or none found), clear the results too and go back to the main page
+            if (hasSearchResults && onClearSearch) onClearSearch();
+            else setQuery('');
             searchInputRef.current?.focus();
           }}
           className="absolute inset-y-0 right-3 flex items-center justify-center px-2"

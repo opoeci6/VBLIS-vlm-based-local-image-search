@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MediaLightbox } from './MediaLightbox';
+import { formatTakenDate } from '../../utils/formatters';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -190,5 +191,37 @@ describe('MediaLightbox', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Close' }));
       expect(props.setSelectedImage).toHaveBeenCalledWith(null);
     });
+  });
+});
+
+describe('MediaLightbox for an item without a score (library view)', () => {
+  afterEach(cleanup);
+
+  const libraryItem = (extra = {}) => imageResult({ score: null, score_kind: 'none', taken_at: '2024-03-12T10:00:00', ...extra });
+
+  it('shows the date taken and no match score', () => {
+    renderLightbox(libraryItem());
+    expect(screen.getByText(`Taken ${formatTakenDate('2024-03-12T10:00:00')}`)).toBeTruthy();
+    expect(screen.queryByText(/Match Score|Similarity/)).toBeNull();
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it('shows neither a score nor a date when the date is unknown', () => {
+    renderLightbox(libraryItem({ taken_at: null }));
+    expect(screen.queryByText(/Taken/)).toBeNull();
+    expect(screen.queryByText(/Match Score|Similarity/)).toBeNull();
+    expect(screen.getByText('/pics/a.jpg')).toBeTruthy();
+  });
+
+  it('shows the date for a video frame too', () => {
+    renderLightbox(libraryItem({ media_type: 'video', timestamp_seconds: 65 }));
+    expect(screen.getByText(`Taken ${formatTakenDate('2024-03-12T10:00:00')}`)).toBeTruthy();
+    expect(screen.getByText(/Video frame at 1:05/)).toBeTruthy();
+  });
+
+  it('keeps the name and size branch of the folder explorer', () => {
+    renderLightbox({ path: '/pics/a.jpg', name: 'a.jpg', size: 1536, media_type: 'image', isBrowsing: true, taken_at: '2024-03-12T10:00:00' });
+    expect(screen.getByText('a.jpg')).toBeTruthy();
+    expect(screen.queryByText(/Taken/)).toBeNull();
   });
 });

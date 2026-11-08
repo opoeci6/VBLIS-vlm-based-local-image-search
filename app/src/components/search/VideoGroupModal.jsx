@@ -4,7 +4,7 @@ import { VideoFrameCard } from './VideoFrameCard';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { useProgressiveList } from '../../hooks/useProgressiveList';
 import { cn } from '../../utils/cn';
-import { formatScorePercent, isSimilarityKind } from '../../utils/scoreLabel';
+import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
 
 const INITIAL_VISIBLE_FRAMES = 60;
 
@@ -60,12 +60,14 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
                   ? `${selectedVideoGroup.frames.length} MATCHING OF ${selectedVideoGroup.totalFrames ?? selectedVideoGroup.frames.length}`
                   : `${selectedVideoGroup.frames.length} RETURNED FRAME${selectedVideoGroup.frames.length === 1 ? '' : 'S'}`}
               </span>
-              <span className={cn(
-                "px-2.5 py-1",
-                uiTheme === 'modern' ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg border border-emerald-100 dark:border-emerald-500/20" : "border border-white text-emerald-400"
-              )}>
-                {isSimilarityKind(selectedVideoGroup.bestFrame?.score_kind) ? 'BEST SIMILARITY' : 'BEST MATCH'} {formatScorePercent(selectedVideoGroup.bestScore)}
-              </span>
+              {hasScore(selectedVideoGroup.bestFrame) && (
+                <span className={cn(
+                  "px-2.5 py-1",
+                  uiTheme === 'modern' ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg border border-emerald-100 dark:border-emerald-500/20" : "border border-white text-emerald-400"
+                )}>
+                  {isSimilarityKind(selectedVideoGroup.bestFrame?.score_kind) ? 'BEST SIMILARITY' : 'BEST MATCH'} {formatScorePercent(selectedVideoGroup.bestScore)}
+                </span>
+              )}
             </div>
           </div>
           {canFindMoreFrames && !selectedVideoGroup.isExpanded && (
