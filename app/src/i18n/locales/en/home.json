@@ -1,1 +1,40 @@
-{}
+{
+  "searchTip": "",
+  "noMatches": {
+    "filtered": {
+      "browsingTitle": "Nothing in your library matches the current filters",
+      "searchTitle": "No matches with the current filters",
+      "browsingHint": "Remove a filter to see more of your library.",
+      "searchHint": "Remove a filter or try a different query."
+    },
+    "missingDetails_one": "{{formatted}} file has no media details yet, so these filters skip it.",
+    "missingDetails_other": "{{formatted}} files have no media details yet, so these filters skip them.",
+    "clearFilters": "Clear filters",
+    "browseEmpty": "Nothing to browse yet: add a folder to index it.",
+    "title": "No matches found",
+    "hint": "Try a different query or index more images."
+  },
+  "loading": {
+    "switchingTitle": "Switching Model",
+    "initializingTitle": "Initializing AI Engine",
+    "switchingDesc": "Loading model weights into memory. This may take a moment...",
+    "initializingDesc": "Connecting to backend and loading model weights into memory..."
+  },
+  "setup": {
+    "noModelTitle": "No Model Loaded",
+    "noModelDesc": "No Vision-Language model is currently active in memory. Select one of your downloaded models to activate it or manage models in Settings.",
+    "activate": "Activate {{name}}",
+    "requiredTitle": "AI Model Required",
+    "requiredDesc": "The Vision-Language Model tensors must be downloaded locally before you can index or search images.",
+    "download": "Download {{name}}",
+    "openaiClip": "OpenAI CLIP"
+  },
+  "ready": {
+    "title": "Ready to Search",
+    "foldersReady_one": "{{count}} folder is ready. Search your media using natural language.",
+    "foldersReady_other": "{{count}} folders are ready. Search your media using natural language.",
+    "selectFolder": "Select a folder to extract intelligence, then search your memories using natural language.",
+    "browseHint": "Press Search with an empty box to browse your library.",
+    "activeModelLabel": "Active Model:"
+  }
+}

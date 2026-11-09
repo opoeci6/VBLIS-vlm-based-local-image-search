@@ -1,8 +1,11 @@
 import { Play, Pause, Square, Layers, AlertCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getTaskTypeIcon } from './taskIcon';
 import { formatDuration } from '../../utils/formatters';
+import { taskTitle, taskTypeLabel } from '../../utils/taskTitle';
 
 export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'modern' }) => {
+  const { t } = useTranslation('queue');
   if (!task) {
     return (
       <div
@@ -13,8 +16,8 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
         }`}
       >
         <Layers className="w-8 h-8 mx-auto mb-2 opacity-40" />
-        <p className="text-xs font-semibold">No active task in progress</p>
-        <p className="text-[11px] opacity-70 mt-0.5">Drag folders or trigger maintenance to queue new work.</p>
+        <p className="text-xs font-semibold">{t('activeTask.emptyTitle')}</p>
+        <p className="text-[11px] opacity-70 mt-0.5">{t('activeTask.emptyHint')}</p>
       </div>
     );
   }
@@ -46,10 +49,10 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
           </div>
           <div className="min-w-0">
             <h4 className="text-xs font-bold text-neutral-900 dark:text-white truncate">
-              {task.title}
+              {taskTitle(task)}
             </h4>
             <div className="flex items-center gap-2 text-[10px] text-neutral-500 dark:text-neutral-400 font-mono mt-0.5">
-              <span>{task.type}</span>
+              <span>{taskTypeLabel(task.type)}</span>
               {task.duration > 0 && <span>· {formatDuration(task.duration)}</span>}
             </div>
           </div>
@@ -63,7 +66,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
               : 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30 animate-pulse'
           }`}
         >
-          {isPaused ? 'PAUSED' : 'RUNNING'}
+          {isPaused ? t('activeTask.paused') : t('activeTask.running')}
         </span>
       </div>
 
@@ -71,7 +74,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
       <div className="space-y-1.5 mb-3">
         <div className="flex justify-between items-center text-xs font-mono">
           <span className="text-[11px] text-neutral-600 dark:text-neutral-400 font-medium truncate max-w-[200px]" title={task.current_item}>
-            {task.current_item ? `Current: ${task.current_item}` : 'Processing...'}
+            {task.current_item ? t('activeTask.current', { item: task.current_item }) : t('activeTask.processing')}
           </span>
           <span className="font-bold text-neutral-900 dark:text-white ml-2">
             {task.progress}%
@@ -91,11 +94,11 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
 
         <div className="flex justify-between items-center text-[10px] text-neutral-500 dark:text-neutral-400 font-mono">
           <span>
-            {task.processed_count} of {task.total_count || '?'} items
+            {t('activeTask.progress', { count: Number(task.total_count) || 0, processed: task.processed_count, total: task.total_count || '?' })}
           </span>
           {task.error_count > 0 && (
             <span className="text-rose-500 font-semibold flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" /> {task.error_count} error(s)
+              <AlertCircle className="w-3 h-3" /> {t('activeTask.errors', { count: task.error_count })}
             </span>
           )}
         </div>
@@ -109,7 +112,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
             className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Resume</span>
+            <span>{t('common:resume')}</span>
           </button>
         ) : (
           <button
@@ -117,17 +120,17 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
             className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-gray-200 dark:border-neutral-700"
           >
             <Pause className="w-3.5 h-3.5" />
-            <span>Pause</span>
+            <span>{t('common:pause')}</span>
           </button>
         )}
 
         <button
           onClick={() => onCancel(task.id)}
           className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-rose-200 dark:border-rose-500/30"
-          title="Cancel task"
+          title={t('activeTask.cancelTitle')}
         >
           <Square className="w-3.5 h-3.5" />
-          <span>Cancel</span>
+          <span>{t('common:cancel')}</span>
         </button>
       </div>
     </div>

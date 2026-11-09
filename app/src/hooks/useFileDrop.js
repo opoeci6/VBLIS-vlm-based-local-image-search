@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getPathForFile, isDirectory } from '../utils/electron';
+import i18n from '../i18n';
 
 export const useFileDrop = ({ enabled, setToast, onFolders, onImage }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -28,7 +29,7 @@ export const useFileDrop = ({ enabled, setToast, onFolders, onImage }) => {
     if (!files || files.length === 0) return;
 
     if (!enabled) {
-      setToast({ message: "Please select or download a model first.", type: 'error' });
+      setToast({ message: i18n.t('messages:fileDrop.noModel'), type: 'error' });
       return;
     }
 
@@ -54,7 +55,7 @@ export const useFileDrop = ({ enabled, setToast, onFolders, onImage }) => {
     } else if (imageFiles.length > 0) {
       onImage(imageFiles[0]);
     } else {
-      setToast({ message: "Please drop a folder or an image file.", type: 'error' });
+      setToast({ message: i18n.t('messages:fileDrop.dropFolderOrImage'), type: 'error' });
     }
   };
 

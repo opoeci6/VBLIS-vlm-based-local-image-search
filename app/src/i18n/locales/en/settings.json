@@ -13,5 +13,157 @@
   "language": {
     "title": "Language",
     "system": "Follow system"
+  },
+  "titleBar": {
+    "switchTheme": "Switch UI Theme Style",
+    "themeOptions": {
+      "modern": {
+        "desc": "Soft curves, gradients & glassmorphism"
+      },
+      "terminal": {
+        "desc": "Monospace, sharp borders & ASCII art"
+      }
+    },
+    "switchToLight": "Switch to Light Mode",
+    "switchToDark": "Switch to Dark Mode",
+    "minimize": "Minimize",
+    "maximize": "Maximize"
+  },
+  "asciiLogo": {
+    "label": "VBLIS rotating 3D ASCII logo"
+  },
+  "overlay": {
+    "addToQueue": "Drop to add to Queue (#{{position}})",
+    "addToQueueHint": "Folders will be added to the background processing queue",
+    "searchOrIndex": "Drop to search or index",
+    "searchOrIndexHint": "Drop images to search, or folders to start indexing"
+  },
+  "modelSwitch": {
+    "activeTaskTitle": "Active Task In Progress",
+    "queuedTasksTitle": "Queued Tasks Pending",
+    "target": "Target: {{model}}",
+    "activeTaskBody": "Cannot switch models while an indexing or rebuild task is in progress. The active task must be cancelled first to prevent database corruption.",
+    "taskProgress_one": "{{processed}} of {{total}} item ({{progress}}%)",
+    "taskProgress_other": "{{processed}} of {{total}} items ({{progress}}%)",
+    "cancelledNote": "If cancelled, this task will be saved in your task history and can be reset or retried anytime.",
+    "independentIndex": "Each AI model maintains its own independent vector database index.",
+    "queued_one": "{{count}} task waiting in queue",
+    "queued_other": "{{count}} tasks waiting in queue",
+    "queuedNote": "Switching models now means queued tasks will index into the newly selected model's collection.",
+    "cancelAndSwitch": "Cancel Task & Switch",
+    "keepModel": "Keep Current Model",
+    "proceed": "Proceed & Switch Model",
+    "clearQueue": "Clear Queue & Switch"
+  },
+  "settingsModal": {
+    "title": "Settings",
+    "closeTooltip": "Close settings"
+  },
+  "dangerZone": {
+    "confirm": "Are you sure? This cannot be undone.",
+    "deleting": "Deleting...",
+    "confirmDelete": "Yes, Delete",
+    "clearing": "Clearing Database...",
+    "clear": "Clear Indexed Database",
+    "description": "Permanently deletes all vector embeddings and hashes for the active model."
+  },
+  "modelManagement": {
+    "title": "Model Management",
+    "description": "Each model has its own index. Switching models may require reindexing."
+  },
+  "modelCard": {
+    "readyToUse": "Ready to use",
+    "downloadingProgress": "Downloading ({{current}} / {{total}})",
+    "incompleteProgress": "Incomplete ({{current}} / {{total}})",
+    "notDownloaded": "Not Downloaded",
+    "active": "Active",
+    "switchBlockedIndexing": "Cannot switch model while indexing is in progress",
+    "activateTooltip": "Activate model",
+    "activate": "Activate",
+    "downloading": "Downloading...",
+    "cancelling": "Cancelling...",
+    "downloadSpeed": "{{speed}}/s",
+    "resumeTooltip": "Resume interrupted download",
+    "download": "Download",
+    "wipeIndex": "Wipe Index",
+    "del": "Del",
+    "deletePartial": "Delete partial files",
+    "deleteLocal": "Delete local files",
+    "clipNote": "Use English for best search results"
+  },
+  "performance": {
+    "title": "Hardware Acceleration & Batching",
+    "gpuSupport": "NVIDIA GPU Support",
+    "gpuUsing": "Using {{name}}",
+    "gpuUsingCuda": "Currently using CUDA",
+    "gpuDirects": "Directs tasks to GPU",
+    "gpuNotDetected": "No NVIDIA GPU detected",
+    "gpuDisable": "Disable NVIDIA GPU support",
+    "gpuEnable": "Enable NVIDIA GPU support",
+    "cudaRequired": "CUDA-capable GPU is required for GPU acceleration.",
+    "batchSize": {
+      "title": "Batch Size",
+      "auto": "Auto",
+      "autoActive": "Auto mode active (Effective batch size: {{size}})",
+      "higher": "Higher batch size increases GPU utilization."
+    },
+    "precision": {
+      "title": "Precision Mode",
+      "auto": "Auto ({{precision}})",
+      "fp16": "FP16 (Half Precision)",
+      "fp32": "FP32 (Full Precision)",
+      "fp16Supported": "FP16 Tensor Cores supported",
+      "fallback": "Auto fallback to FP32 for legacy GPUs"
+    },
+    "oom": {
+      "title": "OOM / Memory Safety Fallback Triggered",
+      "detail": "Auto-scaled to micro-batches to protect VRAM"
+    }
+  },
+  "searchTuning": {
+    "minScore": {
+      "title": "Minimum Match Score",
+      "hint": "Text search: how sure the model must be that a result matches your words."
+    },
+    "minSimilarity": {
+      "title": "Minimum Similarity",
+      "hint": "Image search: how visually similar a result must be to the dropped image."
+    },
+    "maxResults": {
+      "title": "Maximum Display Results",
+      "unlimited": "Unlimited",
+      "value_one": "{{count}} Result",
+      "value_other": "{{count}} Results",
+      "hint": "Each video counts as one result. Higher numbers may consume more system memory. The library view always shows everything.",
+      "warning": "Warning: Unlimited results may impact performance and memory."
+    },
+    "reset": "Reset to defaults"
+  },
+  "thumbnailCache": {
+    "title": "Thumbnail Cache Management",
+    "total": "Total: {{size}}",
+    "images": {
+      "title": "Image Thumbnails",
+      "summary_one": "{{size}} · {{count}} item",
+      "summary_other": "{{size}} · {{count}} items",
+      "confirm": "Clear all image thumbnails? (Images regenerate quickly on demand)",
+      "confirmYes": "Yes, Clear Images",
+      "clear": "Clear Image Cache"
+    },
+    "videos": {
+      "title": "Video Keyframes",
+      "summary_one": "{{size}} · {{count}} frame",
+      "summary_other": "{{size}} · {{count}} frames",
+      "rebuilding": "Rebuilding Video Thumbnails...",
+      "starting": "Starting...",
+      "rebuiltProgress_one": "{{rebuilt}} of {{total}} frame cached",
+      "rebuiltProgress_other": "{{rebuilt}} of {{total}} frames cached",
+      "active": "Active",
+      "confirm": "Clear video thumbnails? (Requires video decoding to recreate)",
+      "confirmYes": "Yes, Clear Videos",
+      "rebuild": "Rebuild Videos",
+      "clearTooltip": "Clear only video thumbnails",
+      "clear": "Clear"
+    }
   }
 }

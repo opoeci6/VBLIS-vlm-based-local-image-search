@@ -1,6 +1,8 @@
 import { AlertTriangle, X, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export const ModelLoadErrorBanner = ({ modelLoadError, setModelLoadError, status, pendingModel, setPendingModel, handleDownloadModel }) => {
+  const { t } = useTranslation('status');
   if (!(modelLoadError && !status.is_downloading)) return null;
 
   return (
@@ -13,10 +15,10 @@ export const ModelLoadErrorBanner = ({ modelLoadError, setModelLoadError, status
             </div>
             <div>
               <h3 className="text-sm font-bold text-rose-900 dark:text-rose-200">
-                Model Failed to Load: {modelLoadError.model ? modelLoadError.model.split('/').pop() : 'Vision Model'}
+                {t('loadError.title', { model: modelLoadError.model ? modelLoadError.model.split('/').pop() : t('loadError.fallbackModel') })}
               </h3>
               <p className="text-xs text-rose-700/80 dark:text-rose-300/80 font-medium">
-                The vision model weights or configuration could not be initialized into memory.
+                {t('loadError.description')}
               </p>
             </div>
           </div>
@@ -31,12 +33,12 @@ export const ModelLoadErrorBanner = ({ modelLoadError, setModelLoadError, status
               className="text-xs px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Retry / Resume
+              {t('loadError.retryResume')}
             </button>
             <button
               onClick={() => setModelLoadError(null)}
               className="p-1.5 text-rose-400 hover:text-rose-600 dark:hover:text-rose-200 rounded-lg transition-colors cursor-pointer"
-              title="Dismiss error"
+              title={t('loadError.dismiss')}
             >
               <X className="w-4 h-4" />
             </button>

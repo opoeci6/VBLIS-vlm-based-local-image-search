@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
+import i18n from '../i18n';
 
 export const useFolderContents = ({ activeModel, lastTaskId, setToast, refreshFolders }) => {
   const [showFolderContents, setShowFolderContents] = useState(false);
@@ -28,14 +29,14 @@ export const useFolderContents = ({ activeModel, lastTaskId, setToast, refreshFo
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.detail || 'Failed to browse folder contents.');
+        throw new Error(data.detail || i18n.t('messages:folderContents.browseFailed'));
       }
 
       setFolderContents(keepIfEqual(data));
     } catch (err) {
       console.error(err);
       if (!silent) {
-        setToast({ message: err.message || 'Failed to browse folder contents.', type: 'error' });
+        setToast({ message: err.message || i18n.t('messages:folderContents.browseFailed'), type: 'error' });
         setShowFolderContents(false);
         setBrowsingFolder(null);
       }

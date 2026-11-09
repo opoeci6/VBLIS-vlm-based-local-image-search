@@ -1,4 +1,5 @@
 import { useState, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CalendarDays, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
@@ -7,6 +8,7 @@ import { API_BASE } from '../../config';
 import { formatScoreLabelUpper, hasScore } from '../../utils/scoreLabel';
 
 export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSelect, uiTheme = 'modern' }) {
+  const { t } = useTranslation('search');
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';
@@ -51,7 +53,7 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
         {!error && (
           <img
             src={getMediaPreviewUrl(API_BASE, frame, 'thumbnail')}
-            alt={`Video frame at ${formatVideoTimestamp(frame.timestamp_seconds)}`}
+            alt={t('common:videoFrameAt', { ts: formatVideoTimestamp(frame.timestamp_seconds) })}
             className={cn(
               "h-full w-full object-cover transition-all duration-500 group-hover:scale-105",
               loaded ? "opacity-100" : "opacity-0"
@@ -73,7 +75,7 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
         </span>
       </div>
       <div className="flex items-center justify-between gap-3 p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
-        <span>FRAME {index + 1}</span>
+        <span>{t('frameCard.frame', { n: index + 1 })}</span>
         {hasScore(frame) ? (
           <span className="text-emerald-500 font-semibold">{formatScoreLabelUpper(frame.score, frame.score_kind)}</span>
         ) : takenDate ? (

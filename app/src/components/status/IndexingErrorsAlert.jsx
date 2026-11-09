@@ -1,6 +1,8 @@
 import { AlertTriangle, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export const IndexingErrorsAlert = ({ showErrorAlert, setShowErrorAlert, status }) => {
+  const { t } = useTranslation('status');
   if (!(showErrorAlert && status.failed_files && status.failed_files.length > 0)) return null;
 
   return (
@@ -17,8 +19,8 @@ export const IndexingErrorsAlert = ({ showErrorAlert, setShowErrorAlert, status 
             <AlertTriangle className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-amber-800 dark:text-amber-200">Indexing Errors Encountered</h3>
-            <p className="text-xs text-amber-600 dark:text-amber-400/80 mt-0.5 font-medium">The following {status.failed_files.length} file{status.failed_files.length !== 1 ? 's' : ''} could not be successfully processed:</p>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-amber-800 dark:text-amber-200">{t('errorsAlert.title')}</h3>
+            <p className="text-xs text-amber-600 dark:text-amber-400/80 mt-0.5 font-medium">{t('errorsAlert.failedFiles', { count: status.failed_files.length })}</p>
           </div>
         </div>
         <div className="max-h-[160px] overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-1.5 mt-1">

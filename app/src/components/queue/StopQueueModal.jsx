@@ -1,7 +1,9 @@
 import { Pause, CheckCircle2, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'modern' }) => {
+  const { t } = useTranslation('queue');
   const backdropDismiss = useBackdropDismiss(onClose);
 
   if (!isOpen) return null;
@@ -23,7 +25,7 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
             <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
               <Pause className="w-4 h-4" />
             </div>
-            <h3 className="text-sm font-bold">Stop Background Queue</h3>
+            <h3 className="text-sm font-bold">{t('stopModal.title')}</h3>
           </div>
           <button
             onClick={onClose}
@@ -34,7 +36,7 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
         </div>
 
         <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-4">
-          An indexing or rebuild task is currently running. How would you like to pause the queue?
+          {t('stopModal.body')}
         </p>
 
         {/* Options */}
@@ -52,10 +54,10 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
             </div>
             <div>
               <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
-                Stop Immediately
+                {t('stopModal.immediateTitle')}
               </h4>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                Pauses the active task in place and holds all queued tasks. Can be resumed anytime.
+                {t('stopModal.immediateDesc')}
               </p>
             </div>
           </button>
@@ -73,10 +75,10 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
             </div>
             <div>
               <h4 className="text-xs font-bold text-neutral-900 dark:text-white">
-                Finish Current Task then Stop
+                {t('stopModal.afterCurrentTitle')}
               </h4>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                Lets the currently active job complete normally, but prevents starting the next task in queue.
+                {t('stopModal.afterCurrentDesc')}
               </p>
             </div>
           </button>
@@ -88,7 +90,7 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
             onClick={onClose}
             className="px-4 py-2 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-bold transition-colors"
           >
-            Cancel
+            {t('common:cancel')}
           </button>
         </div>
       </div>

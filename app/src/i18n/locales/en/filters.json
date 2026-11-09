@@ -6,7 +6,9 @@
   },
   "duplicates": {
     "exact": "Exact copies",
-    "visual": "Visual duplicates"
+    "visual": "Visual duplicates",
+    "withCount": "{{label}} ({{n}})",
+    "note": "Copies and look-alikes anywhere in your library. The first look-alike check after indexing can take a few seconds."
   },
   "chip": {
     "videosOnly": "Videos only",
@@ -20,5 +22,78 @@
       "from": "From {{date}}",
       "until": "Until {{date}}"
     }
+  },
+  "activeChips": {
+    "groupLabel": "Active filters",
+    "remove": "Remove filter: {{label}}",
+    "clearAll": "Clear all"
+  },
+  "button": {
+    "label": "Search filters",
+    "labelActive_one": "Search filters ({{count}} active)",
+    "labelActive_other": "Search filters ({{count}} active)",
+    "text": "Filters"
+  },
+  "tree": {
+    "collapse": "Collapse {{name}}",
+    "expand": "Expand {{name}}",
+    "missingTitle": "{{name}} is missing or inaccessible on disk",
+    "included": "(included)",
+    "missing": "Missing",
+    "empty": "No indexed folders"
+  },
+  "panel": {
+    "label": "Search filters",
+    "title": "Filters",
+    "close": "Close filters",
+    "clearAll": "Clear all",
+    "done": "Done"
+  },
+  "sections": {
+    "type": "Type",
+    "folders": "Folders",
+    "dateTaken": "Date taken",
+    "orientation": "Orientation",
+    "format": "Format",
+    "duplicates": "Duplicates",
+    "minResolution": "Minimum resolution"
+  },
+  "type": {
+    "all": "All",
+    "images": "Images",
+    "videos": "Videos"
+  },
+  "date": {
+    "any": "Any",
+    "last30": "Last 30 days",
+    "last12m": "Last 12 months",
+    "yearCount": "{{year}} ({{n}})",
+    "custom": "Custom...",
+    "from": "From",
+    "to": "To"
+  },
+  "format": {
+    "images": "Images",
+    "videos": "Videos",
+    "other": "Other",
+    "withCount": "{{label}} ({{n}})",
+    "unavailable": "Formats unavailable",
+    "loading": "Loading formats...",
+    "none": "No formats found"
+  },
+  "resolution": {
+    "any": "Any",
+    "megapixels": "{{mp}} MP"
+  },
+  "coverage": {
+    "loadingOptions": "Loading filter options...",
+    "details_one": "Media details for {{withDetails}} of {{total}} file",
+    "details_other": "Media details for {{withDetails}} of {{total}} files",
+    "detailsWithUnavailable_one": "Media details for {{withDetails}} of {{total}} file ({{unavailable}} in folders that aren't connected)",
+    "detailsWithUnavailable_other": "Media details for {{withDetails}} of {{total}} files ({{unavailable}} in folders that aren't connected)",
+    "unavailable": "Media details are unavailable",
+    "missing_one": "{{formatted}} file has no media details yet. Date, orientation and resolution filters skip it until its details are read. That reads file headers only; no re-indexing.",
+    "missing_other": "{{formatted}} files have no media details yet. Date, orientation and resolution filters skip them until their details are read. That reads file headers only; no re-indexing.",
+    "hidden": "Files without details are hidden by the date, orientation and resolution filters."
   }
 }

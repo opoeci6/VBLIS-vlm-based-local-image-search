@@ -1,1 +1,45 @@
-{}
+{
+  "errorsAlert": {
+    "title": "Indexing Errors Encountered",
+    "failedFiles_one": "The following {{count}} file could not be successfully processed:",
+    "failedFiles_other": "The following {{count}} files could not be successfully processed:"
+  },
+  "indexing": {
+    "fallbackTitle": "Indexing Media",
+    "noModelPill": "NO MODEL LOADED",
+    "mismatchPill": "MODEL MISMATCH",
+    "pausedPill": "PAUSED",
+    "cannotResumeNoModel": "Cannot resume queue: No AI model is currently loaded in memory. Please select a model in Settings.",
+    "resumeAdoptTitle": "Resume and proceed with active model ({{model}})",
+    "resumeTitle": "Resume indexing",
+    "adoptAndResume": "Adopt & Resume",
+    "pauseTitle": "Pause indexing",
+    "cancelTitle": "Stop and cancel current task",
+    "cancelling": "Cancelling...",
+    "noModelLine": "No AI model loaded. Select a model in Settings to resume.",
+    "mismatchLine": "Queued for '{{queued}}', active: '{{active}}'. Click Resume to adopt active model.",
+    "pausedAt": "Paused at: {{item}}",
+    "currentItemFallback": "Current item",
+    "processing": "Processing: {{item}}",
+    "preparingFallback": "Preparing...",
+    "viewInQueue": "View in Task Queue →"
+  },
+  "download": {
+    "finalizing": "Finalizing & Loading AI Vision Engine...",
+    "verifying": "Verifying & Finalizing download...",
+    "downloading": "Downloading AI Vision Engine: {{model}}",
+    "cancelling": "Cancelling...",
+    "starting": "Starting...",
+    "size": "Size: {{current}} / {{total}}",
+    "speed": "Speed: {{speed}}/s",
+    "eta": "ETA: {{eta}}",
+    "warmingUp": "Warming up tensors in memory..."
+  },
+  "loadError": {
+    "title": "Model Failed to Load: {{model}}",
+    "fallbackModel": "Vision Model",
+    "description": "The vision model weights or configuration could not be initialized into memory.",
+    "retryResume": "Retry / Resume",
+    "dismiss": "Dismiss error"
+  }
+}

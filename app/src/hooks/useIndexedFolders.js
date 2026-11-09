@@ -3,6 +3,7 @@ import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { getAllSelectablePaths, toggleFolderSelection as toggleFolderSelectionPure } from '../utils/folderSelection';
 import { apiFetch } from '../utils/api';
+import i18n from '../i18n';
 
 export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToast, onIndexChanged }) => {
   const [indexedFolders, setIndexedFolders] = useState([]);
@@ -32,21 +33,23 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
         body: JSON.stringify({ folder_path })
       });
       if (res.ok) {
-        setToast({ message: 'Re-indexing started in background.', type: 'success' });
+        setToast({ message: i18n.t('messages:indexedFolders.reindexStarted'), type: 'success' });
       } else {
         const error = await res.json().catch(() => ({ detail: res.statusText }));
-        const isMissing = error.detail?.toLowerCase().includes('invalid directory') || error.detail?.toLowerCase().includes('not exist');
+        // The backend's detail is English text; a detail that is not a string (a validation error) never matches.
+        const detail = typeof error?.detail === 'string' ? error.detail.toLowerCase() : '';
+        const isMissing = detail.includes('invalid directory') || detail.includes('not exist');
         setToast({
           message: isMissing
-            ? 'Folder is still not accessible on disk. Please reconnect the drive and try again.'
-            : `Error: ${error.detail}`,
+            ? i18n.t('messages:indexedFolders.folderNotAccessible')
+            : i18n.t('messages:indexedFolders.error', { detail: typeof error?.detail === 'string' ? error.detail : res.statusText }),
           type: 'error'
         });
         fetchIndexedFolders(true);
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Failed to connect to backend for re-indexing.', type: 'error' });
+      setToast({ message: i18n.t('messages:indexedFolders.reindexConnectFailed'), type: 'error' });
       fetchIndexedFolders(true);
     }
   }, [setToast, fetchIndexedFolders]);
@@ -59,18 +62,18 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
         body: JSON.stringify({ folder_path })
       });
       if (res.ok) {
-        setToast({ message: 'Folder index removed successfully.', type: 'success' });
+        setToast({ message: i18n.t('messages:indexedFolders.indexRemoved'), type: 'success' });
         setSelectedFolders(prev => prev.filter(path => path !== folder_path));
         fetchIndexedFolders();
         // Reset results as they might be stale
         onIndexChanged?.();
       } else {
         const error = await res.json();
-        setToast({ message: `Error: ${error.detail}`, type: 'error' });
+        setToast({ message: i18n.t('messages:indexedFolders.error', { detail: error.detail }), type: 'error' });
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Failed to delete folder index.', type: 'error' });
+      setToast({ message: i18n.t('messages:indexedFolders.removeFailed'), type: 'error' });
     }
   };
 
@@ -84,7 +87,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
         body: JSON.stringify({ folder_paths: selectedFolders })
       });
       if (res.ok) {
-        setToast({ message: `Successfully removed ${selectedFolders.length} folders.`, type: 'success' });
+        setToast({ message: i18n.t('messages:indexedFolders.batchRemoved', { count: selectedFolders.length }), type: 'success' });
         setSelectedFolders([]);
         fetchIndexedFolders();
         // Reset results as they might be stale
@@ -92,7 +95,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Batch deletion failed.', type: 'error' });
+      setToast({ message: i18n.t('messages:indexedFolders.batchDeleteFailed'), type: 'error' });
     } finally {
       setIsBatchProcessing(false);
     }
@@ -108,12 +111,12 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
         body: JSON.stringify({ folder_paths: selectedFolders })
       });
       if (res.ok) {
-        setToast({ message: `Re-indexing started for ${selectedFolders.length} folders.`, type: 'success' });
+        setToast({ message: i18n.t('messages:indexedFolders.batchReindexStarted', { count: selectedFolders.length }), type: 'success' });
         setSelectedFolders([]);
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Batch re-indexing failed.', type: 'error' });
+      setToast({ message: i18n.t('messages:indexedFolders.batchReindexFailed'), type: 'error' });
     } finally {
       setIsBatchProcessing(false);
     }

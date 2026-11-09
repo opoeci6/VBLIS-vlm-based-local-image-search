@@ -1,27 +1,34 @@
 import { FolderOpen, X, Sparkles, Copy, ClipboardCopy, Video } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { API_BASE } from '../../config';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { cn } from '../../utils/cn';
-import { copyText } from '../../utils/electron';
+import { copyText, openInExplorer } from '../../utils/electron';
 import { formatBytes, formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
 
 export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiTheme }) => {
+  const { t } = useTranslation('media');
   const backdropDismiss = useBackdropDismiss(() => setSelectedImage(null));
 
   if (!(selectedImage)) return null;
 
   // An item from the library view (no query) has no score: show when it was taken instead.
   const takenDate = formatTakenDate(selectedImage.taken_at);
+  const duplicateNotice = selectedImage.isDuplicate
+    ? (selectedImage.duplicateType === 'exact'
+      ? t('lightbox.exactDetected', { count: selectedImage.otherPaths.length })
+      : t('lightbox.visualDetected', { count: selectedImage.otherPaths.length }))
+    : null;
 
   const handleCopyPath = async (e) => {
     e.stopPropagation();
     const res = await copyText(selectedImage.path);
     if (res?.success) {
-      setToast({ message: 'Path copied', type: 'success' });
+      setToast({ message: t('lightbox.pathCopied'), type: 'success' });
     } else {
-      setToast({ message: res?.error || 'Failed to copy the path.', type: 'error' });
+      setToast({ message: res?.error || t('lightbox.copyFailed'), type: 'error' });
     }
   };
 
@@ -37,13 +44,13 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
               e.stopPropagation();
               const res = await window.electronAPI.openInExplorer(selectedImage.path);
               if (res && !res.success) {
-                setToast({ message: 'This file has been moved or deleted and is no longer available.', type: 'error' });
+                setToast({ message: t('lightbox.unavailable'), type: 'error' });
               }
             }}
             className="px-4 py-2 bg-white/20 dark:bg-neutral-800/80 hover:bg-white/30 dark:hover:bg-neutral-700 text-white rounded-xl flex items-center gap-2 transition-all font-bold backdrop-blur-md border border-white/20 dark:border-neutral-700"
           >
             <FolderOpen className="w-4 h-4" />
-            Show in Explorer
+            {t('common:showInExplorer')}
           </button>
         )}
         <button
@@ -51,7 +58,7 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
             e.stopPropagation();
             setSelectedImage(null);
           }}
-          aria-label="Close"
+          aria-label={t('common:close')}
           className="p-2 bg-white/20 dark:bg-neutral-800/80 hover:bg-white/30 dark:hover:bg-neutral-700 text-white rounded-xl transition-all backdrop-blur-md border border-white/20 dark:border-neutral-700"
         >
           <X className="w-5 h-5" />
@@ -60,7 +67,7 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
 
       <img
         src={getMediaPreviewUrl(API_BASE, selectedImage, 'full')}
-        alt={selectedImage.media_type === 'video' ? `Video frame at ${formatVideoTimestamp(selectedImage.timestamp_seconds)}` : 'Full size result'}
+        alt={selectedImage.media_type === 'video' ? t('common:videoFrameAt', { ts: formatVideoTimestamp(selectedImage.timestamp_seconds) }) : t('lightbox.fullSizeAlt')}
         className={cn(
           "max-w-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300",
           selectedImage.isDuplicate ? "max-h-[70vh]" : "max-h-[80vh]"
@@ -71,11 +78,13 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
       <div className="mt-6 text-center" onClick={(e) => e.stopPropagation()}>
         {!selectedImage.isBrowsing && hasScore(selectedImage) && (
           <p className="text-xl font-medium text-white mb-2">
-            {isSimilarityKind(selectedImage.score_kind) ? 'Similarity' : 'Match Score'}: {formatScorePercent(selectedImage.score)}
+            {isSimilarityKind(selectedImage.score_kind)
+              ? t('lightbox.similarityScore', { percent: formatScorePercent(selectedImage.score) })
+              : t('lightbox.matchScore', { percent: formatScorePercent(selectedImage.score) })}
           </p>
         )}
         {!selectedImage.isBrowsing && !hasScore(selectedImage) && takenDate && (
-          <p className="text-xl font-medium text-white mb-2">Taken {takenDate}</p>
+          <p className="text-xl font-medium text-white mb-2">{t('lightbox.taken', { date: takenDate })}</p>
         )}
         {selectedImage.isBrowsing && (
           <div className="mb-2">
@@ -95,7 +104,7 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
               : "bg-cyan-500/15 border border-cyan-400/30 text-cyan-300"
           )}>
             <Video className="w-4 h-4" />
-            Video frame at {formatVideoTimestamp(selectedImage.timestamp_seconds)}
+            {t('common:videoFrameAt', { ts: formatVideoTimestamp(selectedImage.timestamp_seconds) })}
           </p>
         )}
         {selectedImage.isDuplicate && (
@@ -111,14 +120,14 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
             >
               {selectedImage.duplicateType === 'exact' ? <Copy className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
               <span>
-                {selectedImage.duplicateType === 'exact' ? 'Exact File Copy' : 'Visual Duplicate (98.5%+ Similarity)'} detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}
+                {duplicateNotice}
               </span>
             </div>
           ) : (
             <div className="mb-4 inline-flex items-center gap-2 px-3.5 py-1.5 bg-black border border-white text-white rounded-none text-xs font-bold animate-in zoom-in-95 duration-300 shadow-lg">
               {selectedImage.duplicateType === 'exact' ? <Copy className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
               <span>
-                {selectedImage.duplicateType === 'exact' ? 'Exact File Copy' : 'Visual Duplicate (98.5%+ Similarity)'} detected in {selectedImage.otherPaths.length} other location{selectedImage.otherPaths.length > 1 ? 's' : ''}
+                {duplicateNotice}
               </span>
             </div>
           )
@@ -133,8 +142,8 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
           <button
             type="button"
             onClick={handleCopyPath}
-            aria-label="Copy path"
-            title="Copy path"
+            aria-label={t('lightbox.copyPath')}
+            title={t('lightbox.copyPath')}
             className={cn(
               "flex-shrink-0 p-1 transition-all",
               uiTheme === 'modern'
@@ -155,15 +164,15 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
                   uiTheme === 'modern' ? "text-neutral-400 font-sans" : "text-neutral-400 font-mono"
                 )}
               >
-                <span className="opacity-75">Also found at:</span>
+                <span className="opacity-75">{t('lightbox.alsoFoundAt')}</span>
                 <button
                   type="button"
                   onClick={async (e) => {
                     e.stopPropagation();
                     if (window.electronAPI?.openInExplorer) {
-                      const res = await window.electronAPI.openInExplorer(p);
+                      const res = await openInExplorer(p);
                       if (!res?.success) {
-                        setToast({ type: 'error', message: res?.error || 'Failed to open file in explorer.' });
+                        setToast({ type: 'error', message: res?.error || t('common:openFileFailed') });
                       }
                     }
                   }}
@@ -173,7 +182,7 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
                       ? "text-indigo-300 hover:text-indigo-200 underline underline-offset-2 hover:opacity-100 opacity-90"
                       : "text-white hover:underline underline-offset-2"
                   )}
-                  title={`Show ${p} in Explorer`}
+                  title={t('lightbox.showPathInExplorer', { path: p })}
                 >
                   <FolderOpen className="w-3 h-3 flex-shrink-0 inline group-hover:scale-110 transition-transform" />
                   <span>{p}</span>

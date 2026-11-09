@@ -4,9 +4,8 @@ import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
-// User-facing text belongs in src/i18n/locales. Both rules below use this level; the last step of the
-// translation work flips it from 'warn' to 'error' (a one-line change).
-const I18N_LEVEL = 'warn';
+// User-facing text belongs in src/i18n/locales, and these rules fail the lint when it is hard-coded.
+const I18N_LEVEL = 'error';
 
 const I18N_HINT = 'Put user-facing text in src/i18n/locales and use t() (see src/i18n/index.js).';
 

@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { CheckCircle2, AlertCircle, XCircle, RotateCcw, Trash2, ChevronDown, ChevronRight, History } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { formatDuration, formatTimeAgo } from '../../utils/formatters';
+import { taskTitle } from '../../utils/taskTitle';
 
 export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'modern' }) => {
+  const { t } = useTranslation('queue');
   const [expandedErrorId, setExpandedErrorId] = useState(null);
   const isModern = uiTheme === 'modern';
 
@@ -16,8 +19,8 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
         }`}
       >
         <History className="w-8 h-8 mx-auto mb-2 opacity-40" />
-        <p className="text-xs font-semibold">No task history</p>
-        <p className="text-[11px] opacity-70 mt-0.5">Completed and cancelled tasks will appear here.</p>
+        <p className="text-xs font-semibold">{t('history.emptyTitle')}</p>
+        <p className="text-[11px] opacity-70 mt-0.5">{t('history.emptyHint')}</p>
       </div>
     );
   }
@@ -27,19 +30,19 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
       case 'completed':
         return (
           <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
-            <CheckCircle2 className="w-3 h-3" /> COMPLETED
+            <CheckCircle2 className="w-3 h-3" /> {t('history.completed')}
           </span>
         );
       case 'failed':
         return (
           <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-500/20">
-            <AlertCircle className="w-3 h-3" /> FAILED
+            <AlertCircle className="w-3 h-3" /> {t('history.failed')}
           </span>
         );
       case 'cancelled':
         return (
           <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-500/20">
-            <XCircle className="w-3 h-3" /> CANCELLED
+            <XCircle className="w-3 h-3" /> {t('history.cancelled')}
           </span>
         );
       default:
@@ -52,14 +55,14 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
       {/* Top action bar */}
       <div className="flex justify-between items-center px-1">
         <span className="text-[11px] font-mono text-neutral-400">
-          Last {history.length} task(s)
+          {t('history.last', { count: history.length })}
         </span>
         <button
           onClick={onClearHistory}
           className="text-[11px] text-neutral-500 hover:text-rose-600 dark:hover:text-rose-400 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <Trash2 className="w-3.5 h-3.5" />
-          <span>Clear History</span>
+          <span>{t('history.clear')}</span>
         </button>
       </div>
 
@@ -88,11 +91,11 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
                   </div>
 
                   <h5 className="text-xs font-bold text-neutral-900 dark:text-white truncate">
-                    {task.title}
+                    {taskTitle(task)}
                   </h5>
 
                   <div className="flex items-center gap-2 text-[10px] text-neutral-500 dark:text-neutral-400 font-mono mt-0.5">
-                    <span>{task.processed_count} of {task.total_count || 0} items</span>
+                    <span>{t('common:itemsProgress', { x: task.processed_count, count: task.total_count || 0 })}</span>
                     {task.duration > 0 && <span>· {formatDuration(task.duration)}</span>}
                   </div>
                 </div>
@@ -100,10 +103,10 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
                 <button
                   onClick={() => onRetry(task.id)}
                   className="px-2.5 py-1 bg-gray-50 dark:bg-neutral-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border border-gray-200/80 dark:border-neutral-600/50 shrink-0 cursor-pointer shadow-2xs"
-                  title="Re-queue this task"
+                  title={t('history.requeueTitle')}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Retry</span>
+                  <span>{t('common:retry')}</span>
                 </button>
               </div>
 
@@ -115,7 +118,7 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
                     className="flex items-center gap-1 text-[10px] font-semibold text-rose-500 hover:text-rose-600 transition-colors cursor-pointer"
                   >
                     {isErrorExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                    <span>{task.errors.length} error message(s)</span>
+                    <span>{t('history.errorMessages', { count: task.errors.length })}</span>
                   </button>
 
                   {isErrorExpanded && (

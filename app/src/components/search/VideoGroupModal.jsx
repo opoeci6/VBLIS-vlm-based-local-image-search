@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FolderOpen, Images, Loader2, X } from 'lucide-react';
 import { VideoFrameCard } from './VideoFrameCard';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
@@ -9,6 +10,7 @@ import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scor
 const INITIAL_VISIBLE_FRAMES = 60;
 
 export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, setSelectedImage, setToast, uiTheme, onFindMoreFrames, isFindingMoreFrames = false, canFindMoreFrames = false }) => {
+  const { t } = useTranslation('search');
   // A video can have hundreds of matching frames, so the grid grows as the user scrolls.
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FRAMES);
   const [countPath, setCountPath] = useState(selectedVideoGroup?.path ?? null);
@@ -57,15 +59,17 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
                 uiTheme === 'modern' ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-100 dark:border-indigo-500/20" : "border border-white text-white"
               )}>
                 {selectedVideoGroup.isExpanded
-                  ? `${selectedVideoGroup.frames.length} MATCHING OF ${selectedVideoGroup.totalFrames ?? selectedVideoGroup.frames.length}`
-                  : `${selectedVideoGroup.frames.length} RETURNED FRAME${selectedVideoGroup.frames.length === 1 ? '' : 'S'}`}
+                  ? t('videoGroup.matchingOf', { shown: selectedVideoGroup.frames.length, total: selectedVideoGroup.totalFrames ?? selectedVideoGroup.frames.length })
+                  : t('videoGroup.returnedFrames', { count: selectedVideoGroup.frames.length })}
               </span>
               {hasScore(selectedVideoGroup.bestFrame) && (
                 <span className={cn(
                   "px-2.5 py-1",
                   uiTheme === 'modern' ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg border border-emerald-100 dark:border-emerald-500/20" : "border border-white text-emerald-400"
                 )}>
-                  {isSimilarityKind(selectedVideoGroup.bestFrame?.score_kind) ? 'BEST SIMILARITY' : 'BEST MATCH'} {formatScorePercent(selectedVideoGroup.bestScore)}
+                  {isSimilarityKind(selectedVideoGroup.bestFrame?.score_kind)
+                    ? t('videoGroup.bestSimilarity', { percent: formatScorePercent(selectedVideoGroup.bestScore) })
+                    : t('videoGroup.bestMatch', { percent: formatScorePercent(selectedVideoGroup.bestScore) })}
                 </span>
               )}
             </div>
@@ -82,7 +86,7 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
               )}
             >
               {isFindingMoreFrames ? <Loader2 className="w-4 h-4 animate-spin" /> : <Images className="w-4 h-4" />}
-              {isFindingMoreFrames ? 'Finding frames\u2026' : 'Find more frames'}
+              {isFindingMoreFrames ? t('videoGroup.findingFrames') : t('videoGroup.findMoreFrames')}
             </button>
           )}
           {window.electronAPI && (
@@ -90,7 +94,7 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
               onClick={async () => {
                 const response = await window.electronAPI.openInExplorer(selectedVideoGroup.path);
                 if (response && !response.success) {
-                  setToast({ message: 'This video has been moved or deleted and is no longer available.', type: 'error' });
+                  setToast({ message: t('videoGroup.unavailable'), type: 'error' });
                 }
               }}
               className={cn(
@@ -101,7 +105,7 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
               )}
             >
               <FolderOpen className="w-4 h-4" />
-              Show in Explorer
+              {t('common:showInExplorer')}
             </button>
           )}
           <button
@@ -112,7 +116,7 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
                 ? "rounded-xl text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800"
                 : "icon-tile border border-white text-white"
             )}
-            aria-label="Close video results"
+            aria-label={t('videoGroup.close')}
           >
             <X className="w-5 h-5" />
           </button>

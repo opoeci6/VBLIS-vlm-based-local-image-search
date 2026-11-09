@@ -41,7 +41,7 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 | `google/siglip2-so400m-patch14-384` | 4.3 GB | The same size, with a fixed square input |
 | `google/siglip2-base-patch16-naflex` | 1.5 GB | CPU or smaller GPUs |
 | `google/siglip2-base-patch16-224` | 1.5 GB | CPU or smaller GPUs, with a fixed square input |
-| `openai/clip-vit-base-patch32` | 0.6 GB | The lightest option |
+| `openai/clip-vit-base-patch32` | 0.6 GB | The lightest option. Use English for best search results |
 
 The `naflex` models look at each image in its own aspect ratio; the others resize it to a square first. Each model keeps its own index, so after switching to another model, index your folders again for it.
 

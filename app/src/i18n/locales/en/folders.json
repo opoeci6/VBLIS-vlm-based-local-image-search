@@ -1,1 +1,104 @@
-{}
+{
+  "previewTooltip": "Click to preview {{name}}",
+  "contentRow": {
+    "missingTooltip": "{{name}} is missing on disk",
+    "badge": {
+      "missing": "Missing on Disk",
+      "indexed": "Indexed",
+      "notIndexed": "Not Indexed"
+    },
+    "mediaType": {
+      "image": "image",
+      "video": "video"
+    },
+    "fileMissing": "File is missing on disk"
+  },
+  "thumbnail": {
+    "missingTitle": "{{name}} is missing from disk"
+  },
+  "modal": {
+    "title": "Folder Contents",
+    "images_one": "{{count}} image",
+    "images_other": "{{count}} images",
+    "videos_one": "{{count}} video",
+    "videos_other": "{{count}} videos",
+    "indexed_one": "{{count}} indexed",
+    "indexed_other": "{{count}} indexed",
+    "unindexed_one": "{{count}} unindexed",
+    "unindexed_other": "{{count}} unindexed",
+    "missingFromDisk_one": "{{count}} missing from disk",
+    "missingFromDisk_other": "{{count}} missing from disk",
+    "cleanTooltip": "Clean ghost records by re-syncing this folder",
+    "cleaning": "Cleaning...",
+    "cleanButton": "Clean Ghost Records",
+    "totalFiles_one": "{{count}} total file",
+    "totalFiles_other": "{{count}} total files",
+    "scanning": "Scanning folder contents...",
+    "empty": {
+      "title": "No supported media found",
+      "desc": "This folder does not contain supported image or video files."
+    },
+    "truncated_one": "Showing the first {{count}} file. The folder contains more supported media.",
+    "truncated_other": "Showing the first {{count}} files. The folder contains more supported media.",
+    "loadMore_one": "Load more ({{count}} remaining)",
+    "loadMore_other": "Load more ({{count}} remaining)"
+  },
+  "panel": {
+    "title": "Indexed Folders",
+    "hintExpanded": "Browse, re-sync, or remove folders from the active model index.",
+    "hintCollapsed": "Click to view and manage indexed folders",
+    "addFolders": "Add Folder(s)",
+    "collapse": "Collapse folders",
+    "expand": "Expand folders",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "selected_one": "{{count}} SELECTED",
+    "selected_other": "{{count}} SELECTED",
+    "reindex": "Reindex",
+    "delete": "Delete",
+    "batchHint": "Select folders for batch actions",
+    "fetching": "Fetching folders...",
+    "empty": {
+      "title": "No folders selected",
+      "desc": "Add a folder to index images and sample videos at two-second intervals."
+    }
+  },
+  "tree": {
+    "clickToViewMedia": "Click to view media in {{name}}",
+    "missingOrInaccessible": "{{name}} is missing or inaccessible on disk",
+    "clickToExpand": "Click to expand {{name}}",
+    "deselectFolder": "Deselect folder",
+    "selectFolderAndSubfolders": "Select folder and subfolders",
+    "collapseSubfolders": "Collapse subfolders",
+    "expandSubfolders": "Expand subfolders",
+    "missing": "Missing",
+    "subfolders_one": "{{count}} subfolder",
+    "subfolders_other": "{{count}} subfolders",
+    "imgs_one": "{{count}} img",
+    "imgs_other": "{{count}} imgs",
+    "vids_one": "{{count}} vid",
+    "vids_other": "{{count}} vids",
+    "imgsOfDisk": "{{indexed}}/{{total}} imgs",
+    "vidsOfDisk": "{{indexed}}/{{total}} vids",
+    "imagesPartialTree": "{{indexed}} of {{total}} images indexed in this folder tree ({{unindexed}} unindexed)",
+    "videosPartialTree": "{{indexed}} of {{total}} videos indexed in this folder tree ({{unindexed}} unindexed)",
+    "imagesTotalTree_one": "{{count}} total image indexed across this folder tree",
+    "imagesTotalTree_other": "{{count}} total images indexed across this folder tree",
+    "videosTotalTree_one": "{{count}} total video indexed across this folder tree",
+    "videosTotalTree_other": "{{count}} total videos indexed across this folder tree",
+    "imagesPartialFolder": "{{indexed}} of {{total}} images indexed in this folder ({{unindexed}} unindexed)",
+    "videosPartialFolder": "{{indexed}} of {{total}} videos indexed in this folder ({{unindexed}} unindexed)",
+    "imagesTotalFolder_one": "{{count}} image indexed in this folder",
+    "imagesTotalFolder_other": "{{count}} images indexed in this folder",
+    "videosTotalFolder_one": "{{count}} video indexed in this folder",
+    "videosTotalFolder_other": "{{count}} videos indexed in this folder",
+    "viewGallery": "View media gallery & contents",
+    "folderMissingOrInaccessible": "Folder is missing or inaccessible on disk",
+    "resyncRoot": "Re-sync entire folder tree",
+    "resyncRootMissing": "Re-sync folder (e.g. reconnect USB drive)",
+    "deleteRoot": "Delete entire folder tree from index",
+    "resyncSub": "Re-sync only this subfolder",
+    "resyncSubMissing": "Re-sync subfolder (e.g. reconnect USB drive)",
+    "deleteSub": "Delete only this subfolder from index"
+  }
+}

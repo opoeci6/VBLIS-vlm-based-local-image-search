@@ -52,4 +52,31 @@ describe('ModelSwitchWarningModal', () => {
     expect(props.onConfirmCancelAndSwitch).toHaveBeenCalledTimes(1);
     expect(props.onClose).not.toHaveBeenCalled();
   });
+
+  it('shows the progress with a plural total and a question mark when the total is unknown', () => {
+    const { unmount } = renderModal();
+    expect(screen.getByText('3 of 10 items (30%)')).toBeTruthy();
+    unmount();
+
+    const { unmount: unmountOne } = renderModal({ activeTask: { title: 'Index folders', processed_count: 0, total_count: 1, progress: 0 } });
+    expect(screen.getByText('0 of 1 item (0%)')).toBeTruthy();
+    unmountOne();
+
+    renderModal({ activeTask: { title: 'Index folders', processed_count: 0, total_count: 0, progress: 0 } });
+    expect(screen.getByText('0 of ? items (0%)')).toBeTruthy();
+  });
+
+  it('counts the queued tasks in the singular and the plural', () => {
+    const { unmount } = renderModal({ mode: 'queued_tasks', pendingCount: 1 });
+    expect(screen.getByText('1 task waiting in queue')).toBeTruthy();
+    unmount();
+
+    renderModal({ mode: 'queued_tasks', pendingCount: 3 });
+    expect(screen.getByText('3 tasks waiting in queue')).toBeTruthy();
+  });
+
+  it('shows the title of a known backend task in the interface language', () => {
+    renderModal({ activeTask: { type: 'REBUILD_VIDEO_THUMBNAILS', title: 'Rebuild Video Thumbnails', processed_count: 1, total_count: 2, progress: 50 } });
+    expect(screen.getByText('Rebuild Video Thumbnails')).toBeTruthy();
+  });
 });

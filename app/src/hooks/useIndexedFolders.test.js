@@ -283,6 +283,19 @@ describe('useIndexedFolders', () => {
       await act(async () => { await result.current.handleReindexFolder('/a'); });
       expect(setToast).toHaveBeenCalledWith({ message: 'Error: busy', type: 'error' });
     });
+
+    it('handleReindexFolder copes with a detail that is not a string (a validation error)', async () => {
+      routes[`POST ${API}/index/folder/reindex`] = async () => ({
+        ok: false,
+        statusText: 'Unprocessable Entity',
+        json: async () => ({ detail: [{ loc: ['body', 'folder_path'], msg: 'field required' }] }),
+      });
+      const { result } = render();
+      await flush();
+      await act(async () => { await result.current.handleReindexFolder('/a'); });
+      expect(setToast).toHaveBeenCalledTimes(1);
+      expect(setToast).toHaveBeenCalledWith({ message: 'Error: Unprocessable Entity', type: 'error' });
+    });
   });
 
   describe('poll state identity', () => {

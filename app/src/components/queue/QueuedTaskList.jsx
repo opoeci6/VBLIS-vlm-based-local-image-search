@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ChevronUp, ChevronDown, ChevronsUp, Trash2, Clock, GripVertical } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getTaskTypeIcon } from './taskIcon';
+import { taskTitle, taskTypeLabel } from '../../utils/taskTitle';
 
 export const QueuedTaskList = ({
   tasks,
@@ -10,6 +12,7 @@ export const QueuedTaskList = ({
   onCancel,
   uiTheme = 'modern'
 }) => {
+  const { t } = useTranslation('queue');
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [dropPosition, setDropPosition] = useState('before'); // 'before' | 'after'
@@ -27,8 +30,8 @@ export const QueuedTaskList = ({
         }`}
       >
         <Clock className="w-8 h-8 mx-auto mb-2 opacity-40" />
-        <p className="text-xs font-semibold">Queue is empty</p>
-        <p className="text-[11px] opacity-70 mt-0.5">Drop folders or click Add Folders to queue new tasks.</p>
+        <p className="text-xs font-semibold">{t('queuedList.emptyTitle')}</p>
+        <p className="text-[11px] opacity-70 mt-0.5">{t('queuedList.emptyHint')}</p>
       </div>
     );
   }
@@ -72,8 +75,8 @@ export const QueuedTaskList = ({
     }
 
     const currentList = [...fullTaskList];
-    const fromIdx = currentList.findIndex((t) => t.id === draggedId);
-    let toIdx = currentList.findIndex((t) => t.id === targetTask.id);
+    const fromIdx = currentList.findIndex((item) => item.id === draggedId);
+    let toIdx = currentList.findIndex((item) => item.id === targetTask.id);
 
     if (fromIdx === -1 || toIdx === -1) {
       setDraggedId(null);
@@ -83,7 +86,7 @@ export const QueuedTaskList = ({
 
     const [movedItem] = currentList.splice(fromIdx, 1);
     // Recalculate target index after removal
-    toIdx = currentList.findIndex((t) => t.id === targetTask.id);
+    toIdx = currentList.findIndex((item) => item.id === targetTask.id);
 
     if (dropPosition === 'after') {
       currentList.splice(toIdx + 1, 0, movedItem);
@@ -140,7 +143,7 @@ export const QueuedTaskList = ({
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div
                   className="p-1 -ml-1 text-neutral-300 dark:text-neutral-600 group-hover:text-neutral-500 dark:group-hover:text-neutral-400 transition-colors shrink-0"
-                  title="Drag to reorder"
+                  title={t('queuedList.dragToReorder')}
                 >
                   <GripVertical className="w-4 h-4" />
                 </div>
@@ -161,10 +164,10 @@ export const QueuedTaskList = ({
 
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-bold text-neutral-900 dark:text-white truncate">
-                    {task.title}
+                    {taskTitle(task)}
                   </p>
                   <p className="text-[10px] text-neutral-400 font-mono truncate mt-0.5">
-                    {task.type}
+                    {taskTypeLabel(task.type)}
                   </p>
                 </div>
               </div>
@@ -175,7 +178,7 @@ export const QueuedTaskList = ({
                   <button
                     onClick={() => onMove(task.id, 'top')}
                     className="p-1.5 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer"
-                    title="Move to top of queue"
+                    title={t('queuedList.moveToTop')}
                   >
                     <ChevronsUp className="w-4 h-4" />
                   </button>
@@ -185,7 +188,7 @@ export const QueuedTaskList = ({
                   onClick={() => onMove(task.id, 'up')}
                   disabled={isFirst}
                   className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
-                  title="Move up"
+                  title={t('queuedList.moveUp')}
                 >
                   <ChevronUp className="w-4 h-4" />
                 </button>
@@ -194,7 +197,7 @@ export const QueuedTaskList = ({
                   onClick={() => onMove(task.id, 'down')}
                   disabled={isLast}
                   className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
-                  title="Move down"
+                  title={t('queuedList.moveDown')}
                 >
                   <ChevronDown className="w-4 h-4" />
                 </button>
@@ -202,7 +205,7 @@ export const QueuedTaskList = ({
                 <button
                   onClick={() => onCancel(task.id)}
                   className="p-1.5 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors ml-1 cursor-pointer"
-                  title="Remove from queue"
+                  title={t('queuedList.remove')}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

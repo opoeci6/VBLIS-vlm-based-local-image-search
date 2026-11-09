@@ -4,6 +4,7 @@ import { annotateDuplicates, groupVideoResults, getImageResults, countSearchResu
 import { useProgressiveList } from './useProgressiveList';
 import { apiFetch } from '../utils/api';
 import { readJson, writeJson } from '../utils/storage';
+import i18n from '../i18n';
 
 // Wait this long after the last filter change before re-running the current search.
 const FILTER_RERUN_DELAY_MS = 250;
@@ -33,6 +34,12 @@ const postJson = (path, body) => apiFetch(`${API_BASE}${path}`, {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body)
 });
+
+// What to tell the user when a text search failed: the backend's own message (English) when it sent
+// one, otherwise a generic sentence.
+const searchFailureMessage = (err) => (
+  typeof err?.detail === 'string' && err.detail ? err.detail : i18n.t('messages:mediaSearch.searchFailed')
+);
 
 // `filters` is the request object from useSearchFilters (null when no filter is active). It is
 // sent with every search and, when it changes, the search behind the current results is re-run.
@@ -200,9 +207,17 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   }, [cancelFilterRerun]);
 
   // Posts a text search with the current filters. Returns false when a newer search made the
-  // response stale and it was dropped.
+  // response stale and it was dropped. Throws on an HTTP error (with `detail`, the backend's
+  // message, when it sent one), so the caller can say what failed.
   const postTextSearch = async (body, seq) => {
     const res = await postJson('/search', withCurrentFilters(body));
+    if (seq !== searchSeq.current) return false;
+    if (!res.ok) {
+      const failure = await res.json().catch(() => null);
+      const error = new Error(`Search failed with HTTP ${res.status}`);
+      error.detail = failure?.detail;
+      throw error;
+    }
     const data = await res.json();
     if (seq !== searchSeq.current) return false;
     applyResults(data, { kind: 'text', topK: body.top_k, minScore: body.min_score, query: body.query }, seq);
@@ -245,7 +260,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     onFailure: () => {
       browseSortRef.current = previousSort;
       setBrowseSortState(previousSort);
-      setToastRef.current({ message: 'Failed to change the sort order.', type: 'error' });
+      setToastRef.current({ message: i18n.t('messages:mediaSearch.sortChangeFailed'), type: 'error' });
     }
   });
   rerunBrowseRef.current = rerunBrowseWithSort;
@@ -276,7 +291,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       if (await postBrowse(browseSort, seq)) setShowSearchResults(true);
     } catch (err) {
       console.error(err);
-      if (seq === searchSeq.current) setToast({ message: 'Failed to load the library.', type: 'error' });
+      if (seq === searchSeq.current) setToast({ message: i18n.t('messages:mediaSearch.libraryLoadFailed'), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -301,6 +316,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       if (await postTextSearch(body, seq)) setShowSearchResults(true);
     } catch (err) {
       console.error(err);
+      if (seq === searchSeq.current) setToast({ message: searchFailureMessage(err), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -308,7 +324,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
 
   const handleImageDrop = async (file) => {
     if (!file.type.startsWith('image/')) {
-      setToast({ message: "Please drop an image file.", type: 'error' });
+      setToast({ message: i18n.t('messages:mediaSearch.dropImage'), type: 'error' });
       return;
     }
 
@@ -342,10 +358,10 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       if (seq !== searchSeq.current) return;
       applyResults(data, { kind: 'image', topK, minScore: imageMinScore }, seq);
       setShowSearchResults(true);
-      setToast({ message: `Found ${countSearchResults(data.results)} similar media result(s).`, type: 'success' });
+      setToast({ message: i18n.t('messages:mediaSearch.foundSimilar', { count: countSearchResults(data.results) }), type: 'success' });
     } catch (err) {
       console.error(err);
-      if (seq === searchSeq.current) setToast({ message: "Failed to search by image.", type: 'error' });
+      if (seq === searchSeq.current) setToast({ message: i18n.t('messages:mediaSearch.imageSearchFailed'), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -424,6 +440,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       await postTextSearch(body, seq);
     } catch (err) {
       console.error(err);
+      if (seq === searchSeq.current) setToastRef.current({ message: searchFailureMessage(err), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -437,7 +454,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     if (!info || !hasSearchedRef.current) return;
     if (info.kind === 'browse') {
       await rerunBrowse(info.sort, {
-        onFailure: () => setToastRef.current({ message: 'Failed to apply the filters.', type: 'error' })
+        onFailure: () => setToastRef.current({ message: i18n.t('messages:mediaSearch.filtersFailed'), type: 'error' })
       });
       return;
     }
@@ -465,7 +482,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
         if (seq !== searchSeq.current) return;
       }
       if (!res.ok) {
-        setToastRef.current({ message: 'Failed to apply the filters.', type: 'error' });
+        setToastRef.current({ message: i18n.t('messages:mediaSearch.filtersFailed'), type: 'error' });
         return;
       }
       const data = await res.json();
@@ -475,7 +492,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       applyResults(data, nextInfo, seq);
     } catch (err) {
       console.error(err);
-      if (seq === searchSeq.current) setToastRef.current({ message: 'Failed to apply the filters.', type: 'error' });
+      if (seq === searchSeq.current) setToastRef.current({ message: i18n.t('messages:mediaSearch.filtersFailed'), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -537,14 +554,14 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
         body: JSON.stringify(body)
       });
       if (res.status === 410) {
-        failure = 'This search has expired. Please search again.';
+        failure = i18n.t('messages:mediaSearch.searchExpired');
       } else if (!res.ok) {
-        failure = 'Failed to load more frames.';
+        failure = i18n.t('messages:mediaSearch.moreFramesFailed');
       } else {
         const data = await res.json();
         if (generation.current !== startedGeneration) return;
         if (!data.frames || data.frames.length === 0) {
-          failure = 'This video is no longer available.';
+          failure = i18n.t('messages:mediaSearch.videoUnavailable');
         } else {
           setExpandedFramesByPath(prev => ({
             ...prev,
@@ -554,7 +571,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       }
     } catch (err) {
       console.error(err);
-      failure = 'Failed to load more frames.';
+      failure = i18n.t('messages:mediaSearch.moreFramesFailed');
     } finally {
       flight.delete(path);
       if (generation.current === startedGeneration) {

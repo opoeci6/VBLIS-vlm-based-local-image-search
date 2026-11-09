@@ -24,6 +24,7 @@ const tick = (ms) => act(async () => { await vi.advanceTimersByTimeAsync(ms); })
 describe('useTaskQueue', () => {
   let payload;
   let reorderOk;
+  let enqueueResponse;
   let fetchMock;
   let setToast;
 
@@ -36,6 +37,7 @@ describe('useTaskQueue', () => {
     fetchMock = vi.fn(async (url, init) => {
       if (url === `${API}/queue` && !init) return { ok: true, json: async () => JSON.parse(JSON.stringify(payload)) };
       if (url === `${API}/queue/reorder` && init?.method === 'POST') return { ok: reorderOk, json: async () => ({}) };
+      if (url === `${API}/queue/enqueue` && init?.method === 'POST') return { ok: true, json: async () => JSON.parse(JSON.stringify(enqueueResponse)) };
       throw new Error(`unexpected fetch ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -131,6 +133,45 @@ describe('useTaskQueue', () => {
     });
   });
 
+  describe('enqueueFolderIndexing toasts', () => {
+    const enqueue = async (folders, response) => {
+      enqueueResponse = response;
+      const { result } = renderHook(() => useTaskQueue(API, setToast));
+      await flush();
+      await act(async () => { await result.current.enqueueFolderIndexing(folders); });
+    };
+
+    // The wording is built from the counts, not taken from the backend's English `message`.
+    it('says how many tasks were enqueued', async () => {
+      await enqueue(['/a'], { tasks: [taskA], duplicates: [], message: 'Enqueued 1 task(s).' });
+      expect(setToast).toHaveBeenCalledWith({ message: 'Enqueued 1 task.', type: 'success' });
+    });
+
+    it('uses the plural for several tasks', async () => {
+      await enqueue(['/a', '/b'], { tasks: [taskA, taskB], duplicates: [] });
+      expect(setToast).toHaveBeenCalledWith({ message: 'Enqueued 2 tasks.', type: 'success' });
+    });
+
+    it('adds how many duplicates were skipped', async () => {
+      await enqueue(['/a', '/b'], { tasks: [taskA], duplicates: [{ path: '/b' }] });
+      expect(setToast).toHaveBeenCalledWith({ message: 'Enqueued 1 task(s). (1 duplicate(s) skipped)', type: 'success' });
+    });
+
+    it('tells when the folder is already queued', async () => {
+      await enqueue(['/b'], { tasks: [], duplicates: [{ path: '/b' }] });
+      expect(setToast).toHaveBeenCalledWith({ message: 'Folder is already in the queue: /b', type: 'info' });
+    });
+
+    it('falls back to the number of folders when the response has no task list', async () => {
+      await enqueue(['/a', '/b'], { status: 'queued' });
+      expect(setToast).toHaveBeenCalledWith({ message: 'Added 2 folders to queue.', type: 'success' });
+      setToast.mockClear();
+      cleanup();
+      await enqueue(['/a'], {});
+      expect(setToast).toHaveBeenCalledWith({ message: 'Added 1 folder to queue.', type: 'success' });
+    });
+  });
+
   describe('completion toast', () => {
     it('toasts once when the active task moves to history as completed', async () => {
       renderHook(() => useTaskQueue(API, setToast));
@@ -147,6 +188,26 @@ describe('useTaskQueue', () => {
       expect(setToast).toHaveBeenCalledWith({ message: 'Task completed: Running (9 items)', type: 'success' });
       await tick(1200);
       expect(setToast).toHaveBeenCalledTimes(1);
+    });
+
+    it('says "1 item" for a single item and titles a known task type', async () => {
+      renderHook(() => useTaskQueue(API, setToast));
+      await flush();
+      payload = {
+        ...basePayload(),
+        active_task: null,
+        history: [{ id: 'run', type: 'INDEX_FOLDERS', title: 'Index: Photos', status: 'completed', processed_count: 1 }],
+      };
+      await tick(1200);
+      expect(setToast).toHaveBeenCalledWith({ message: 'Task completed: Index: Photos (1 item)', type: 'success' });
+    });
+
+    it('toasts a failed task by its title', async () => {
+      renderHook(() => useTaskQueue(API, setToast));
+      await flush();
+      payload = { ...basePayload(), active_task: null, history: [{ id: 'run', title: 'Running', status: 'failed' }] };
+      await tick(1200);
+      expect(setToast).toHaveBeenCalledWith({ message: 'Task failed: Running', type: 'error' });
     });
   });
 });

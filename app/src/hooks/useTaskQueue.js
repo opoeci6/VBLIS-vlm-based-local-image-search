@@ -1,6 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
+import { taskTitle } from '../utils/taskTitle';
+import i18n from '../i18n';
+
+// The toast for folders that were just queued. The backend's own message is English, so it is
+// built here from the counts in the response.
+const enqueueMessage = (data, folderCount) => {
+  if (!Array.isArray(data.tasks)) return i18n.t('messages:taskQueue.added', { count: folderCount });
+  const added = data.tasks.length;
+  const skipped = Array.isArray(data.duplicates) ? data.duplicates.length : 0;
+  if (skipped > 0) return i18n.t('messages:taskQueue.enqueuedWithSkipped', { tasks: added, duplicates: skipped });
+  return i18n.t('messages:taskQueue.enqueued', { count: added });
+};
 
 export const useTaskQueue = (API_BASE, setToast) => {
   const [activeTask, setActiveTask] = useState(null);
@@ -49,12 +61,12 @@ export const useTaskQueue = (API_BASE, setToast) => {
         if (lastFinished.id === prevActiveTaskId.current) {
           if (lastFinished.status === 'completed') {
             setToast?.({
-              message: `Task completed: ${lastFinished.title} (${lastFinished.processed_count} items)`,
+              message: i18n.t('messages:taskQueue.completed', { title: taskTitle(lastFinished), count: lastFinished.processed_count ?? 0 }),
               type: 'success'
             });
           } else if (lastFinished.status === 'failed') {
             setToast?.({
-              message: `Task failed: ${lastFinished.title}`,
+              message: i18n.t('messages:taskQueue.failed', { title: taskTitle(lastFinished) }),
               type: 'error'
             });
           }
@@ -88,23 +100,23 @@ export const useTaskQueue = (API_BASE, setToast) => {
       if (res.ok) {
         if (data.duplicates && data.duplicates.length > 0 && (!data.tasks || data.tasks.length === 0)) {
           setToast?.({
-            message: `Folder is already in the queue: ${data.duplicates[0].path}`,
+            message: i18n.t('messages:taskQueue.alreadyQueued', { path: data.duplicates[0].path }),
             type: 'info'
           });
         } else {
           setToast?.({
-            message: data.message || `Added ${folderPaths.length} folder(s) to queue.`,
+            message: enqueueMessage(data, folderPaths.length),
             type: 'success'
           });
         }
         fetchQueue();
         return data;
       } else {
-        setToast?.({ message: `Queue error: ${data.detail || res.statusText}`, type: 'error' });
+        setToast?.({ message: i18n.t('messages:taskQueue.queueError', { detail: data.detail || res.statusText }), type: 'error' });
         return null;
       }
     } catch {
-      setToast?.({ message: 'Failed to connect to task queue.', type: 'error' });
+      setToast?.({ message: i18n.t('messages:taskQueue.connectFailed'), type: 'error' });
       return null;
     }
   }, [API_BASE, setToast, fetchQueue]);
@@ -114,13 +126,13 @@ export const useTaskQueue = (API_BASE, setToast) => {
       const res = await apiFetch(`${API_BASE}/queue/${taskId}/cancel`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        setToast?.({ message: 'Task cancellation requested.', type: 'info' });
+        setToast?.({ message: i18n.t('messages:taskQueue.cancelRequested'), type: 'info' });
         fetchQueue();
       } else {
-        setToast?.({ message: data.detail || 'Failed to cancel task.', type: 'error' });
+        setToast?.({ message: data.detail || i18n.t('messages:taskQueue.cancelFailed'), type: 'error' });
       }
     } catch {
-      setToast?.({ message: 'Network error cancelling task.', type: 'error' });
+      setToast?.({ message: i18n.t('messages:taskQueue.cancelNetworkError'), type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
@@ -129,13 +141,13 @@ export const useTaskQueue = (API_BASE, setToast) => {
       const res = await apiFetch(`${API_BASE}/queue/${taskId}/pause`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        setToast?.({ message: 'Task paused.', type: 'info' });
+        setToast?.({ message: i18n.t('messages:taskQueue.paused'), type: 'info' });
         fetchQueue();
       } else {
-        setToast?.({ message: data.detail || 'Failed to pause task.', type: 'error' });
+        setToast?.({ message: data.detail || i18n.t('messages:taskQueue.pauseFailed'), type: 'error' });
       }
     } catch {
-      setToast?.({ message: 'Network error pausing task.', type: 'error' });
+      setToast?.({ message: i18n.t('messages:taskQueue.pauseNetworkError'), type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
@@ -144,13 +156,13 @@ export const useTaskQueue = (API_BASE, setToast) => {
       const res = await apiFetch(`${API_BASE}/queue/${taskId}/resume`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        setToast?.({ message: 'Task resumed.', type: 'success' });
+        setToast?.({ message: i18n.t('messages:taskQueue.resumed'), type: 'success' });
         fetchQueue();
       } else {
-        setToast?.({ message: data.detail || 'Failed to resume task.', type: 'error' });
+        setToast?.({ message: data.detail || i18n.t('messages:taskQueue.resumeFailed'), type: 'error' });
       }
     } catch {
-      setToast?.({ message: 'Network error resuming task.', type: 'error' });
+      setToast?.({ message: i18n.t('messages:taskQueue.resumeNetworkError'), type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
@@ -164,23 +176,23 @@ export const useTaskQueue = (API_BASE, setToast) => {
       const data = await res.json();
       if (res.ok) {
         if (action === 'start' || action === 'adopt_active_model') {
-          setToast?.({ message: 'Queue worker started.', type: 'success' });
+          setToast?.({ message: i18n.t('messages:taskQueue.workerStarted'), type: 'success' });
         } else if (action === 'pause_immediate') {
-          setToast?.({ message: 'Queue worker stopped immediately.', type: 'info' });
+          setToast?.({ message: i18n.t('messages:taskQueue.workerStopped'), type: 'info' });
         } else if (action === 'pause_after_current') {
-          setToast?.({ message: 'Queue will stop after active task completes.', type: 'info' });
+          setToast?.({ message: i18n.t('messages:taskQueue.workerStopsAfterCurrent'), type: 'info' });
         }
         setShowStopModal(false);
         fetchQueue();
       } else {
         setToast?.({
-          message: data.detail || 'Failed to update queue worker state.',
+          message: data.detail || i18n.t('messages:taskQueue.workerUpdateFailed'),
           type: 'error'
         });
         fetchQueue();
       }
     } catch {
-      setToast?.({ message: 'Failed to send worker control signal.', type: 'error' });
+      setToast?.({ message: i18n.t('messages:taskQueue.workerSignalFailed'), type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
@@ -223,13 +235,13 @@ export const useTaskQueue = (API_BASE, setToast) => {
       const res = await apiFetch(`${API_BASE}/queue/${taskId}/retry`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        setToast?.({ message: `Re-queued task: ${data.task?.title || ''}`, type: 'success' });
+        setToast?.({ message: i18n.t('messages:taskQueue.requeued', { title: taskTitle(data.task) || '' }), type: 'success' });
         fetchQueue();
       } else {
-        setToast?.({ message: data.detail || 'Failed to retry task.', type: 'error' });
+        setToast?.({ message: data.detail || i18n.t('messages:taskQueue.retryFailed'), type: 'error' });
       }
     } catch {
-      setToast?.({ message: 'Network error retrying task.', type: 'error' });
+      setToast?.({ message: i18n.t('messages:taskQueue.retryNetworkError'), type: 'error' });
     }
   }, [API_BASE, setToast, fetchQueue]);
 
@@ -237,7 +249,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
     try {
       const res = await apiFetch(`${API_BASE}/queue/history`, { method: 'DELETE' });
       if (res.ok) {
-        setToast?.({ message: 'Cleared task history.', type: 'info' });
+        setToast?.({ message: i18n.t('messages:taskQueue.historyCleared'), type: 'info' });
         fetchQueue();
       }
     } catch (err) {

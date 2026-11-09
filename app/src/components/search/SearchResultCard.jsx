@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CalendarDays, CheckCircle2, Sparkles, Copy, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
@@ -7,7 +8,9 @@ import { API_BASE } from '../../config';
 import { formatScoreLabel, hasScore } from '../../utils/scoreLabel';
 
 export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSelect, uiTheme = 'modern' }) {
+  const { t } = useTranslation('search');
   const isModern = uiTheme === 'modern';
+  const duplicateCount = res.otherPaths ? res.otherPaths.length + 1 : 2;
   // A library item (no query) has no score: its date taken stands in for it.
   const takenDate = hasScore(res) ? '' : formatTakenDate(res.taken_at);
 
@@ -37,7 +40,7 @@ export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSel
         >
           {res.duplicateType === 'exact' ? <Copy className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
           <span>
-            {res.duplicateType === 'exact' ? 'Exact Copy' : 'Visual Duplicate'} ({res.otherPaths ? res.otherPaths.length + 1 : 2})
+            {res.duplicateType === 'exact' ? t('card.exactCopy', { count: duplicateCount }) : t('card.visualDuplicate', { count: duplicateCount })}
           </span>
         </div>
       )}
@@ -58,7 +61,7 @@ export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSel
 
       <img
         src={getMediaPreviewUrl(API_BASE, res)}
-        alt={res.media_type === 'video' ? `Video frame at ${formatVideoTimestamp(res.timestamp_seconds)}` : 'Result'}
+        alt={res.media_type === 'video' ? t('common:videoFrameAt', { ts: formatVideoTimestamp(res.timestamp_seconds) }) : t('card.resultAlt')}
         className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
         loading="lazy"
       />

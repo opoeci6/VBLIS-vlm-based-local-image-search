@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { VBLIS_ASCII_POINTS } from '../../utils/asciiLogoPoints';
 
 export const AsciiLogo = () => {
+  const { t } = useTranslation('settings');
   const outputRef = useRef(null);
   const stageRef = useRef(null);
   const particleCanvasRef = useRef(null);
@@ -348,7 +350,7 @@ export const AsciiLogo = () => {
   return (
     <>
       <canvas ref={particleCanvasRef} className="ascii-particle-layer" aria-hidden="true" />
-      <div ref={stageRef} className="vblis-ascii-stage" role="img" aria-label="VBLIS rotating 3D ASCII logo">
+      <div ref={stageRef} className="vblis-ascii-stage" role="img" aria-label={t('asciiLogo.label')}>
         <pre ref={outputRef} className="vblis-ascii-output" aria-hidden="true" />
       </div>
     </>
