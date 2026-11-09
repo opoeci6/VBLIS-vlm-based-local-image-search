@@ -1,13 +1,16 @@
 // Pure helpers for the search filters: folder selection rules, date presets and the request/chip
 // builders. Kept free of React so they are easy to test.
+import i18n from '../i18n';
 
 export const ORIENTATIONS = ['landscape', 'portrait', 'square'];
 
-export const ORIENTATION_LABELS = {
-  landscape: 'Landscape',
-  portrait: 'Portrait',
-  square: 'Square',
-};
+// Label getters, not constants: the text depends on the interface language. `t` defaults to the global
+// translator; a component can pass its own.
+export const getOrientationLabels = (t = i18n.t) => ({
+  landscape: t('filters:orientation.landscape'),
+  portrait: t('filters:orientation.portrait'),
+  square: t('filters:orientation.square'),
+});
 
 // Fallback labels for format ids. The backend's own labels (filter-options) win, so a format it
 // adds later shows correctly without a change here.
@@ -30,13 +33,10 @@ export const MEGAPIXEL_CHOICES = [2, 8, 12, 24];
 
 export const DUPLICATE_KINDS = ['exact', 'visual'];
 
-export const DUPLICATE_LABELS = {
-  exact: 'Exact copies',
-  visual: 'Visual duplicates',
-};
-
-const EN_DASH = '\u2013';
-const GTE = '\u2265';
+export const getDuplicateLabels = (t = i18n.t) => ({
+  exact: t('filters:duplicates.exact'),
+  visual: t('filters:duplicates.visual'),
+});
 
 // ---------------------------------------------------------------------------------------------
 // Folders
@@ -136,14 +136,14 @@ export function effectiveDateRange({ datePreset, dateFrom, dateTo }) {
   return { from, to };
 }
 
-function describeDate({ datePreset }, range) {
-  if (datePreset === 'last30') return 'Last 30 days';
-  if (datePreset === 'last12m') return 'Last 12 months';
+function describeDate({ datePreset }, range, t) {
+  if (datePreset === 'last30') return t('filters:chip.date.last30');
+  if (datePreset === 'last12m') return t('filters:chip.date.last12m');
   const year = YEAR_PRESET.exec(datePreset ?? '');
   if (year) return year[1];
-  if (range.from && range.to) return `${range.from} ${EN_DASH} ${range.to}`;
-  if (range.from) return `From ${range.from}`;
-  return `Until ${range.to}`;
+  if (range.from && range.to) return t('filters:chip.date.range', { from: range.from, to: range.to });
+  if (range.from) return t('filters:chip.date.from', { date: range.from });
+  return t('filters:chip.date.until', { date: range.to });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -203,31 +203,33 @@ export function countActiveFilters(state) {
 }
 
 // Pills for the active filters: [{ key, label, onRemove }]. `actions` supplies the remove callbacks;
-// `formatLabels` ({ id: label }) comes from the backend's filter options.
-export function buildFilterChips(state, actions, formatLabels) {
+// `formatLabels` ({ id: label }) comes from the backend's filter options. `t` is the translator for the
+// label text; it defaults to the global one.
+export function buildFilterChips(state, actions, formatLabels, t = i18n.t) {
   const chips = [];
   if (state.mediaType) {
     chips.push({
       key: 'media',
-      label: state.mediaType === 'video' ? 'Videos only' : 'Images only',
+      label: state.mediaType === 'video' ? t('filters:chip.videosOnly') : t('filters:chip.imagesOnly'),
       onRemove: actions.removeMediaType,
     });
   }
   state.folders.forEach(path => {
     chips.push({
       key: `folder:${path}`,
-      label: `Folder: ${folderBaseName(path)}`,
+      label: t('filters:chip.folder', { name: folderBaseName(path) }),
       onRemove: () => actions.removeFolder(path),
     });
   });
   const range = effectiveDateRange(state);
   if (range) {
-    chips.push({ key: 'date', label: describeDate(state, range), onRemove: actions.removeDate });
+    chips.push({ key: 'date', label: describeDate(state, range, t), onRemove: actions.removeDate });
   }
   if (state.orientations.length > 0) {
+    const orientationLabels = getOrientationLabels(t);
     chips.push({
       key: 'orientation',
-      label: inCanonicalOrder(state.orientations, ORIENTATIONS).map(id => ORIENTATION_LABELS[id]).join(', '),
+      label: inCanonicalOrder(state.orientations, ORIENTATIONS).map(id => orientationLabels[id]).join(', '),
       onRemove: actions.removeOrientations,
     });
   }
@@ -239,12 +241,13 @@ export function buildFilterChips(state, actions, formatLabels) {
     });
   }
   if (state.minMegapixels) {
-    chips.push({ key: 'megapixels', label: `${GTE} ${state.minMegapixels} MP`, onRemove: actions.removeMegapixels });
+    chips.push({ key: 'megapixels', label: t('filters:chip.megapixels', { mp: state.minMegapixels }), onRemove: actions.removeMegapixels });
   }
+  const duplicateLabels = getDuplicateLabels(t);
   inCanonicalOrder(state.duplicates ?? [], DUPLICATE_KINDS).forEach(kind => {
     chips.push({
       key: `duplicates:${kind}`,
-      label: DUPLICATE_LABELS[kind],
+      label: duplicateLabels[kind],
       onRemove: () => actions.removeDuplicate(kind),
     });
   });

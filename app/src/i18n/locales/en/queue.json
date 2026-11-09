@@ -1,0 +1,25 @@
+{
+  "taskTitle": {
+    "indexName": "Index: {{name}}",
+    "indexCount": "Index {{n}} Folders",
+    "reindexName": "Reindex: {{name}}",
+    "reindexCount": "Reindex {{n}} Folders",
+    "rebuildVideoThumbnails": "Rebuild Video Thumbnails",
+    "pruneMissing": "Prune Missing Files",
+    "clearCache": {
+      "all": "Clear All Cache",
+      "images": "Clear Images Cache",
+      "videos": "Clear Videos Cache"
+    },
+    "scanMediaInfo": "Read media details"
+  },
+  "taskType": {
+    "INDEX_FOLDERS": "INDEX_FOLDERS",
+    "REINDEX_FOLDER": "REINDEX_FOLDER",
+    "BATCH_REINDEX": "BATCH_REINDEX",
+    "REBUILD_VIDEO_THUMBNAILS": "REBUILD_VIDEO_THUMBNAILS",
+    "PRUNE_DELETED": "PRUNE_DELETED",
+    "CLEAR_CACHE": "CLEAR_CACHE",
+    "SCAN_MEDIA_INFO": "SCAN_MEDIA_INFO"
+  }
+}

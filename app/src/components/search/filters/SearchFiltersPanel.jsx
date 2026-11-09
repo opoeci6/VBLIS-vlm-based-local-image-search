@@ -3,11 +3,11 @@ import { AlertTriangle, Loader2, X } from 'lucide-react';
 import { cn } from '../../../utils/cn';
 import {
   DUPLICATE_KINDS,
-  DUPLICATE_LABELS,
   MEGAPIXEL_CHOICES,
   ORIENTATIONS,
-  ORIENTATION_LABELS,
-  formatLabel
+  formatLabel,
+  getDuplicateLabels,
+  getOrientationLabels
 } from '../../../utils/searchFilters';
 import { FilterToggle } from './FilterToggle';
 import { FolderFilterTree } from './FolderFilterTree';
@@ -144,6 +144,8 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
 
   const formatEntries = listFormats(options, formats);
   const years = options?.years || [];
+  const orientationLabels = getOrientationLabels();
+  const duplicateLabels = getDuplicateLabels();
 
   return (
     <div
@@ -217,7 +219,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
         <div className="flex flex-wrap gap-2">
           {ORIENTATIONS.map(id => (
             <FilterToggle key={id} pressed={orientations.includes(id)} onClick={() => toggleOrientation(id)}>
-              {ORIENTATION_LABELS[id]}
+              {orientationLabels[id]}
             </FilterToggle>
           ))}
         </div>
@@ -228,7 +230,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
           const entries = formatEntries.filter(entry => (kind ? entry.mediaType === kind : !FORMAT_GROUPS.some(group => group.kind === entry.mediaType)));
           if (entries.length === 0) return null;
           return (
-            <div key={title} className="mb-2 last:mb-0">
+            <div key={kind ?? 'other'} className="mb-2 last:mb-0">
               <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">{title}</p>
               <div className="flex flex-wrap gap-2">
                 {entries.map(entry => (
@@ -254,7 +256,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
             const count = options?.duplicates?.[kind];
             return (
               <FilterToggle key={kind} pressed={duplicates.includes(kind)} onClick={() => toggleDuplicate(kind)}>
-                {DUPLICATE_LABELS[kind]}{typeof count === 'number' ? ` (${formatCount(count)})` : ''}
+                {duplicateLabels[kind]}{typeof count === 'number' ? ` (${formatCount(count)})` : ''}
               </FilterToggle>
             );
           })}

@@ -1,7 +1,10 @@
 /* global process */
 import { afterEach, describe, expect, it } from 'vitest';
+import i18n from '../i18n';
 import {
   buildFilterChips,
+  getDuplicateLabels,
+  getOrientationLabels,
   buildRequestFilters,
   countActiveFilters,
   countMissingDetails,
@@ -267,4 +270,60 @@ describe('hasDetailsFilter', () => {
     expect(hasDetailsFilter({ min_megapixels: 2 })).toBe(true);
   });
 });
+});
+
+describe('translated labels', () => {
+  it('has label getters for orientations and duplicate kinds', () => {
+    expect(getOrientationLabels()).toEqual({ landscape: 'Landscape', portrait: 'Portrait', square: 'Square' });
+    expect(getDuplicateLabels()).toEqual({ exact: 'Exact copies', visual: 'Visual duplicates' });
+  });
+
+  it('follows the interface language when it changes', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(getOrientationLabels().portrait).toBe('纵向');
+    expect(getDuplicateLabels()).toEqual({ exact: '完全相同的副本', visual: '视觉重复' });
+  });
+
+  it('translates every chip in Chinese', async () => {
+    await i18n.changeLanguage('zh-CN');
+    const state = {
+      mediaType: 'video',
+      folders: ['C:\\Photos\\Trips'],
+      datePreset: 'custom',
+      dateFrom: '2024-01-01',
+      dateTo: '2024-03-31',
+      orientations: ['square'],
+      formats: ['jpeg'],
+      minMegapixels: 12,
+      duplicates: ['exact', 'visual'],
+    };
+    const noop = () => {};
+    const actions = {
+      removeMediaType: noop, removeFolder: noop, removeDate: noop, removeOrientations: noop,
+      removeFormats: noop, removeMegapixels: noop, removeDuplicate: noop,
+    };
+    expect(buildFilterChips(state, actions, undefined).map(chip => chip.label)).toEqual([
+      '仅视频',
+      '文件夹：Trips',
+      '2024-01-01 – 2024-03-31',
+      '正方形',
+      'JPEG',
+      '≥ 12 MP',
+      '完全相同的副本',
+      '视觉重复',
+    ]);
+  });
+
+  it('uses the translator it is given', () => {
+    const t = (key) => `<${key}>`;
+    const state = { mediaType: 'image', folders: [], orientations: [], formats: [], duplicates: ['visual'] };
+    const labels = buildFilterChips(state, {}, undefined, t).map(chip => chip.label);
+    expect(labels).toEqual(['<filters:chip.imagesOnly>', '<filters:duplicates.visual>']);
+  });
+
+  it('keeps a folder name that looks like a nested translation as plain text', () => {
+    const state = { folders: ['/data/$t(common.cancel)'], orientations: [], formats: [], duplicates: [] };
+    expect(buildFilterChips(state, { removeFolder: () => {} }, undefined).map(chip => chip.label))
+      .toEqual(['Folder: $t(common.cancel)']);
+  });
 });

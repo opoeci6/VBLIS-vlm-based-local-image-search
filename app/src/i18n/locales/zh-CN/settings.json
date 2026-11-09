@@ -1,0 +1,17 @@
+{
+  "theme": {
+    "title": "界面主题风格",
+    "modern": {
+      "name": "现代圆角",
+      "desc": "柔和曲线与玻璃质感"
+    },
+    "terminal": {
+      "name": "复古终端",
+      "desc": "等宽字体与 ASCII"
+    }
+  },
+  "language": {
+    "title": "语言",
+    "system": "跟随系统"
+  }
+}

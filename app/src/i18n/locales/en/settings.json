@@ -1,0 +1,17 @@
+{
+  "theme": {
+    "title": "UI Theme Style",
+    "modern": {
+      "name": "Modern Rounded",
+      "desc": "Soft curves & glass"
+    },
+    "terminal": {
+      "name": "Retro Terminal",
+      "desc": "Monospace & ASCII"
+    }
+  },
+  "language": {
+    "title": "Language",
+    "system": "Follow system"
+  }
+}

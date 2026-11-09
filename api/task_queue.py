@@ -83,6 +83,7 @@ class Task:
         self._pause_event: threading.Event = threading.Event()
         self._pause_event.set()  # set means running, clear means paused
 
+    # app/src/utils/taskTitle.js parses these strings, so a change here needs a change there.
     @staticmethod
     def _generate_default_title(task_type: TaskType, payload: Dict[str, Any]) -> str:
         if task_type == TaskType.INDEX_FOLDERS:

@@ -1,5 +1,6 @@
 import { Settings, X } from 'lucide-react';
 import { ThemeStyleSection } from './ThemeStyleSection';
+import { LanguageSection } from './LanguageSection';
 import { PerformanceSection } from './PerformanceSection';
 import { ModelManagementSection } from './ModelManagementSection';
 import { SearchTuningSection } from './SearchTuningSection';
@@ -30,6 +31,8 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
               uiTheme={uiTheme}
               setUiTheme={setUiTheme}
             />
+
+            <LanguageSection />
 
             <PerformanceSection
               gpuSettings={gpuSettings}

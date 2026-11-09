@@ -1,0 +1,25 @@
+{
+  "taskTitle": {
+    "indexName": "索引：{{name}}",
+    "indexCount": "索引 {{n}} 个文件夹",
+    "reindexName": "重新索引：{{name}}",
+    "reindexCount": "重新索引 {{n}} 个文件夹",
+    "rebuildVideoThumbnails": "重建视频缩略图",
+    "pruneMissing": "清理缺失的文件",
+    "clearCache": {
+      "all": "清除全部缓存",
+      "images": "清除图片缓存",
+      "videos": "清除视频缓存"
+    },
+    "scanMediaInfo": "读取媒体详情"
+  },
+  "taskType": {
+    "INDEX_FOLDERS": "索引文件夹",
+    "REINDEX_FOLDER": "重新索引文件夹",
+    "BATCH_REINDEX": "批量重新索引",
+    "REBUILD_VIDEO_THUMBNAILS": "重建视频缩略图",
+    "PRUNE_DELETED": "清理缺失的文件",
+    "CLEAR_CACHE": "清除缓存",
+    "SCAN_MEDIA_INFO": "读取媒体详情"
+  }
+}

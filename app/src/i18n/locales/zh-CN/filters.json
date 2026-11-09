@@ -1,0 +1,24 @@
+{
+  "orientation": {
+    "landscape": "横向",
+    "portrait": "纵向",
+    "square": "正方形"
+  },
+  "duplicates": {
+    "exact": "完全相同的副本",
+    "visual": "视觉重复"
+  },
+  "chip": {
+    "videosOnly": "仅视频",
+    "imagesOnly": "仅图片",
+    "folder": "文件夹：{{name}}",
+    "megapixels": "≥ {{mp}} MP",
+    "date": {
+      "last30": "最近 30 天",
+      "last12m": "最近 12 个月",
+      "range": "{{from}} – {{to}}",
+      "from": "自 {{date}} 起",
+      "until": "截至 {{date}}"
+    }
+  }
+}

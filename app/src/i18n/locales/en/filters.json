@@ -1,0 +1,24 @@
+{
+  "orientation": {
+    "landscape": "Landscape",
+    "portrait": "Portrait",
+    "square": "Square"
+  },
+  "duplicates": {
+    "exact": "Exact copies",
+    "visual": "Visual duplicates"
+  },
+  "chip": {
+    "videosOnly": "Videos only",
+    "imagesOnly": "Images only",
+    "folder": "Folder: {{name}}",
+    "megapixels": "≥ {{mp}} MP",
+    "date": {
+      "last30": "Last 30 days",
+      "last12m": "Last 12 months",
+      "range": "{{from}} – {{to}}",
+      "from": "From {{date}}",
+      "until": "Until {{date}}"
+    }
+  }
+}
