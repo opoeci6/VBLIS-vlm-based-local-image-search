@@ -64,4 +64,24 @@ describe('AppHeader', () => {
     fireEvent.click(screen.getByLabelText('Clear search text'));
     expect(setQuery).toHaveBeenCalledWith('');
   });
+
+  it('passes hasSearchResults and onClearSearch to the search bar', () => {
+    const setQuery = vi.fn();
+    const onClearSearch = vi.fn();
+    renderHeader({ setQuery, onClearSearch, hasSearchResults: true });
+    fireEvent.click(screen.getByLabelText('Clear search text'));
+    expect(onClearSearch).toHaveBeenCalledTimes(1);
+    expect(setQuery).not.toHaveBeenCalled();
+  });
+
+  it('shows no clear button without text or results', () => {
+    renderHeader();
+    expect(screen.queryByLabelText('Clear search text')).toBeNull();
+  });
+
+  it('does not render the browse hint', () => {
+    renderHeader({ showBrowseHint: true });
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Close hint' })).toBeNull();
+  });
 });

@@ -1,0 +1,26 @@
+{
+  "cancel": "取消",
+  "close": "关闭",
+  "retry": "重试",
+  "resume": "继续",
+  "pause": "暂停",
+  "eject": "卸载",
+  "unloading": "正在卸载……",
+  "ejectTooltip": {
+    "indexing": "索引进行中，无法卸载模型",
+    "idle": "卸载模型，释放 GPU 显存"
+  },
+  "showInExplorer": "在资源管理器中显示",
+  "openSettings": "打开设置",
+  "readingMediaDetails": "正在读取媒体详情……",
+  "readDetailsNow": "立即读取详情",
+  "openFileFailed": "无法在资源管理器中打开文件。",
+  "videoFrameAt": "视频中 {{ts}} 处的帧",
+  "itemsProgress_other": "{{x}} / {{count}} 项",
+  "errors": {
+    "fileNoLongerExists": "文件已不存在。",
+    "nothingToCopy": "没有可复制的内容。",
+    "couldNotCopy": "无法复制。",
+    "clipboardUnavailable": "剪贴板不可用。"
+  }
+}

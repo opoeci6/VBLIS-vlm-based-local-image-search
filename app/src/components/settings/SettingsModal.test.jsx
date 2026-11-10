@@ -75,6 +75,7 @@ describe('SettingsModal', () => {
 
     const labels = [
       'UI Theme Style',
+      'Language',
       'Hardware Acceleration & Batching',
       'Model Management',
       'Minimum Match Score',

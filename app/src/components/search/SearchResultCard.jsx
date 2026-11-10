@@ -1,13 +1,18 @@
 import { memo } from 'react';
-import { CheckCircle2, Sparkles, Copy, Video } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { CalendarDays, CheckCircle2, Sparkles, Copy, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
-import { formatVideoTimestamp } from '../../utils/formatters';
+import { formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { API_BASE } from '../../config';
-import { formatScoreLabel } from '../../utils/scoreLabel';
+import { formatScoreLabel, hasScore } from '../../utils/scoreLabel';
 
 export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSelect, uiTheme = 'modern' }) {
+  const { t } = useTranslation('search');
   const isModern = uiTheme === 'modern';
+  const duplicateCount = res.otherPaths ? res.otherPaths.length + 1 : 2;
+  // A library item (no query) has no score: its date taken stands in for it.
+  const takenDate = hasScore(res) ? '' : formatTakenDate(res.taken_at);
 
   return (
     <div
@@ -35,7 +40,7 @@ export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSel
         >
           {res.duplicateType === 'exact' ? <Copy className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
           <span>
-            {res.duplicateType === 'exact' ? 'Exact Copy' : 'Visual Duplicate'} ({res.otherPaths ? res.otherPaths.length + 1 : 2})
+            {res.duplicateType === 'exact' ? t('card.exactCopy', { count: duplicateCount }) : t('card.visualDuplicate', { count: duplicateCount })}
           </span>
         </div>
       )}
@@ -56,7 +61,7 @@ export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSel
 
       <img
         src={getMediaPreviewUrl(API_BASE, res)}
-        alt={res.media_type === 'video' ? `Video frame at ${formatVideoTimestamp(res.timestamp_seconds)}` : 'Result'}
+        alt={res.media_type === 'video' ? t('common:videoFrameAt', { ts: formatVideoTimestamp(res.timestamp_seconds) }) : t('card.resultAlt')}
         className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
         loading="lazy"
       />
@@ -70,10 +75,17 @@ export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSel
         )}
       >
         <div className="translate-y-2 group-hover:translate-y-0 transition-transform duration-300 ease-out">
-          <p className="text-xs font-semibold text-emerald-400 mb-1 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" />
-            {formatScoreLabel(res.score, res.score_kind)}
-          </p>
+          {hasScore(res) ? (
+            <p className="text-xs font-semibold text-emerald-400 mb-1 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" />
+              {formatScoreLabel(res.score, res.score_kind)}
+            </p>
+          ) : takenDate ? (
+            <p className="text-xs font-semibold text-white/90 mb-1 flex items-center gap-1">
+              <CalendarDays className="w-3 h-3" />
+              {takenDate}
+            </p>
+          ) : null}
           <p className="text-xs text-white/90 truncate font-mono" title={res.path}>
             {res.path.split('\\').pop().split('/').pop()}
           </p>

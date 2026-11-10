@@ -1,7 +1,10 @@
 /* global process */
 import { afterEach, describe, expect, it } from 'vitest';
+import i18n from '../i18n';
 import {
   buildFilterChips,
+  getDuplicateLabels,
+  getOrientationLabels,
   buildRequestFilters,
   countActiveFilters,
   countMissingDetails,
@@ -27,6 +30,7 @@ const emptyState = {
   orientations: [],
   formats: [],
   minMegapixels: null,
+  duplicates: [],
 };
 
 describe('folder paths', () => {
@@ -157,6 +161,13 @@ describe('buildRequestFilters', () => {
     expect(countActiveFilters(state)).toBe(6);
   });
 
+  it('sends the duplicate kinds in a fixed order, only when some are chosen', () => {
+    expect(buildRequestFilters({ ...emptyState, duplicates: ['exact'] })).toEqual({ duplicates: ['exact'] });
+    expect(buildRequestFilters({ ...emptyState, duplicates: ['visual', 'exact'] })).toEqual({ duplicates: ['exact', 'visual'] });
+    expect(buildRequestFilters(emptyState)).toBeNull();
+    expect(countActiveFilters({ ...emptyState, duplicates: ['visual', 'exact'] })).toBe(1);
+  });
+
   it('sends only one date end when the other is empty', () => {
     expect(buildRequestFilters({ ...emptyState, datePreset: 'custom', dateFrom: '2024-01-01' }))
       .toEqual({ date_from: '2024-01-01' });
@@ -173,6 +184,7 @@ describe('buildFilterChips', () => {
     removeOrientations: () => {},
     removeFormats: () => {},
     removeMegapixels: () => {},
+    removeDuplicate: () => {},
   };
   const labels = (state) => buildFilterChips({ ...emptyState, ...state }, actions).map(chip => chip.label);
 
@@ -183,6 +195,12 @@ describe('buildFilterChips', () => {
     expect(labels({ orientations: ['square', 'portrait'] })).toEqual(['Portrait, Square']);
     expect(labels({ formats: ['jpeg', 'heic', 'webm'] })).toEqual(['HEIC, JPEG, WebM']);
     expect(labels({ minMegapixels: 12 })).toEqual(['\u2265 12 MP']);
+  });
+
+  it('labels the duplicate kinds, exact first', () => {
+    expect(labels({ duplicates: ['exact'] })).toEqual(['Exact copies']);
+    expect(labels({ duplicates: ['visual'] })).toEqual(['Visual duplicates']);
+    expect(labels({ duplicates: ['visual', 'exact'] })).toEqual(['Exact copies', 'Visual duplicates']);
   });
 
   it('labels the date presets and custom ranges', () => {
@@ -199,8 +217,8 @@ describe('buildFilterChips', () => {
   });
 
   it('gives each chip a unique key', () => {
-    const chips = buildFilterChips({ ...emptyState, mediaType: 'image', folders: ['/a', '/b'], minMegapixels: 2 }, actions);
-    expect(new Set(chips.map(chip => chip.key)).size).toBe(4);
+    const chips = buildFilterChips({ ...emptyState, mediaType: 'image', folders: ['/a', '/b'], minMegapixels: 2, duplicates: ['exact', 'visual'] }, actions);
+    expect(new Set(chips.map(chip => chip.key)).size).toBe(6);
   });
 describe('formats from the backend', () => {
   it('sends any format id, sorted, including ones the app does not know', () => {
@@ -252,4 +270,60 @@ describe('hasDetailsFilter', () => {
     expect(hasDetailsFilter({ min_megapixels: 2 })).toBe(true);
   });
 });
+});
+
+describe('translated labels', () => {
+  it('has label getters for orientations and duplicate kinds', () => {
+    expect(getOrientationLabels()).toEqual({ landscape: 'Landscape', portrait: 'Portrait', square: 'Square' });
+    expect(getDuplicateLabels()).toEqual({ exact: 'Exact copies', visual: 'Visual duplicates' });
+  });
+
+  it('follows the interface language when it changes', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(getOrientationLabels().portrait).toBe('纵向');
+    expect(getDuplicateLabels()).toEqual({ exact: '完全相同的副本', visual: '视觉重复' });
+  });
+
+  it('translates every chip in Chinese', async () => {
+    await i18n.changeLanguage('zh-CN');
+    const state = {
+      mediaType: 'video',
+      folders: ['C:\\Photos\\Trips'],
+      datePreset: 'custom',
+      dateFrom: '2024-01-01',
+      dateTo: '2024-03-31',
+      orientations: ['square'],
+      formats: ['jpeg'],
+      minMegapixels: 12,
+      duplicates: ['exact', 'visual'],
+    };
+    const noop = () => {};
+    const actions = {
+      removeMediaType: noop, removeFolder: noop, removeDate: noop, removeOrientations: noop,
+      removeFormats: noop, removeMegapixels: noop, removeDuplicate: noop,
+    };
+    expect(buildFilterChips(state, actions, undefined).map(chip => chip.label)).toEqual([
+      '仅视频',
+      '文件夹：Trips',
+      '2024-01-01 – 2024-03-31',
+      '正方形',
+      'JPEG',
+      '≥ 12 MP',
+      '完全相同的副本',
+      '视觉重复',
+    ]);
+  });
+
+  it('uses the translator it is given', () => {
+    const t = (key) => `<${key}>`;
+    const state = { mediaType: 'image', folders: [], orientations: [], formats: [], duplicates: ['visual'] };
+    const labels = buildFilterChips(state, {}, undefined, t).map(chip => chip.label);
+    expect(labels).toEqual(['<filters:chip.imagesOnly>', '<filters:duplicates.visual>']);
+  });
+
+  it('keeps a folder name that looks like a nested translation as plain text', () => {
+    const state = { folders: ['/data/$t(common.cancel)'], orientations: [], formats: [], duplicates: [] };
+    expect(buildFilterChips(state, { removeFolder: () => {} }, undefined).map(chip => chip.label))
+      .toEqual(['Folder: $t(common.cancel)']);
+  });
 });

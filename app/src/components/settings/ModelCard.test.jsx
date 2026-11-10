@@ -189,4 +189,18 @@ describe('ModelCard', () => {
       expect(screen.getByTitle('Delete local files')).toBeTruthy();
     });
   });
+
+  describe('CLIP query-language note', () => {
+    const note = 'Use English for best search results';
+
+    it.each(['modern', 'terminal'])('shows the note for CLIP (%s)', (uiTheme) => {
+      renderCard({ m: { id: 'openai/clip-vit-base-patch32', downloaded: true }, uiTheme });
+      expect(screen.getByText(note)).toBeTruthy();
+    });
+
+    it('does not show the note for a SigLIP model', () => {
+      renderCard({ m: { id: 'google/siglip-base-patch16-224', downloaded: true } });
+      expect(screen.queryByText(note)).toBeNull();
+    });
+  });
 });

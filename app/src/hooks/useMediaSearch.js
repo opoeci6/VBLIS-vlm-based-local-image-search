@@ -3,15 +3,43 @@ import { API_BASE } from '../config';
 import { annotateDuplicates, groupVideoResults, getImageResults, countSearchResults } from '../utils/searchResults';
 import { useProgressiveList } from './useProgressiveList';
 import { apiFetch } from '../utils/api';
+import { readJson, writeJson } from '../utils/storage';
+import i18n from '../i18n';
 
 // Wait this long after the last filter change before re-running the current search.
 const FILTER_RERUN_DELAY_MS = 250;
+
+export const SEARCH_TUNING_DEFAULTS = { minScore: 0.10, minSimilarity: 0.70, maxResults: 50 };
+
+const SEARCH_TUNING_KEY = 'search_tuning';
+
+const isNumberInRange = (value, min, max) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+
+// Each saved field is checked on its own against its slider's range; a bad one falls back to its default.
+const loadSearchTuning = () => {
+  const saved = readJson(SEARCH_TUNING_KEY, null);
+  const source = saved && typeof saved === 'object' ? saved : {};
+  const { minScore, minSimilarity, maxResults } = source;
+  return {
+    minScore: isNumberInRange(minScore, 0.01, 0.95) ? minScore : SEARCH_TUNING_DEFAULTS.minScore,
+    minSimilarity: isNumberInRange(minSimilarity, 0.30, 0.95) ? minSimilarity : SEARCH_TUNING_DEFAULTS.minSimilarity,
+    maxResults: isNumberInRange(maxResults, 0, 250) && Number.isInteger(maxResults) && maxResults % 5 === 0
+      ? maxResults
+      : SEARCH_TUNING_DEFAULTS.maxResults,
+  };
+};
 
 const postJson = (path, body) => apiFetch(`${API_BASE}${path}`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body)
 });
+
+// What to tell the user when a text search failed: the backend's own message (English) when it sent
+// one, otherwise a generic sentence.
+const searchFailureMessage = (err) => (
+  typeof err?.detail === 'string' && err.detail ? err.detail : i18n.t('messages:mediaSearch.searchFailed')
+);
 
 // `filters` is the request object from useSearchFilters (null when no filter is active). It is
 // sent with every search and, when it changes, the search behind the current results is re-run.
@@ -21,14 +49,24 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [minScore, setMinScore] = useState(0.10);
-  const [minSimilarity, setMinSimilarity] = useState(0.70);
-  const [maxResults, setMaxResults] = useState(50);
+  // The three search sliders are remembered across restarts.
+  const [savedTuning] = useState(loadSearchTuning);
+  const [minScore, setMinScore] = useState(savedTuning.minScore);
+  const [minSimilarity, setMinSimilarity] = useState(savedTuning.minSimilarity);
+  const [maxResults, setMaxResults] = useState(savedTuning.maxResults);
   const [visibleResultsCount, setVisibleResultsCount] = useState(80);
   const [imageSearchContext, setImageSearchContext] = useState(null);
+  // Sort order of "browse the library" (an empty Search). Not saved across restarts. The ref lets the
+  // stable setBrowseSort see the latest value.
+  const [browseSort, setBrowseSortState] = useState('newest');
+  const browseSortRef = useRef('newest');
+  // The hint under the Library header is closed with its x until the next empty Search starts a browse.
+  const [browseHintDismissed, setBrowseHintDismissed] = useState(false);
+  const rerunBrowseRef = useRef(null);
   // Request body of the last submitted text search, so it can be re-run after the index changes.
   const lastTextSearchBody = useRef(null);
-  // How the current results were produced: { kind: 'text' | 'image', topK, minScore, query, queryRef }.
+  // How the current results were produced: { kind: 'text' | 'image', topK, minScore, query, queryRef },
+  // or { kind: 'browse', sort, total } for the library without a query (it has no limit).
   // Refresh and "find more frames" reuse the minimum that search used, not the slider's current value.
   // Kept in state for rendering and mirrored in a ref so the callbacks below can stay stable.
   const [searchInfo, setSearchInfo] = useState(null);
@@ -59,6 +97,16 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   const rerunForFiltersRef = useRef(null);
   const filterRerunTimer = useRef(null);
 
+  useEffect(() => {
+    writeJson(SEARCH_TUNING_KEY, { minScore, minSimilarity, maxResults });
+  }, [minScore, minSimilarity, maxResults]);
+
+  const resetSearchTuning = useCallback(() => {
+    setMinScore(SEARCH_TUNING_DEFAULTS.minScore);
+    setMinSimilarity(SEARCH_TUNING_DEFAULTS.minSimilarity);
+    setMaxResults(SEARCH_TUNING_DEFAULTS.maxResults);
+  }, []);
+
   const imageResults = useMemo(
     () => getImageResults(results),
     [results]
@@ -82,7 +130,13 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   );
 
   const queryRef = searchInfo?.queryRef ?? null;
-  const canExpandVideos = results.length > 0 && Boolean(queryRef || searchInfo?.query);
+  const isBrowsing = searchInfo?.kind === 'browse';
+  const browseTotal = isBrowsing ? searchInfo.total : null;
+  const showBrowseHint = isBrowsing && !browseHintDismissed;
+  // A browse has no query to find more frames for.
+  const canExpandVideos = !isBrowsing && results.length > 0 && Boolean(queryRef || searchInfo?.query);
+
+  const dismissBrowseHint = useCallback(() => setBrowseHintDismissed(true), []);
 
   // Forget everything tied to the current results (expansions, in-flight requests, query ref).
   const resetSearchState = () => {
@@ -153,26 +207,100 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   }, [cancelFilterRerun]);
 
   // Posts a text search with the current filters. Returns false when a newer search made the
-  // response stale and it was dropped.
+  // response stale and it was dropped. Throws on an HTTP error (with `detail`, the backend's
+  // message, when it sent one), so the caller can say what failed.
   const postTextSearch = async (body, seq) => {
     const res = await postJson('/search', withCurrentFilters(body));
+    if (seq !== searchSeq.current) return false;
+    if (!res.ok) {
+      const failure = await res.json().catch(() => null);
+      const error = new Error(`Search failed with HTTP ${res.status}`);
+      error.detail = failure?.detail;
+      throw error;
+    }
     const data = await res.json();
     if (seq !== searchSeq.current) return false;
     applyResults(data, { kind: 'text', topK: body.top_k, minScore: body.min_score, query: body.query }, seq);
     return true;
   };
 
+  // Posts /browse (the library without a query) with the current filters and applies the response.
+  // Returns false when a newer request made the response stale and it was dropped. Throws on an
+  // HTTP error, so the caller can say what failed.
+  // The library is never limited: Max Results does not apply, so the request has no top_k.
+  const postBrowse = async (sort, seq) => {
+    const res = await postJson('/browse', withCurrentFilters({ sort }));
+    if (seq !== searchSeq.current) return false;
+    if (!res.ok) throw new Error(`Browse failed with HTTP ${res.status}`);
+    const data = await res.json();
+    if (seq !== searchSeq.current) return false;
+    const total = typeof data.total === 'number' ? data.total : countSearchResults(data.results);
+    applyResults(data, { kind: 'browse', sort, total }, seq);
+    return true;
+  };
+
+  // Repeat the browse behind the current results (new sort, refresh or filter change).
+  // `onFailure` runs when the request failed and no newer request has taken over.
+  const rerunBrowse = async (sort, { onFailure, sameSearch = true, resetVisible = false }) => {
+    const seq = beginSearch(sameSearch);
+    setIsSearching(true);
+    try {
+      if (await postBrowse(sort, seq) && resetVisible) setVisibleResultsCount(80);
+    } catch (err) {
+      console.error(err);
+      if (seq === searchSeq.current) onFailure();
+    } finally {
+      settleSearch(seq);
+    }
+  };
+
+  // Restores the sort toggle when changing the sort failed, so it matches the results again.
+  const rerunBrowseWithSort = (sort, previousSort) => rerunBrowse(sort, {
+    resetVisible: true,
+    onFailure: () => {
+      browseSortRef.current = previousSort;
+      setBrowseSortState(previousSort);
+      setToastRef.current({ message: i18n.t('messages:mediaSearch.sortChangeFailed'), type: 'error' });
+    }
+  });
+  rerunBrowseRef.current = rerunBrowseWithSort;
+
+  // Stable. Changing the sort re-runs the browse behind the current results; otherwise it only
+  // sets the order the next empty Search will use.
+  const setBrowseSort = useCallback((next) => {
+    if ((next !== 'newest' && next !== 'oldest') || next === browseSortRef.current) return;
+    const previous = browseSortRef.current;
+    browseSortRef.current = next;
+    setBrowseSortState(next);
+    const info = searchInfoRef.current;
+    if (info?.kind === 'browse' && hasSearchedRef.current) rerunBrowseRef.current?.(next, previous);
+  }, []);
+
+  // An empty Search shows the library, newest or oldest first, instead of doing nothing.
+  const startBrowse = async () => {
+    onSearchStart?.();
+    const seq = beginSearch();
+    setIsSearching(true);
+    setHasSearched(true);
+    setImageSearchContext(null);
+    setVisibleResultsCount(80);
+    setBrowseHintDismissed(false);
+    setQuery('');
+    lastTextSearchBody.current = null;
+    try {
+      if (await postBrowse(browseSort, seq)) setShowSearchResults(true);
+    } catch (err) {
+      console.error(err);
+      if (seq === searchSeq.current) setToast({ message: i18n.t('messages:mediaSearch.libraryLoadFailed'), type: 'error' });
+    } finally {
+      settleSearch(seq);
+    }
+  };
+
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) {
-      if (hasSearched && !imageSearchContext) {
-        lastTextSearchBody.current = null;
-        cancelPendingSearches();
-        resetSearchState();
-        setResults([]);
-        setHasSearched(false);
-        setQuery('');
-      }
+      await startBrowse();
       return;
     }
 
@@ -188,6 +316,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       if (await postTextSearch(body, seq)) setShowSearchResults(true);
     } catch (err) {
       console.error(err);
+      if (seq === searchSeq.current) setToast({ message: searchFailureMessage(err), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -195,7 +324,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
 
   const handleImageDrop = async (file) => {
     if (!file.type.startsWith('image/')) {
-      setToast({ message: "Please drop an image file.", type: 'error' });
+      setToast({ message: i18n.t('messages:mediaSearch.dropImage'), type: 'error' });
       return;
     }
 
@@ -229,10 +358,10 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       if (seq !== searchSeq.current) return;
       applyResults(data, { kind: 'image', topK, minScore: imageMinScore }, seq);
       setShowSearchResults(true);
-      setToast({ message: `Found ${countSearchResults(data.results)} similar media result(s).`, type: 'success' });
+      setToast({ message: i18n.t('messages:mediaSearch.foundSimilar', { count: countSearchResults(data.results) }), type: 'success' });
     } catch (err) {
       console.error(err);
-      if (seq === searchSeq.current) setToast({ message: "Failed to search by image.", type: 'error' });
+      if (seq === searchSeq.current) setToast({ message: i18n.t('messages:mediaSearch.imageSearchFailed'), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -273,6 +402,10 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   // backend's query_ref and are cleared when that has expired.
   const refreshSearch = async () => {
     const info = searchInfoRef.current;
+    if (hasSearched && info?.kind === 'browse') {
+      await rerunBrowse(info.sort, { sameSearch: false, onFailure: clearResults });
+      return;
+    }
     if (hasSearched && imageSearchContext && info?.kind === 'image' && info.queryRef) {
       const seq = beginSearch();
       setIsSearching(true);
@@ -307,6 +440,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       await postTextSearch(body, seq);
     } catch (err) {
       console.error(err);
+      if (seq === searchSeq.current) setToastRef.current({ message: searchFailureMessage(err), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -318,6 +452,12 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   const rerunForFilters = async () => {
     const info = searchInfoRef.current;
     if (!info || !hasSearchedRef.current) return;
+    if (info.kind === 'browse') {
+      await rerunBrowse(info.sort, {
+        onFailure: () => setToastRef.current({ message: i18n.t('messages:mediaSearch.filtersFailed'), type: 'error' })
+      });
+      return;
+    }
     const base = { kind: info.kind, topK: info.topK, minScore: info.minScore, query: info.query, queryRef: info.queryRef };
     if (base.kind === 'image' && !base.queryRef) {
       // The uploaded image is not kept, so without a reference the search cannot be repeated.
@@ -342,7 +482,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
         if (seq !== searchSeq.current) return;
       }
       if (!res.ok) {
-        setToastRef.current({ message: 'Failed to apply the filters.', type: 'error' });
+        setToastRef.current({ message: i18n.t('messages:mediaSearch.filtersFailed'), type: 'error' });
         return;
       }
       const data = await res.json();
@@ -352,7 +492,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       applyResults(data, nextInfo, seq);
     } catch (err) {
       console.error(err);
-      if (seq === searchSeq.current) setToastRef.current({ message: 'Failed to apply the filters.', type: 'error' });
+      if (seq === searchSeq.current) setToastRef.current({ message: i18n.t('messages:mediaSearch.filtersFailed'), type: 'error' });
     } finally {
       settleSearch(seq);
     }
@@ -395,7 +535,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   // handful of frames per video; this asks the backend for all frames above the search's minimum.
   const expandVideo = useCallback(async (path) => {
     const info = searchInfoRef.current;
-    if (!info || !path) return;
+    if (!info || info.kind === 'browse' || !path) return;
     const flight = expandInFlight.current;
     if (flight.has(path)) return;
     flight.add(path);
@@ -414,14 +554,14 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
         body: JSON.stringify(body)
       });
       if (res.status === 410) {
-        failure = 'This search has expired. Please search again.';
+        failure = i18n.t('messages:mediaSearch.searchExpired');
       } else if (!res.ok) {
-        failure = 'Failed to load more frames.';
+        failure = i18n.t('messages:mediaSearch.moreFramesFailed');
       } else {
         const data = await res.json();
         if (generation.current !== startedGeneration) return;
         if (!data.frames || data.frames.length === 0) {
-          failure = 'This video is no longer available.';
+          failure = i18n.t('messages:mediaSearch.videoUnavailable');
         } else {
           setExpandedFramesByPath(prev => ({
             ...prev,
@@ -431,7 +571,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
       }
     } catch (err) {
       console.error(err);
-      failure = 'Failed to load more frames.';
+      failure = i18n.t('messages:mediaSearch.moreFramesFailed');
     } finally {
       flight.delete(path);
       if (generation.current === startedGeneration) {
@@ -456,6 +596,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     setMinSimilarity,
     maxResults,
     setMaxResults,
+    resetSearchTuning,
     visibleResultsCount,
     setVisibleResultsCount,
     imageSearchContext,
@@ -466,6 +607,12 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     expandVideo,
     expandingVideoPath,
     canExpandVideos,
+    browseSort,
+    setBrowseSort,
+    isBrowsing,
+    browseTotal,
+    showBrowseHint,
+    dismissBrowseHint,
     sentinelRef,
     sentinelTerminalRef,
     handleSearch,

@@ -58,6 +58,54 @@ describe('SearchBar', () => {
     expect(document.activeElement).toBe(searchInputRef.current);
   });
 
+  describe('clear button with a search behind the box', () => {
+    it('is hidden with no text and no results', () => {
+      renderBar({ hasSearchResults: false });
+      expect(screen.queryByLabelText('Clear search text')).toBeNull();
+    });
+
+    it('shows with text only, and a click clears just the text and refocuses', () => {
+      const setQuery = vi.fn();
+      const onClearSearch = vi.fn();
+      const { searchInputRef } = renderBar({ setQuery, onClearSearch, query: 'dog' });
+      fireEvent.click(screen.getByLabelText('Clear search text'));
+      expect(setQuery).toHaveBeenCalledWith('');
+      expect(onClearSearch).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(searchInputRef.current);
+    });
+
+    it('shows with results and an empty box, and a click clears the search and refocuses', () => {
+      const setQuery = vi.fn();
+      const onClearSearch = vi.fn();
+      const { searchInputRef } = renderBar({ setQuery, onClearSearch, query: '', hasSearchResults: true });
+      fireEvent.click(screen.getByLabelText('Clear search text'));
+      expect(onClearSearch).toHaveBeenCalledTimes(1);
+      expect(setQuery).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(searchInputRef.current);
+    });
+
+    it('clears the search, not just the text, when there is both text and results', () => {
+      const setQuery = vi.fn();
+      const onClearSearch = vi.fn();
+      renderBar({ setQuery, onClearSearch, query: 'cats', hasSearchResults: true });
+      fireEvent.click(screen.getByLabelText('Clear search text'));
+      expect(onClearSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the input focused by preventing the default of mousedown', () => {
+      renderBar({ query: 'dog' });
+      const notPrevented = fireEvent.mouseDown(screen.getByLabelText('Clear search text'));
+      expect(notPrevented).toBe(false);
+    });
+
+    it('falls back to clearing the text when no onClearSearch is given', () => {
+      const setQuery = vi.fn();
+      renderBar({ setQuery, query: 'dog', hasSearchResults: true });
+      fireEvent.click(screen.getByLabelText('Clear search text'));
+      expect(setQuery).toHaveBeenCalledWith('');
+    });
+  });
+
   it('shows a spinner instead of the search icon while searching', () => {
     const { container } = renderBar({ isSearching: true });
     expect(container.querySelector('.animate-spin')).toBeTruthy();

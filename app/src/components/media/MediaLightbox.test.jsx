@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MediaLightbox } from './MediaLightbox';
+import { formatTakenDate } from '../../utils/formatters';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -133,9 +134,48 @@ describe('MediaLightbox', () => {
     });
   });
 
+  describe('copy path', () => {
+    it.each(['modern', 'terminal'])('copies the path and confirms with a toast (%s theme)', async (uiTheme) => {
+      window.electronAPI = { copyText: vi.fn().mockResolvedValue({ success: true }) };
+      const { props } = renderLightbox(imageResult(), { uiTheme });
+      fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+      await waitFor(() => expect(props.setToast).toHaveBeenCalledWith({ message: 'Path copied', type: 'success' }));
+      expect(window.electronAPI.copyText).toHaveBeenCalledWith('/pics/a.jpg');
+    });
+
+    it('shows an error toast when the copy fails', async () => {
+      window.electronAPI = { copyText: vi.fn().mockResolvedValue({ success: false, error: 'Nothing to copy.' }) };
+      const { props } = renderLightbox(imageResult());
+      fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+      await waitFor(() => expect(props.setToast).toHaveBeenCalledWith({ message: 'Nothing to copy.', type: 'error' }));
+    });
+
+    it('does not close the lightbox', async () => {
+      window.electronAPI = { copyText: vi.fn().mockResolvedValue({ success: true }) };
+      const { props } = renderLightbox(imageResult());
+      fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
+      await waitFor(() => expect(props.setToast).toHaveBeenCalled());
+      expect(props.setSelectedImage).not.toHaveBeenCalled();
+    });
+  });
+
   describe('closing', () => {
     it('closes on a backdrop click', () => {
       const { props, container } = renderLightbox(imageResult());
+      fireEvent.click(container.firstChild);
+      expect(props.setSelectedImage).toHaveBeenCalledWith(null);
+    });
+
+    it('stays open when a drag from the path text ends on the backdrop', () => {
+      const { props, container } = renderLightbox(imageResult());
+      fireEvent.mouseDown(screen.getByText('/pics/a.jpg'));
+      fireEvent.click(container.firstChild);
+      expect(props.setSelectedImage).not.toHaveBeenCalled();
+    });
+
+    it('closes on a press and release on the backdrop', () => {
+      const { props, container } = renderLightbox(imageResult());
+      fireEvent.mouseDown(container.firstChild);
       fireEvent.click(container.firstChild);
       expect(props.setSelectedImage).toHaveBeenCalledWith(null);
     });
@@ -148,8 +188,40 @@ describe('MediaLightbox', () => {
 
     it('closes with the close button', () => {
       const { props } = renderLightbox(imageResult());
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
       expect(props.setSelectedImage).toHaveBeenCalledWith(null);
     });
+  });
+});
+
+describe('MediaLightbox for an item without a score (library view)', () => {
+  afterEach(cleanup);
+
+  const libraryItem = (extra = {}) => imageResult({ score: null, score_kind: 'none', taken_at: '2024-03-12T10:00:00', ...extra });
+
+  it('shows the date taken and no match score', () => {
+    renderLightbox(libraryItem());
+    expect(screen.getByText(`Taken ${formatTakenDate('2024-03-12T10:00:00')}`)).toBeTruthy();
+    expect(screen.queryByText(/Match Score|Similarity/)).toBeNull();
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it('shows neither a score nor a date when the date is unknown', () => {
+    renderLightbox(libraryItem({ taken_at: null }));
+    expect(screen.queryByText(/Taken/)).toBeNull();
+    expect(screen.queryByText(/Match Score|Similarity/)).toBeNull();
+    expect(screen.getByText('/pics/a.jpg')).toBeTruthy();
+  });
+
+  it('shows the date for a video frame too', () => {
+    renderLightbox(libraryItem({ media_type: 'video', timestamp_seconds: 65 }));
+    expect(screen.getByText(`Taken ${formatTakenDate('2024-03-12T10:00:00')}`)).toBeTruthy();
+    expect(screen.getByText(/Video frame at 1:05/)).toBeTruthy();
+  });
+
+  it('keeps the name and size branch of the folder explorer', () => {
+    renderLightbox({ path: '/pics/a.jpg', name: 'a.jpg', size: 1536, media_type: 'image', isBrowsing: true, taken_at: '2024-03-12T10:00:00' });
+    expect(screen.getByText('a.jpg')).toBeTruthy();
+    expect(screen.queryByText(/Taken/)).toBeNull();
   });
 });

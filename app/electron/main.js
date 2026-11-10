@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, session, clipboard } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -387,6 +387,15 @@ app.whenReady().then(async () => {
     } else {
       return { success: false, error: 'File no longer exists.' };
     }
+  });
+
+  // The session denies the web clipboard permission, so the renderer copies through here
+  handleTrusted('clipboard:writeText', (event, text) => {
+    if (typeof text !== 'string' || text.length === 0 || text.length > 32768) {
+      return { success: false, error: 'Nothing to copy.' };
+    }
+    clipboard.writeText(text);
+    return { success: true };
   });
 
   handleTrusted('fs:isDirectory', (event, filePath) => {

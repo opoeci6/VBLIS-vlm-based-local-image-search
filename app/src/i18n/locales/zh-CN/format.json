@@ -1,0 +1,25 @@
+{
+  "duration": {
+    "zero": "0 秒",
+    "calculating": "正在计算……",
+    "hms": "{{h}} 小时 {{m}} 分 {{s}} 秒",
+    "ms": "{{m}} 分 {{s}} 秒",
+    "s": "{{s}} 秒"
+  },
+  "timeAgo": {
+    "justNow": "刚刚",
+    "minutes": "{{n}} 分钟前",
+    "hours": "{{n}} 小时前",
+    "days": "{{n}} 天前"
+  },
+  "score": {
+    "label": {
+      "match": "匹配度 {{percent}}",
+      "similar": "相似度 {{percent}}"
+    },
+    "labelUpper": {
+      "match": "匹配度 {{percent}}",
+      "similar": "相似度 {{percent}}"
+    }
+  }
+}

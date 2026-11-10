@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { VideoFrameCard } from './VideoFrameCard';
+import { formatTakenDate } from '../../utils/formatters';
 
 const API = 'http://127.0.0.1:8000';
 const frame = { path: '/v/clip.mp4', media_type: 'video', score: 0.8, timestamp_seconds: 65 };
@@ -49,5 +50,25 @@ describe('VideoFrameCard', () => {
     fireEvent.error(screen.getByAltText('Video frame at 1:05'));
     expect(screen.queryByAltText('Video frame at 1:05')).toBeNull();
     expect(screen.getAllByText('1:05').length).toBeGreaterThan(0);
+  });
+});
+
+describe('VideoFrameCard without a score (library view)', () => {
+  afterEach(cleanup);
+
+  const libraryFrame = { ...frame, score: null, score_kind: 'none', taken_at: '2024-03-12T10:00:00' };
+
+  it('shows the date taken in place of the score', () => {
+    render(<VideoFrameCard frame={libraryFrame} index={0} onSelect={() => {}} />);
+    expect(screen.getByText('FRAME 1')).toBeTruthy();
+    expect(screen.getByText(formatTakenDate('2024-03-12T10:00:00'))).toBeTruthy();
+    expect(screen.queryByText(/%/)).toBeNull();
+  });
+
+  it('shows nothing there when the date is unknown', () => {
+    render(<VideoFrameCard frame={{ ...libraryFrame, taken_at: null }} index={0} onSelect={() => {}} />);
+    expect(screen.getByText('FRAME 1')).toBeTruthy();
+    expect(screen.queryByText(/%/)).toBeNull();
+    expect(screen.queryByText(/MATCH|SIMILAR/)).toBeNull();
   });
 });

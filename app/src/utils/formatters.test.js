@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../i18n';
 import {
   formatBytes,
   formatDuration,
+  formatNumber,
+  formatTakenDate,
   formatTimeAgo,
   formatVideoTimestamp,
 } from './formatters';
@@ -163,5 +166,93 @@ describe('formatTimeAgo', () => {
     atNow();
     expect(formatTimeAgo(nowSec - 86400)).toBe('1d ago');
     expect(formatTimeAgo(nowSec - 3 * 86400 - 5)).toBe('3d ago');
+  });
+});
+
+describe('formatTakenDate', () => {
+  // The interface language decides the format, not the Windows regional settings. Tests run in English.
+  const expected = (year, monthIndex, day) => new Date(year, monthIndex, day)
+    .toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' });
+
+  it('formats the date part as a short local date', () => {
+    const text = formatTakenDate('2024-03-12T15:45:10');
+    expect(text).toBe(expected(2024, 2, 12));
+    expect(text).toContain('2024');
+  });
+
+  it('does not shift a time at midnight or just before it to another day', () => {
+    expect(formatTakenDate('2024-03-12T00:00:00')).toBe(expected(2024, 2, 12));
+    expect(formatTakenDate('2024-03-12T23:59:59')).toBe(expected(2024, 2, 12));
+    expect(formatTakenDate('2023-12-31T23:59:59')).toBe(expected(2023, 11, 31));
+    expect(formatTakenDate('2024-01-01T00:00:00')).toBe(expected(2024, 0, 1));
+  });
+
+  it('accepts a bare date', () => {
+    expect(formatTakenDate('2024-03-12')).toBe(expected(2024, 2, 12));
+  });
+
+  it('writes English dates the US way', () => {
+    expect(formatTakenDate('2024-03-12T15:45:10')).toBe('Mar 12, 2024');
+  });
+
+  it('follows the interface language', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatTakenDate('2024-03-12T15:45:10')).toBe(
+      new Date(2024, 2, 12).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }),
+    );
+    expect(formatTakenDate('2024-03-12T15:45:10')).not.toBe('Mar 12, 2024');
+    expect(formatTakenDate('2024-03-12T15:45:10')).toContain('2024');
+  });
+
+  it('returns an empty string for null, undefined and non-strings', () => {
+    expect(formatTakenDate(null)).toBe('');
+    expect(formatTakenDate(undefined)).toBe('');
+    expect(formatTakenDate(1710000000)).toBe('');
+  });
+
+  it('returns an empty string for text that is not a date', () => {
+    expect(formatTakenDate('')).toBe('');
+    expect(formatTakenDate('yesterday')).toBe('');
+    expect(formatTakenDate('2024-13-01T00:00:00')).toBe('');
+    expect(formatTakenDate('2024-02-30T00:00:00')).toBe('');
+    expect(formatTakenDate('2024-3-12')).toBe('');
+  });
+});
+
+describe('formatNumber', () => {
+  it('groups digits in English', () => {
+    expect(formatNumber(1234567)).toBe('1,234,567');
+    expect(formatNumber(0)).toBe('0');
+  });
+
+  it('follows the interface language', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatNumber(1234567)).toBe(new Intl.NumberFormat('zh-CN').format(1234567));
+  });
+});
+
+describe('formatters in Chinese', () => {
+  it('translates durations', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatDuration(0)).toBe('0 秒');
+    expect(formatDuration(Infinity)).toBe('正在计算……');
+    expect(formatDuration(45)).toBe('45 秒');
+    expect(formatDuration(125)).toBe('2 分 5 秒');
+    expect(formatDuration(3725)).toBe('1 小时 2 分 5 秒');
+  });
+
+  it('translates relative times', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2024-03-12T12:00:00Z'));
+      const now = Date.now() / 1000;
+      await i18n.changeLanguage('zh-CN');
+      expect(formatTimeAgo(now - 5)).toBe('刚刚');
+      expect(formatTimeAgo(now - 5 * 60)).toBe('5 分钟前');
+      expect(formatTimeAgo(now - 3 * 3600)).toBe('3 小时前');
+      expect(formatTimeAgo(now - 2 * 86400)).toBe('2 天前');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

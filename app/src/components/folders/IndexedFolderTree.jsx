@@ -10,6 +10,7 @@ import {
   ImageIcon,
   Eye
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { SubfolderTreeNode } from './SubfolderTreeNode';
 import { buildSubfolderTree } from '../../utils/folderTree';
 
@@ -23,6 +24,7 @@ export const IndexedFolderTree = ({
   isIndexing = false,
   uiTheme = 'modern'
 }) => {
+  const { t } = useTranslation('folders');
   // By default, expand all root folders with subfolders if there are 4 or fewer root folders
   const [expandedRoots, setExpandedRoots] = useState(() => {
     const initial = {};
@@ -89,12 +91,12 @@ export const IndexedFolderTree = ({
         const rootTooltip = hasSubfolders
           ? isExpanded
             ? folder.exists
-              ? `Click to view media in ${folder.name}`
-              : `${folder.name} is missing or inaccessible on disk`
-            : `Click to expand ${folder.name}`
+              ? t('tree.clickToViewMedia', { name: folder.name })
+              : t('tree.missingOrInaccessible', { name: folder.name })
+            : t('tree.clickToExpand', { name: folder.name })
           : folder.exists
-          ? `Click to view media in ${folder.name}`
-          : `${folder.name} is missing or inaccessible on disk`;
+          ? t('tree.clickToViewMedia', { name: folder.name })
+          : t('tree.missingOrInaccessible', { name: folder.name });
 
         const rootCursorClass = hasSubfolders || folder.exists ? 'cursor-pointer' : 'cursor-not-allowed opacity-90';
 
@@ -131,7 +133,7 @@ export const IndexedFolderTree = ({
                         ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 text-indigo-600 dark:text-indigo-400'
                         : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
                     }`}
-                    title={isRootSelected ? 'Deselect folder' : 'Select folder and subfolders'}
+                    title={isRootSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
                   >
                     {isIndeterminate ? (
                       <div className="w-2.5 h-0.5 bg-current rounded-full" />
@@ -159,7 +161,7 @@ export const IndexedFolderTree = ({
                         toggleExpand(folder.path);
                       }}
                       className="p-1 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors shrink-0 cursor-pointer"
-                      title={isExpanded ? 'Collapse subfolders' : 'Expand subfolders'}
+                      title={isExpanded ? t('tree.collapseSubfolders') : t('tree.expandSubfolders')}
                     >
                       {isExpanded ? (
                         <ChevronDown className="w-4 h-4 text-indigo-500" />
@@ -204,7 +206,7 @@ export const IndexedFolderTree = ({
 
                       {!folder.exists && (
                         <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">
-                          Missing
+                          {t('tree.missing')}
                         </span>
                       )}
 
@@ -218,7 +220,7 @@ export const IndexedFolderTree = ({
                           }}
                           className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-500/20 transition-colors cursor-pointer"
                         >
-                          {folder.subfolder_count} subfolder{folder.subfolder_count > 1 ? 's' : ''}
+                          {t('tree.subfolders', { count: folder.subfolder_count })}
                         </button>
                       )}
 
@@ -233,15 +235,15 @@ export const IndexedFolderTree = ({
                             }
                             title={
                               folder.total_disk_image_count && folder.total_disk_image_count > folder.image_count
-                                ? `${folder.image_count} of ${folder.total_disk_image_count} images indexed in this folder tree (${folder.total_disk_image_count - folder.image_count} unindexed)`
-                                : `${folder.image_count} total images indexed across this folder tree`
+                                ? t('tree.imagesPartialTree', { indexed: folder.image_count, total: folder.total_disk_image_count, unindexed: folder.total_disk_image_count - folder.image_count })
+                                : t('tree.imagesTotalTree', { count: folder.image_count })
                             }
                           >
                             <ImageIcon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                             <span>
                               {folder.total_disk_image_count && folder.total_disk_image_count > folder.image_count
-                                ? `${folder.image_count}/${folder.total_disk_image_count} imgs`
-                                : `${folder.image_count} img${folder.image_count > 1 ? 's' : ''}`}
+                                ? t('tree.imgsOfDisk', { indexed: folder.image_count, total: folder.total_disk_image_count })
+                                : t('tree.imgs', { count: folder.image_count })}
                             </span>
                           </span>
                         )}
@@ -255,15 +257,15 @@ export const IndexedFolderTree = ({
                             }
                             title={
                               folder.total_disk_video_count && folder.total_disk_video_count > folder.video_count
-                                ? `${folder.video_count} of ${folder.total_disk_video_count} videos indexed in this folder tree (${folder.total_disk_video_count - folder.video_count} unindexed)`
-                                : `${folder.video_count} total videos indexed across this folder tree`
+                                ? t('tree.videosPartialTree', { indexed: folder.video_count, total: folder.total_disk_video_count, unindexed: folder.total_disk_video_count - folder.video_count })
+                                : t('tree.videosTotalTree', { count: folder.video_count })
                             }
                           >
                             <Video className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
                             <span>
                               {folder.total_disk_video_count && folder.total_disk_video_count > folder.video_count
-                                ? `${folder.video_count}/${folder.total_disk_video_count} vids`
-                                : `${folder.video_count} vid${folder.video_count > 1 ? 's' : ''}`}
+                                ? t('tree.vidsOfDisk', { indexed: folder.video_count, total: folder.total_disk_video_count })
+                                : t('tree.vids', { count: folder.video_count })}
                             </span>
                           </span>
                         )}
@@ -289,7 +291,7 @@ export const IndexedFolderTree = ({
                     }}
                     disabled={!folder.exists}
                     className="p-1.5 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                    title={folder.exists ? "View media gallery & contents" : "Folder is missing or inaccessible on disk"}
+                    title={folder.exists ? t('tree.viewGallery') : t('tree.folderMissingOrInaccessible')}
                   >
                     <Eye className="w-4 h-4" />
                   </button>
@@ -303,7 +305,7 @@ export const IndexedFolderTree = ({
                     }}
                     disabled={isIndexing}
                     className="p-1.5 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
-                    title={folder.exists ? "Re-sync entire folder tree" : "Re-sync folder (e.g. reconnect USB drive)"}
+                    title={folder.exists ? t('tree.resyncRoot') : t('tree.resyncRootMissing')}
                   >
                     <RefreshCw className="w-4 h-4" />
                   </button>
@@ -316,7 +318,7 @@ export const IndexedFolderTree = ({
                     }}
                     disabled={isIndexing}
                     className="p-1.5 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
-                    title="Delete entire folder tree from index"
+                    title={t('tree.deleteRoot')}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

@@ -1,6 +1,9 @@
 import io
-from typing import Optional
+import math
+from typing import Literal, Optional
+import numpy as np
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile, File
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 import app_state
 import security
@@ -10,6 +13,22 @@ from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY
 from search_session import SearchSessionExpired
 
 router = APIRouter()
+
+def _json_native(value):
+    """`value` with numpy scalars turned into Python numbers and NaN / infinity into None: the search routes
+    answer with a JSONResponse (no jsonable_encoder pass over thousands of results), which refuses both."""
+    if isinstance(value, dict):
+        return {k: _json_native(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_native(v) for v in value]
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+def _json_response(payload):
+    return JSONResponse(content=_json_native(payload))
 
 class SearchQuery(BaseModel):
     query: str
@@ -22,6 +41,11 @@ class SearchRefQuery(BaseModel):
     top_k: int = 50
     # No default: whether it is a match probability or a cosine similarity depends on the query behind the ref
     min_score: float = Field(..., ge=0.0, le=1.0)
+    filters: Optional[SearchFilters] = None
+
+class BrowseQuery(BaseModel):
+    sort: Literal["newest", "oldest"] = "newest"
+    top_k: Optional[int] = Field(None, ge=1)  # None: the whole library
     filters: Optional[SearchFilters] = None
 
 class SearchVideoQuery(BaseModel):
@@ -39,11 +63,11 @@ class SearchVideoQuery(BaseModel):
 @router.post("/search")
 def search_images(req: SearchQuery):
     if not req.query.strip():
-        return {"results": [], "query_ref": None}
+        return _json_response({"results": [], "query_ref": None})
 
     try:
         # The indexer already skips files that no longer exist on disk
-        return app_state.indexer.run_text_search(req.query, req.top_k, req.min_score, filters=req.filters)
+        return _json_response(app_state.indexer.run_text_search(req.query, req.top_k, req.min_score, filters=req.filters))
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
     except Exception as e:
@@ -65,7 +89,7 @@ def search_images_by_file(file: UploadFile = File(...), top_k: int = 50,
     try:
         contents = file.file.read()
         img = open_image_upright(io.BytesIO(contents))[0]
-        return app_state.indexer.run_image_search(img, top_k, min_score, filters=parsed_filters)
+        return _json_response(app_state.indexer.run_image_search(img, top_k, min_score, filters=parsed_filters))
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
     except Exception as e:
@@ -74,7 +98,7 @@ def search_images_by_file(file: UploadFile = File(...), top_k: int = 50,
 @router.post("/search/ref")
 def search_again_by_ref(req: SearchRefQuery):
     try:
-        return app_state.indexer.rerun_search(req.query_ref, req.top_k, req.min_score, filters=req.filters)
+        return _json_response(app_state.indexer.rerun_search(req.query_ref, req.top_k, req.min_score, filters=req.filters))
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
     except Exception as e:
@@ -93,5 +117,12 @@ def search_video_frames(req: SearchVideoQuery):
         return app_state.indexer.expand_video(req.path, req.min_score, req.query_ref, req.query)
     except SearchSessionExpired as e:
         raise HTTPException(status_code=410, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/browse")
+def browse_library(req: BrowseQuery):
+    try:
+        return _json_response(app_state.indexer.browse_library(filters=req.filters, sort=req.sort, top_k=req.top_k))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

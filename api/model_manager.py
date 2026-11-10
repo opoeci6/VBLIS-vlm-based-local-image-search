@@ -586,6 +586,14 @@ class ModelManager:
         embedding = self.embed_prepared([prepared])[0]
         return ImageQuery(embedding=embedding, model_id=prepared.model_id)
 
+    @staticmethod
+    def _text_max_length(model) -> Optional[int]:
+        """How many tokens the text tower takes (64 on SigLIP 2, 77 on CLIP), or None when the model doesn't say."""
+        config = getattr(model, "config", None)
+        text_config = getattr(config, "text_config", config)
+        positions = getattr(text_config, "max_position_embeddings", None)
+        return positions if isinstance(positions, int) else None
+
     def get_text_embedding(self, text: str) -> list[float]:
         return self.embed_text_query(text).embedding
 
@@ -603,7 +611,16 @@ class ModelManager:
             raise RuntimeError("Model not loaded. Please select and download a model first.")
 
         # SigLIP was trained on lowercase text and its tokenizer does not lowercase (CLIP's does)
-        inputs = processor(text=text.lower(), return_tensors="pt", padding="max_length")
+        # Long queries are cut at the text tower's limit: without an explicit length only the naflex processors
+        # truncate, and the other models raise past it (32 Chinese characters are enough on CLIP)
+        max_length = self._text_max_length(model)
+        inputs = processor(
+            text=text.lower(),
+            return_tensors="pt",
+            padding="max_length",
+            truncation=max_length is not None,
+            max_length=max_length,
+        )
         
         model_device = next(model.parameters()).device
         inputs = {k: v.to(model_device) for k, v in inputs.items()}

@@ -124,6 +124,15 @@ describe('TerminalResultsModal', () => {
     expect(props.handleCloseSearchResults).toHaveBeenCalledTimes(2);
   });
 
+  it('stays open when a drag from inside the panel ends on the backdrop', () => {
+    const props = makeProps();
+    const { container } = render(<TerminalResultsModal {...props} />);
+
+    fireEvent.mouseDown(screen.getByText('Search Results'));
+    fireEvent.click(container.firstChild);
+    expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+  });
+
   it('loads more results and attaches the terminal sentinel', () => {
     const props = makeProps({ imageResults: makeImages(100), visibleResultsCount: 80 });
     render(<TerminalResultsModal {...props} />);
@@ -191,5 +200,106 @@ describe('TerminalResultsModal', () => {
       expect(props.onToggleFilters).toHaveBeenCalledTimes(1);
       expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('TerminalResultsModal while browsing the library', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const browseProps = (overrides = {}) => makeProps({
+    query: '',
+    isBrowsing: true,
+    browseSort: 'newest',
+    browseTotal: 1234,
+    onBrowseSortChange: vi.fn(),
+    ...overrides,
+  });
+
+  it('titles the console Library with the sort in the line under it', () => {
+    const { rerender } = render(<TerminalResultsModal {...browseProps()} />);
+    expect(screen.getByRole('heading', { name: 'Library' })).toBeTruthy();
+    expect(screen.getByText('BROWSING · NEWEST FIRST')).toBeTruthy();
+    expect(screen.queryByText(/QUERY:/)).toBeNull();
+    expect(screen.queryByText('Search Results')).toBeNull();
+
+    rerender(<TerminalResultsModal {...browseProps({ browseSort: 'oldest' })} />);
+    expect(screen.getByText('BROWSING · OLDEST FIRST')).toBeTruthy();
+  });
+
+  it('shows "N ITEMS" with the browse total', () => {
+    render(<TerminalResultsModal {...browseProps({ imageResults: makeImages(3), videoGroups: [makeGroup('a.mp4', 3)] })} />);
+    expect(screen.getByText('1234 ITEMS')).toBeTruthy();
+    expect(screen.queryByText(/MATCH/)).toBeNull();
+    expect(screen.queryByText(/ OF /)).toBeNull();
+  });
+
+  it('falls back to the number of items without a total, and says ITEM for one', () => {
+    const { rerender } = render(<TerminalResultsModal {...browseProps({ browseTotal: null, imageResults: makeImages(3), videoGroups: [makeGroup('a.mp4', 3)] })} />);
+    expect(screen.getByText('4 ITEMS')).toBeTruthy();
+    rerender(<TerminalResultsModal {...browseProps({ browseTotal: 1, imageResults: makeImages(1) })} />);
+    expect(screen.getByText('1 ITEM')).toBeTruthy();
+  });
+
+  describe('the browse hint', () => {
+    it('shows under the console header and above the results, with the new text, and dismisses', () => {
+      const onDismissBrowseHint = vi.fn();
+      render(<TerminalResultsModal {...browseProps({ showBrowseHint: true, onDismissBrowseHint })} />);
+      const hint = screen.getByRole('status');
+      expect(hint.textContent).toContain('Currently browsing your library. Type a search to find something specific.');
+      const heading = screen.getByRole('heading', { name: 'Library' });
+      expect(heading.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const firstCard = screen.getAllByAltText('Result')[0];
+      expect(hint.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Close hint' }));
+      expect(onDismissBrowseHint).toHaveBeenCalledTimes(1);
+    });
+
+    it('is above the filter chips', () => {
+      const filterChips = [{ key: 'media', label: 'Images only', onRemove: vi.fn() }];
+      render(<TerminalResultsModal {...browseProps({ showBrowseHint: true, filterChips, onClearFilters: vi.fn() })} />);
+      const hint = screen.getByRole('status');
+      const chip = screen.getByText('Images only');
+      expect(hint.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('is not shown when showBrowseHint is false or outside the library', () => {
+      const { rerender } = render(<TerminalResultsModal {...browseProps({ showBrowseHint: false })} />);
+      expect(screen.queryByRole('status')).toBeNull();
+      rerender(<TerminalResultsModal {...makeProps({ showBrowseHint: true })} />);
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+  });
+
+  it('has the two-button sort toggle in the header', () => {
+    const props = browseProps({ browseSort: 'oldest' });
+    render(<TerminalResultsModal {...props} />);
+    expect(screen.getByRole('button', { name: 'Oldest first' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Newest first' }).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Newest first' }));
+    expect(props.onBrowseSortChange).toHaveBeenCalledWith('newest');
+  });
+
+  it('says how the sections are sorted and names them Videos and Images', () => {
+    const { rerender } = render(<TerminalResultsModal {...browseProps({ videoGroups: [makeGroup('a.mp4')] })} />);
+    expect(screen.getByText('NEWEST FIRST')).toBeTruthy();
+    expect(screen.queryByText('SORTED BY BEST MATCH')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Videos' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Images' })).toBeTruthy();
+
+    rerender(<TerminalResultsModal {...browseProps({ videoGroups: [makeGroup('a.mp4')], browseSort: 'oldest' })} />);
+    expect(screen.getByText('OLDEST FIRST')).toBeTruthy();
+  });
+
+  it('has no toggle and keeps the search wording when not browsing', () => {
+    render(<TerminalResultsModal {...makeProps({ videoGroups: [makeGroup('a.mp4')] })} />);
+    expect(screen.queryByRole('button', { name: 'Newest first' })).toBeNull();
+    expect(screen.getByText('SORTED BY BEST MATCH')).toBeTruthy();
   });
 });

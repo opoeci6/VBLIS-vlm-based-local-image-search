@@ -219,6 +219,51 @@ describe('useModelManager', () => {
     });
   });
 
+  describe('handleUpdatePerformanceSettings', () => {
+    const newGpu = { use_gpu: true, batch_size: 0, precision_mode: 'auto' };
+
+    it('applies the new settings and toasts success', async () => {
+      setupFetch({ [`POST ${API}/settings/gpu`]: async () => ({ ok: true, json: async () => newGpu }) });
+      const { result, setToast } = render();
+      await flush();
+
+      await act(async () => { await result.current.handleToggleGpu(); });
+
+      expect(result.current.gpuSettings).toEqual(newGpu);
+      expect(setToast).toHaveBeenCalledWith({ message: 'Performance settings updated.', type: 'success' });
+      expect(result.current.isSwitchingGpu).toBe(false);
+    });
+
+    it('toasts the backend detail and keeps the settings when the backend answers with an error', async () => {
+      setupFetch({
+        [`POST ${API}/settings/gpu`]: async () => ({ ok: false, status: 500, json: async () => ({ detail: 'CUDA out of memory' }) }),
+      });
+      const { result, setToast } = render();
+      await flush();
+
+      await act(async () => { await result.current.handleToggleGpu(); });
+
+      expect(setToast).toHaveBeenCalledTimes(1);
+      expect(setToast).toHaveBeenCalledWith({ message: 'CUDA out of memory', type: 'error' });
+      expect(result.current.gpuSettings).toEqual(gpuPayload);
+      expect(result.current.isSwitchingGpu).toBe(false);
+    });
+
+    it('toasts a generic error when the error response has no detail', async () => {
+      setupFetch({
+        [`POST ${API}/settings/gpu`]: async () => ({ ok: false, status: 500, json: async () => { throw new SyntaxError('not json'); } }),
+      });
+      const { result, setToast } = render();
+      await flush();
+
+      await act(async () => { await result.current.handleToggleGpu(); });
+
+      expect(setToast).toHaveBeenCalledTimes(1);
+      expect(setToast).toHaveBeenCalledWith({ message: 'Failed to update settings.', type: 'error' });
+      expect(result.current.gpuSettings).toEqual(gpuPayload);
+    });
+  });
+
   describe('download completion toast', () => {
     it('toasts success when is_downloading goes true -> false with bytes and no error', async () => {
       setupFetch();

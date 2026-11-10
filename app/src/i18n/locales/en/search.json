@@ -1,0 +1,90 @@
+{
+  "browse": {
+    "hint": {
+      "text": "Currently browsing your library. Type a search to find something specific.",
+      "close": "Close hint"
+    },
+    "sort": {
+      "label": "Sort order",
+      "newest": "Newest first",
+      "oldest": "Oldest first"
+    }
+  },
+  "imageSearch": {
+    "label": "Visual Search",
+    "clear": "Clear visual search"
+  },
+  "results": {
+    "library": "Library",
+    "searchResults": "Search Results",
+    "videos": "Videos",
+    "videoResults": "Video Results",
+    "images": "Images",
+    "imageResults": "Image Results"
+  },
+  "card": {
+    "exactCopy_one": "Exact Copy ({{count}})",
+    "exactCopy_other": "Exact Copy ({{count}})",
+    "visualDuplicate_one": "Visual Duplicate ({{count}})",
+    "visualDuplicate_other": "Visual Duplicate ({{count}})",
+    "resultAlt": "Result"
+  },
+  "grid": {
+    "itemCount_one": "{{count}} item",
+    "itemCount_other": "{{count}} items",
+    "sortedByBestMatch": "Sorted by best match",
+    "loadingMore": "Loading more results ({{shown}} of {{total}})",
+    "showingItems": "Showing {{shown}} of {{total}} items",
+    "showingMatches": "Showing {{shown}} of {{total}} matches"
+  },
+  "terminal": {
+    "oldestFirst": "OLDEST FIRST",
+    "newestFirst": "NEWEST FIRST",
+    "browsingOldest": "BROWSING · OLDEST FIRST",
+    "browsingNewest": "BROWSING · NEWEST FIRST",
+    "image": "IMAGE: {{context}}",
+    "query": "QUERY: {{query}}",
+    "items_one": "{{count}} ITEM",
+    "items_other": "{{count}} ITEMS",
+    "matches_one": "{{count}} MATCH",
+    "matches_other": "{{count}} MATCHES",
+    "close": "Close search results",
+    "sortedByBestMatch": "SORTED BY BEST MATCH",
+    "loadMore": "LOAD MORE ({{shown}} OF {{total}})"
+  },
+  "frameCard": {
+    "frame": "FRAME {{n}}"
+  },
+  "videoGroup": {
+    "matchingOf": "{{shown}} MATCHING OF {{total}}",
+    "returnedFrames_one": "{{count}} RETURNED FRAME",
+    "returnedFrames_other": "{{count}} RETURNED FRAMES",
+    "bestSimilarity": "BEST SIMILARITY {{percent}}",
+    "bestMatch": "BEST MATCH {{percent}}",
+    "findingFrames": "Finding frames…",
+    "findMoreFrames": "Find more frames",
+    "unavailable": "This video has been moved or deleted and is no longer available.",
+    "close": "Close video results"
+  },
+  "videoFolder": {
+    "bestFrameAlt": "Best matching frame from {{name}}",
+    "badge": "VIDEO",
+    "best": "BEST {{percent}}",
+    "matchingFrames_one": "{{count}} matching frame",
+    "matchingFrames_other": "{{count}} matching frames",
+    "returnedFrames_one": "{{count}} returned frame",
+    "returnedFrames_other": "{{count}} returned frames",
+    "frames_one": "{{count}} frame",
+    "frames_other": "{{count}} frames"
+  },
+  "header": {
+    "activeModelTitle": "Active Vision Engine: {{model}} (Click to manage models)",
+    "noModelTitle": "No model currently loaded into memory. Click to select and activate a model in Settings.",
+    "noModel": "No Model Loaded"
+  },
+  "searchBar": {
+    "placeholder": "Search images (e.g. 'golden retriever')...",
+    "clear": "Clear search text",
+    "submit": "Search"
+  }
+}

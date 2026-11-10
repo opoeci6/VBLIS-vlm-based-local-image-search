@@ -75,8 +75,8 @@ const foldersPayload = {
 
 const searchPayload = {
   results: [
-    { path: '/photos/cat.jpg', media_type: 'image', score: 0.91, hash: 'h1', embedding: [1, 0] },
-    { path: '/photos/dog.jpg', media_type: 'image', score: 0.8, hash: 'h2', embedding: [0, 1] },
+    { path: '/photos/cat.jpg', media_type: 'image', score: 0.91, hash: 'h1' },
+    { path: '/photos/dog.jpg', media_type: 'image', score: 0.8, hash: 'h2' },
   ],
 };
 

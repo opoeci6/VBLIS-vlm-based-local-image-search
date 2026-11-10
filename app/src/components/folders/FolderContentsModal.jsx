@@ -1,15 +1,20 @@
 import { memo } from 'react';
 import { FolderOpen, Loader2, AlertTriangle, X, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { FolderContentRow } from './FolderContentRow';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { cn } from '../../utils/cn';
 
 export const FolderContentsModal = memo(function FolderContentsModal({ showFolderContents, browsingFolder, folderContents, isFetchingFolderContents, isCleaningGhostRecords, setIsCleaningGhostRecords, folderVisibleLimit, setFolderVisibleLimit, handleCloseFolderContents, handleReindexFolder, setSelectedImage, setToast, uiTheme }) {
+  const { t } = useTranslation('folders');
+  const backdropDismiss = useBackdropDismiss(handleCloseFolderContents);
+
   if (!(showFolderContents && browsingFolder)) return null;
 
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
-      onClick={handleCloseFolderContents}
+      {...backdropDismiss}
     >
       <div
         className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl w-[820px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
@@ -22,7 +27,7 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
                 <FolderOpen className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">Folder Contents</h2>
+                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">{t('modal.title')}</h2>
                 <p className="text-xs text-neutral-500 font-mono truncate mt-1" title={browsingFolder.path}>
                   {browsingFolder.path}
                 </p>
@@ -40,25 +45,25 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
         {folderContents && (
           <div className="px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2 bg-gray-50/40 dark:bg-neutral-800/20">
             <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold">
-              {folderContents.image_count} images
+              {t('modal.images', { count: folderContents.image_count })}
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-xs font-bold">
-              {folderContents.video_count} videos
+              {t('modal.videos', { count: folderContents.video_count })}
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-200/60 dark:border-emerald-500/30 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              {folderContents.indexed_count || 0} indexed
+              {t('modal.indexed', { count: folderContents.indexed_count || 0 })}
             </span>
             {(folderContents.unindexed_count > 0) && (
               <span className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-200/60 dark:border-amber-500/30">
-                {folderContents.unindexed_count} unindexed
+                {t('modal.unindexed', { count: folderContents.unindexed_count })}
               </span>
             )}
             {(folderContents.missing_on_disk_count > 0) && (
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 text-xs font-bold border border-rose-200/60 dark:border-rose-500/30 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 text-rose-500" />
-                  {folderContents.missing_on_disk_count} missing from disk
+                  {t('modal.missingFromDisk', { count: folderContents.missing_on_disk_count })}
                 </span>
                 <button
                   type="button"
@@ -72,15 +77,15 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
                     }
                   }}
                   className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                  title="Clean ghost records by re-syncing this folder"
+                  title={t('modal.cleanTooltip')}
                 >
                   <RefreshCw className={cn("w-3 h-3", isCleaningGhostRecords && "animate-spin")} />
-                  {isCleaningGhostRecords ? "Cleaning..." : "Clean Ghost Records"}
+                  {isCleaningGhostRecords ? t('modal.cleaning') : t('modal.cleanButton')}
                 </button>
               </div>
             )}
             <span className="text-xs text-neutral-500 ml-auto">
-              {folderContents.total_count} total files
+              {t('modal.totalFiles', { count: folderContents.total_count })}
             </span>
           </div>
         )}
@@ -97,19 +102,19 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
           {isFetchingFolderContents ? (
             <div className="flex flex-col items-center justify-center py-24 gap-4">
               <Loader2 className="w-10 h-10 text-cyan-500 animate-spin" />
-              <p className="text-sm text-neutral-500">Scanning folder contents...</p>
+              <p className="text-sm text-neutral-500">{t('modal.scanning')}</p>
             </div>
           ) : !folderContents || folderContents.items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
               <FolderOpen className="w-12 h-12 text-neutral-300 dark:text-neutral-700 mb-4" />
-              <h3 className="text-base font-bold text-neutral-700 dark:text-neutral-300">No supported media found</h3>
-              <p className="text-sm text-neutral-500 mt-2">This folder does not contain supported image or video files.</p>
+              <h3 className="text-base font-bold text-neutral-700 dark:text-neutral-300">{t('modal.empty.title')}</h3>
+              <p className="text-sm text-neutral-500 mt-2">{t('modal.empty.desc')}</p>
             </div>
           ) : (
             <div className="space-y-2">
               {folderContents.truncated && (
                 <div className="p-3 mb-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
-                  Showing the first {folderContents.limit} files. The folder contains more supported media.
+                  {t('modal.truncated', { count: folderContents.limit })}
                 </div>
               )}
 
@@ -129,7 +134,7 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
                         : "border border-white text-white"
                     )}
                   >
-                    Load more ({folderContents.items.length - folderVisibleLimit} remaining)
+                    {t('modal.loadMore', { count: folderContents.items.length - folderVisibleLimit })}
                   </button>
                 </div>
               )}

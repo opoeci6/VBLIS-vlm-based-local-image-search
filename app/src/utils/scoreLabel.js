@@ -1,3 +1,5 @@
+import i18n from '../i18n';
+
 // Shared formatting for search result scores.
 //
 // score_kind is "match" (text search on SigLIP: calibrated match score) or "similarity"
@@ -29,9 +31,19 @@ export const scoreWord = (kind) => (isSimilarityKind(kind) ? 'similar' : 'match'
 
 // "97% Match" / "84% Similar"
 export const formatScoreLabel = (score, kind) => {
-  const word = scoreWord(kind);
-  return `${formatScorePercent(score)} ${word.charAt(0).toUpperCase()}${word.slice(1)}`;
+  const percent = formatScorePercent(score);
+  return isSimilarityKind(kind)
+    ? i18n.t('format:score.label.similar', { percent })
+    : i18n.t('format:score.label.match', { percent });
 };
 
 // "97% MATCH" / "84% SIMILAR"
-export const formatScoreLabelUpper = (score, kind) => `${formatScorePercent(score)} ${scoreWord(kind).toUpperCase()}`;
+export const formatScoreLabelUpper = (score, kind) => {
+  const percent = formatScorePercent(score);
+  return isSimilarityKind(kind)
+    ? i18n.t('format:score.labelUpper.similar', { percent })
+    : i18n.t('format:score.labelUpper.match', { percent });
+};
+
+// True when the item carries a score. Browsing the library gives items score: null, which must not read as "0%".
+export const hasScore = (item) => typeof item?.score === 'number' && Number.isFinite(item.score);

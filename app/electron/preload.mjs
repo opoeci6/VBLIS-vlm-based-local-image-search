@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openInExplorer: (filePath) => ipcRenderer.invoke('shell:openInExplorer', filePath),
   isDirectory: (filePath) => ipcRenderer.invoke('fs:isDirectory', filePath),
   getPathForFile: (file) => webUtils.getPathForFile(file),
+  copyText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),

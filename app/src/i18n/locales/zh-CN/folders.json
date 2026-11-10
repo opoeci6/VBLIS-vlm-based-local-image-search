@@ -1,0 +1,88 @@
+{
+  "previewTooltip": "点击预览 {{name}}",
+  "contentRow": {
+    "missingTooltip": "{{name}} 在磁盘上缺失",
+    "badge": {
+      "missing": "磁盘上缺失",
+      "indexed": "已索引",
+      "notIndexed": "未索引"
+    },
+    "mediaType": {
+      "image": "图片",
+      "video": "视频"
+    },
+    "fileMissing": "文件在磁盘上缺失"
+  },
+  "thumbnail": {
+    "missingTitle": "{{name}} 在磁盘上缺失"
+  },
+  "modal": {
+    "title": "文件夹内容",
+    "images_other": "{{count}} 张图片",
+    "videos_other": "{{count}} 个视频",
+    "indexed_other": "{{count}} 项已索引",
+    "unindexed_other": "{{count}} 项未索引",
+    "missingFromDisk_other": "{{count}} 项在磁盘上缺失",
+    "cleanTooltip": "重新同步此文件夹，以清理残留记录",
+    "cleaning": "正在清理……",
+    "cleanButton": "清理残留记录",
+    "totalFiles_other": "共 {{count}} 个文件",
+    "scanning": "正在扫描文件夹内容……",
+    "empty": {
+      "title": "未找到支持的媒体",
+      "desc": "此文件夹中没有受支持的图片或视频文件。"
+    },
+    "truncated_other": "仅显示前 {{count}} 个文件。该文件夹中还有更多受支持的媒体。",
+    "loadMore_other": "加载更多（剩余 {{count}} 项）"
+  },
+  "panel": {
+    "title": "已索引的文件夹",
+    "hintExpanded": "浏览、重新同步或从当前模型的索引中移除文件夹。",
+    "hintCollapsed": "点击查看和管理已索引的文件夹",
+    "addFolders": "添加文件夹",
+    "collapse": "折叠文件夹",
+    "expand": "展开文件夹",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "selected_other": "已选择 {{count}} 项",
+    "reindex": "重新索引",
+    "delete": "删除",
+    "batchHint": "选择文件夹以进行批量操作",
+    "fetching": "正在获取文件夹……",
+    "empty": {
+      "title": "未选择文件夹",
+      "desc": "添加文件夹后，将为图片建立索引，并每隔两秒对视频采样一帧。"
+    }
+  },
+  "tree": {
+    "clickToViewMedia": "点击查看 {{name}} 中的媒体",
+    "missingOrInaccessible": "{{name}} 在磁盘上缺失或无法访问",
+    "clickToExpand": "点击展开 {{name}}",
+    "deselectFolder": "取消选择文件夹",
+    "selectFolderAndSubfolders": "选择文件夹及其子文件夹",
+    "collapseSubfolders": "折叠子文件夹",
+    "expandSubfolders": "展开子文件夹",
+    "missing": "缺失",
+    "subfolders_other": "{{count}} 个子文件夹",
+    "imgs_other": "{{count}} 张图片",
+    "vids_other": "{{count}} 个视频",
+    "imgsOfDisk": "{{indexed}}/{{total}} 张图片",
+    "vidsOfDisk": "{{indexed}}/{{total}} 个视频",
+    "imagesPartialTree": "此文件夹树中已索引 {{indexed}} / {{total}} 张图片（{{unindexed}} 张未索引）",
+    "videosPartialTree": "此文件夹树中已索引 {{indexed}} / {{total}} 个视频（{{unindexed}} 个未索引）",
+    "imagesTotalTree_other": "此文件夹树中共已索引 {{count}} 张图片",
+    "videosTotalTree_other": "此文件夹树中共已索引 {{count}} 个视频",
+    "imagesPartialFolder": "此文件夹中已索引 {{indexed}} / {{total}} 张图片（{{unindexed}} 张未索引）",
+    "videosPartialFolder": "此文件夹中已索引 {{indexed}} / {{total}} 个视频（{{unindexed}} 个未索引）",
+    "imagesTotalFolder_other": "此文件夹中已索引 {{count}} 张图片",
+    "videosTotalFolder_other": "此文件夹中已索引 {{count}} 个视频",
+    "viewGallery": "查看媒体图库及内容",
+    "folderMissingOrInaccessible": "文件夹在磁盘上缺失或无法访问",
+    "resyncRoot": "重新同步整个文件夹树",
+    "resyncRootMissing": "重新同步文件夹（例如重新连接 USB 驱动器）",
+    "deleteRoot": "从索引中删除整个文件夹树",
+    "resyncSub": "仅重新同步此子文件夹",
+    "resyncSubMissing": "重新同步子文件夹（例如重新连接 USB 驱动器）",
+    "deleteSub": "仅从索引中删除此子文件夹"
+  }
+}

@@ -1,16 +1,20 @@
 import { useEffect, useRef } from 'react';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../../utils/cn';
+import { formatNumber } from '../../../utils/formatters';
 import {
+  DUPLICATE_KINDS,
   MEGAPIXEL_CHOICES,
   ORIENTATIONS,
-  ORIENTATION_LABELS,
-  formatLabel
+  formatLabel,
+  getDuplicateLabels,
+  getOrientationLabels
 } from '../../../utils/searchFilters';
 import { FilterToggle } from './FilterToggle';
 import { FolderFilterTree } from './FolderFilterTree';
 
-const formatCount = (value) => Number(value || 0).toLocaleString('en-US');
+const formatCount = (value) => formatNumber(Number(value || 0));
 
 const Section = ({ title, children }) => (
   <section aria-label={title} className="mb-5">
@@ -21,10 +25,8 @@ const Section = ({ title, children }) => (
 
 const dateInputClass = 'rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs text-neutral-900 dark:text-neutral-100';
 
-const FORMAT_GROUPS = [
-  { kind: 'image', title: 'Images' },
-  { kind: 'video', title: 'Videos' },
-];
+// Media kinds that get their own group in the Format section; every other format goes under "Other".
+const FORMAT_KINDS = ['image', 'video'];
 
 // Formats to offer: exactly the ones in the index, named and counted by the backend. A selected
 // format that is not (or not yet) in the list stays visible so it can be removed.
@@ -44,11 +46,12 @@ function listFormats(options, selected) {
 }
 
 function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsFilterActive, scanActive, missingDetails }) {
+  const { t } = useTranslation('filters');
   if (scanActive) {
     return (
       <div data-testid="filters-coverage" data-warning="false" className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
         <Loader2 className="w-3.5 h-3.5 flex-shrink-0 animate-spin" aria-hidden="true" />
-        <span>Reading media details...</span>
+        <span>{t('common:readingMediaDetails')}</span>
       </div>
     );
   }
@@ -57,11 +60,11 @@ function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsF
       return (
         <p className="text-xs text-rose-600 dark:text-rose-400">
           {optionsError}{' '}
-          <button type="button" onClick={loadOptions} className="underline cursor-pointer">Retry</button>
+          <button type="button" onClick={loadOptions} className="underline cursor-pointer">{t('common:retry')}</button>
         </p>
       );
     }
-    return optionsLoading ? <p className="text-xs text-neutral-500 dark:text-neutral-400">Loading filter options...</p> : null;
+    return optionsLoading ? <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('coverage.loadingOptions')}</p> : null;
   }
 
   const registryAvailable = options.registry_available !== false;
@@ -71,7 +74,7 @@ function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsF
   // Files in unplugged folders also lack details, but the line above already says so; the warning
   // is for files whose details could be read (or for a registry that is not available at all).
   const warn = detailsFilterActive && (!registryAvailable || missingDetails > 0);
-  const unavailableNote = unavailable > 0 ? ` (${formatCount(unavailable)} in folders that aren't connected)` : '';
+  const detailsParams = { count: Number(totalFiles), withDetails: formatCount(withDetails), total: formatCount(totalFiles), unavailable: formatCount(unavailable) };
 
   return (
     <div
@@ -88,16 +91,16 @@ function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsF
         {warn && <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />}
         <span>
           {registryAvailable
-            ? `Media details for ${formatCount(withDetails)} of ${formatCount(totalFiles)} files${unavailableNote}`
-            : 'Media details are unavailable'}
+            ? (unavailable > 0 ? t('coverage.detailsWithUnavailable', detailsParams) : t('coverage.details', detailsParams))
+            : t('coverage.unavailable')}
         </span>
       </p>
       {missingDetails > 0 ? (
         <p className="mt-1">
-          {`${formatCount(missingDetails)} files have no media details yet. Date, orientation and resolution filters skip them until their details are read. That reads file headers only; no re-indexing.`}
+          {t('coverage.missing', { count: Number(missingDetails), formatted: formatCount(missingDetails) })}
         </p>
       ) : (
-        warn && <p className="mt-1">Files without details are hidden by the date, orientation and resolution filters.</p>
+        warn && <p className="mt-1">{t('coverage.hidden')}</p>
       )}
     </div>
   );
@@ -106,6 +109,7 @@ function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsF
 // Floating panel under the header with every search filter. Rendered once by App; the Filters
 // button toggles it. It does not trap focus, and closes on Escape or a click outside it.
 export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
+  const { t } = useTranslation('filters');
   const panelRef = useRef(null);
   const { isOpen, close } = filters;
 
@@ -134,6 +138,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
     datePreset, dateFrom, dateTo, setDatePreset, setCustomDate,
     orientations, toggleOrientation, formats, toggleFormat,
     minMegapixels, setMinMegapixels,
+    duplicates, toggleDuplicate,
     activeCount, clearAll,
     options, optionsLoading, optionsError, loadOptions, readDetailsNow, isStartingScan,
     scanActive, missingDetails, detailsFilterActive
@@ -141,55 +146,58 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
 
   const formatEntries = listFormats(options, formats);
   const years = options?.years || [];
+  const orientationLabels = getOrientationLabels(t);
+  const duplicateLabels = getDuplicateLabels(t);
+  const formatTitles = { image: t('format.images'), video: t('format.videos'), other: t('format.other') };
 
   return (
     <div
       ref={panelRef}
       role="dialog"
       aria-modal="false"
-      aria-label="Search filters"
+      aria-label={t('panel.label')}
       className="fixed z-[60] top-24 left-1/2 -translate-x-1/2 w-[min(42rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto custom-scrollbar rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 shadow-2xl text-neutral-900 dark:text-neutral-100 animate-in fade-in duration-150"
     >
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-bold">Filters</h2>
+        <h2 className="text-base font-bold">{t('panel.title')}</h2>
         <button
           type="button"
           onClick={close}
-          aria-label="Close filters"
+          aria-label={t('panel.close')}
           className="p-1.5 rounded-lg text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      <Section title="Type">
+      <Section title={t('sections.type')}>
         <div className="flex flex-wrap gap-2">
-          <FilterToggle pressed={!mediaType} onClick={() => setMediaType(null)}>All</FilterToggle>
-          <FilterToggle pressed={mediaType === 'image'} onClick={() => setMediaType('image')}>Images</FilterToggle>
-          <FilterToggle pressed={mediaType === 'video'} onClick={() => setMediaType('video')}>Videos</FilterToggle>
+          <FilterToggle pressed={!mediaType} onClick={() => setMediaType(null)}>{t('type.all')}</FilterToggle>
+          <FilterToggle pressed={mediaType === 'image'} onClick={() => setMediaType('image')}>{t('type.images')}</FilterToggle>
+          <FilterToggle pressed={mediaType === 'video'} onClick={() => setMediaType('video')}>{t('type.videos')}</FilterToggle>
         </div>
       </Section>
 
-      <Section title="Folders">
+      <Section title={t('sections.folders')}>
         <FolderFilterTree indexedFolders={indexedFolders} selected={folders} onToggle={toggleFolder} />
       </Section>
 
-      <Section title="Date taken">
+      <Section title={t('sections.dateTaken')}>
         <div className="flex flex-wrap gap-2">
-          <FilterToggle pressed={!datePreset} onClick={() => setDatePreset(null)}>Any</FilterToggle>
-          <FilterToggle pressed={datePreset === 'last30'} onClick={() => setDatePreset('last30')}>Last 30 days</FilterToggle>
-          <FilterToggle pressed={datePreset === 'last12m'} onClick={() => setDatePreset('last12m')}>Last 12 months</FilterToggle>
+          <FilterToggle pressed={!datePreset} onClick={() => setDatePreset(null)}>{t('date.any')}</FilterToggle>
+          <FilterToggle pressed={datePreset === 'last30'} onClick={() => setDatePreset('last30')}>{t('date.last30')}</FilterToggle>
+          <FilterToggle pressed={datePreset === 'last12m'} onClick={() => setDatePreset('last12m')}>{t('date.last12m')}</FilterToggle>
           {years.map(({ year, count }) => (
             <FilterToggle key={year} pressed={datePreset === `year:${year}`} onClick={() => setDatePreset(`year:${year}`)}>
-              {year} ({formatCount(count)})
+              {t('date.yearCount', { year, n: formatCount(count) })}
             </FilterToggle>
           ))}
-          <FilterToggle pressed={datePreset === 'custom'} onClick={() => setDatePreset('custom')}>Custom...</FilterToggle>
+          <FilterToggle pressed={datePreset === 'custom'} onClick={() => setDatePreset('custom')}>{t('date.custom')}</FilterToggle>
         </div>
         {datePreset === 'custom' && (
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
             <label className="flex items-center gap-2">
-              <span>From</span>
+              <span>{t('date.from')}</span>
               <input
                 type="date"
                 value={dateFrom ?? ''}
@@ -198,7 +206,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
               />
             </label>
             <label className="flex items-center gap-2">
-              <span>To</span>
+              <span>{t('date.to')}</span>
               <input
                 type="date"
                 value={dateTo ?? ''}
@@ -210,27 +218,28 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
         )}
       </Section>
 
-      <Section title="Orientation">
+      <Section title={t('sections.orientation')}>
         <div className="flex flex-wrap gap-2">
           {ORIENTATIONS.map(id => (
             <FilterToggle key={id} pressed={orientations.includes(id)} onClick={() => toggleOrientation(id)}>
-              {ORIENTATION_LABELS[id]}
+              {orientationLabels[id]}
             </FilterToggle>
           ))}
         </div>
       </Section>
 
-      <Section title="Format">
-        {[...FORMAT_GROUPS, { kind: null, title: 'Other' }].map(({ kind, title }) => {
-          const entries = formatEntries.filter(entry => (kind ? entry.mediaType === kind : !FORMAT_GROUPS.some(group => group.kind === entry.mediaType)));
+      <Section title={t('sections.format')}>
+        {[...FORMAT_KINDS, null].map(kind => {
+          const title = formatTitles[kind ?? 'other'];
+          const entries = formatEntries.filter(entry => (kind ? entry.mediaType === kind : !FORMAT_KINDS.includes(entry.mediaType)));
           if (entries.length === 0) return null;
           return (
-            <div key={title} className="mb-2 last:mb-0">
+            <div key={kind ?? 'other'} className="mb-2 last:mb-0">
               <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">{title}</p>
               <div className="flex flex-wrap gap-2">
                 {entries.map(entry => (
                   <FilterToggle key={entry.id} pressed={formats.includes(entry.id)} onClick={() => toggleFormat(entry.id)}>
-                    {entry.label}{entry.count != null ? ` (${formatCount(entry.count)})` : ''}
+                    {entry.count != null ? t('format.withCount', { label: entry.label, n: formatCount(entry.count) }) : entry.label}
                   </FilterToggle>
                 ))}
               </div>
@@ -238,19 +247,35 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
           );
         })}
         {!options && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{optionsError ? 'Formats unavailable' : 'Loading formats...'}</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{optionsError ? t('format.unavailable') : t('format.loading')}</p>
         )}
         {options && formatEntries.length === 0 && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">No formats found</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('format.none')}</p>
         )}
       </Section>
 
-      <Section title="Minimum resolution">
+      <Section title={t('sections.duplicates')}>
         <div className="flex flex-wrap gap-2">
-          <FilterToggle pressed={!minMegapixels} onClick={() => setMinMegapixels(null)}>Any</FilterToggle>
+          {DUPLICATE_KINDS.map(kind => {
+            const count = options?.duplicates?.[kind];
+            return (
+              <FilterToggle key={kind} pressed={duplicates.includes(kind)} onClick={() => toggleDuplicate(kind)}>
+                {typeof count === 'number' ? t('duplicates.withCount', { label: duplicateLabels[kind], n: formatCount(count) }) : duplicateLabels[kind]}
+              </FilterToggle>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+          {t('duplicates.note')}
+        </p>
+      </Section>
+
+      <Section title={t('sections.minResolution')}>
+        <div className="flex flex-wrap gap-2">
+          <FilterToggle pressed={!minMegapixels} onClick={() => setMinMegapixels(null)}>{t('resolution.any')}</FilterToggle>
           {MEGAPIXEL_CHOICES.map(value => (
             <FilterToggle key={value} pressed={minMegapixels === value} onClick={() => setMinMegapixels(value)}>
-              {value} MP
+              {t('resolution.megapixels', { mp: value })}
             </FilterToggle>
           ))}
         </div>
@@ -279,7 +304,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
                   : 'border-gray-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800'
               )}
             >
-              Read details now
+              {t('common:readDetailsNow')}
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -289,14 +314,14 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
               disabled={activeCount === 0}
               className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
             >
-              Clear all
+              {t('panel.clearAll')}
             </button>
             <button
               type="button"
               onClick={close}
               className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
             >
-              Done
+              {t('panel.done')}
             </button>
           </div>
         </div>

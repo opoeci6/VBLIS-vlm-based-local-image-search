@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config';
 import { apiFetch } from '../utils/api';
+import i18n from '../i18n';
 
 export const useCacheStats = ({ isSettingsOpen, status, setToast }) => {
   const [isClearingThumbnails, setIsClearingThumbnails] = useState(false);
@@ -32,15 +33,19 @@ export const useCacheStats = ({ isSettingsOpen, status, setToast }) => {
       });
       const data = await res.json();
       if (res.ok) {
-        const label = target === 'all' ? 'All' : target === 'images' ? 'Image' : 'Video';
-        setToast({ message: `${label} thumbnail cache cleared successfully.`, type: 'success' });
+        const message = target === 'all'
+          ? i18n.t('messages:cacheStats.cleared.all')
+          : target === 'images'
+            ? i18n.t('messages:cacheStats.cleared.images')
+            : i18n.t('messages:cacheStats.cleared.videos');
+        setToast({ message, type: 'success' });
         fetchCacheStats();
       } else {
-        setToast({ message: data.detail || 'Failed to clear thumbnail cache.', type: 'error' });
+        setToast({ message: data.detail || i18n.t('messages:cacheStats.clearFailed'), type: 'error' });
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Failed to clear thumbnail cache.', type: 'error' });
+      setToast({ message: i18n.t('messages:cacheStats.clearFailed'), type: 'error' });
     } finally {
       setIsClearingThumbnails(false);
       setShowConfirmClearThumbnails(null);
@@ -54,14 +59,14 @@ export const useCacheStats = ({ isSettingsOpen, status, setToast }) => {
       const res = await apiFetch(`${API_BASE}/video/thumbnails/regenerate`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        setToast({ message: 'Video thumbnail rebuilding started in background.', type: 'info' });
+        setToast({ message: i18n.t('messages:cacheStats.rebuildStarted'), type: 'info' });
         fetchCacheStats();
       } else {
-        setToast({ message: data.detail || 'Failed to start video thumbnail rebuilding.', type: 'error' });
+        setToast({ message: data.detail || i18n.t('messages:cacheStats.rebuildFailed'), type: 'error' });
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Failed to connect to backend.', type: 'error' });
+      setToast({ message: i18n.t('messages:cacheStats.connectFailed'), type: 'error' });
     } finally {
       setIsTriggeringRebuildThumbnails(false);
     }

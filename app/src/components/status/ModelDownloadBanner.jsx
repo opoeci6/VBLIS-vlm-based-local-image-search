@@ -1,8 +1,10 @@
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
 import { formatBytes, formatDuration } from '../../utils/formatters';
 
 export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload }) => {
+  const { t } = useTranslation('status');
   if (!(status.is_downloading)) return null;
 
   return (
@@ -13,10 +15,10 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
             <Loader2 className="w-4 h-4 animate-spin" />
             <span>
               {status.is_loading_model
-                ? "Finalizing & Loading AI Vision Engine..."
+                ? t('download.finalizing')
                 : (status.download_total_bytes > 0 && status.download_current_bytes >= status.download_total_bytes)
-                  ? "Verifying & Finalizing download..."
-                  : `Downloading AI Vision Engine: ${pendingModel.split('/').pop()}`}
+                  ? t('download.verifying')
+                  : t('download.downloading', { model: pendingModel.split('/').pop() })}
             </span>
           </span>
           <div className="flex items-center gap-3">
@@ -30,14 +32,14 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
               )}
               disabled={status.cancel_download}
             >
-              {status.cancel_download ? 'Cancelling...' : 'Cancel'}
+              {status.cancel_download ? t('download.cancelling') : t('common:cancel')}
             </button>
             <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
               {status.is_loading_model
                 ? '99%'
                 : status.download_total_bytes > 0
                   ? `${Math.round((status.download_current_bytes / status.download_total_bytes) * 100)}%`
-                  : 'Starting...'}
+                  : t('download.starting')}
             </span>
           </div>
         </div>
@@ -59,17 +61,17 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
           <div className="flex justify-between items-center mt-1">
             <div className="flex gap-4">
               <span className="text-[10px] uppercase tracking-wider font-bold opacity-70">
-                Size: {formatBytes(status.download_current_bytes)} / {formatBytes(status.download_total_bytes)}
+                {t('download.size', { current: formatBytes(status.download_current_bytes), total: formatBytes(status.download_total_bytes) })}
               </span>
               {status.download_current_bytes < status.download_total_bytes && (
                 <span className="text-[10px] uppercase tracking-wider font-bold opacity-70">
-                  Speed: {formatBytes(status.download_speed)}/s
+                  {t('download.speed', { speed: formatBytes(status.download_speed) })}
                 </span>
               )}
             </div>
             {status.download_current_bytes < status.download_total_bytes && (
               <span className="text-[10px] uppercase tracking-wider font-bold opacity-70">
-                ETA: {formatDuration(status.download_eta)}
+                {t('download.eta', { eta: formatDuration(status.download_eta) })}
               </span>
             )}
           </div>
@@ -78,7 +80,7 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
         {status.is_loading_model && (
           <div className="mt-1">
             <p className="text-[10px] uppercase tracking-wider font-bold opacity-70">
-              Warming up tensors in memory...
+              {t('download.warmingUp')}
             </p>
           </div>
         )}

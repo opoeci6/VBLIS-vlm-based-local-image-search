@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { formatNumber } from '../../../utils/formatters';
 import { buildSubfolderTree } from '../../../utils/folderTree';
 import { findSelectedAncestor, isFolderSelected } from '../../../utils/searchFilters';
 import { FilterToggle } from './FilterToggle';
 
-const formatCount = (value) => Number(value || 0).toLocaleString('en-US');
+const formatCount = (value) => formatNumber(Number(value || 0));
 
 // Connected folders first, folders that are missing from disk after them; each group keeps its order.
 const connectedFirst = (items) => [
@@ -13,6 +15,7 @@ const connectedFirst = (items) => [
 ];
 
 const FolderNode = ({ path, name, count, exists, depth, nodes, selected, expanded, onToggle, onToggleExpanded }) => {
+  const { t } = useTranslation('filters');
   const isSelected = isFolderSelected(selected, path);
   // A folder below a selected one is already searched: shown as included, and toggling does nothing.
   const included = !isSelected && Boolean(findSelectedAncestor(selected, path));
@@ -20,6 +23,11 @@ const FolderNode = ({ path, name, count, exists, depth, nodes, selected, expande
   // stays pressed and can still be deselected.
   const missing = exists === false;
   const blocked = included || (missing && !isSelected);
+  // Same red as the folder explorer's missing rows; hover keeps it. A missing row that is still
+  // selected keeps the pressed look and a pointer cursor so it can be deselected.
+  const missingLook = missing && !isSelected
+    ? 'cursor-not-allowed border-rose-200 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/5 hover:bg-rose-50/50 dark:hover:bg-rose-500/5'
+    : '';
   const hasChildren = nodes.length > 0;
   const isExpanded = expanded.has(path);
 
@@ -29,7 +37,7 @@ const FolderNode = ({ path, name, count, exists, depth, nodes, selected, expande
         {hasChildren ? (
           <button
             type="button"
-            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${name}`}
+            aria-label={isExpanded ? t('tree.collapse', { name }) : t('tree.expand', { name })}
             aria-expanded={isExpanded}
             onClick={() => onToggleExpanded(path)}
             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 cursor-pointer"
@@ -43,15 +51,15 @@ const FolderNode = ({ path, name, count, exists, depth, nodes, selected, expande
           pressed={isSelected || included}
           aria-disabled={blocked ? true : undefined}
           onClick={() => { if (!blocked) onToggle(path); }}
-          title={missing ? `${name} is missing or inaccessible on disk` : path}
-          className={`min-w-0 flex-1 justify-between text-left ${blocked ? 'cursor-default' : ''}`}
+          title={missing ? t('tree.missingTitle', { name }) : path}
+          className={`min-w-0 flex-1 justify-between text-left ${included ? 'cursor-default' : ''} ${missingLook}`}
         >
           <span className={`truncate ${missing ? 'text-rose-600 dark:text-rose-400' : ''}`}>{name}</span>
           <span className="flex flex-shrink-0 items-center gap-2 font-normal">
-            {included && <span>(included)</span>}
+            {included && <span>{t('tree.included')}</span>}
             {missing && (
               <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1.5 py-0.5 rounded whitespace-nowrap">
-                Missing
+                {t('tree.missing')}
               </span>
             )}
             <span>{formatCount(count)}</span>
@@ -83,6 +91,7 @@ const FolderNode = ({ path, name, count, exists, depth, nodes, selected, expande
 
 // Indexed folders (roots with their subfolders as an expandable tree) as filter toggles.
 export const FolderFilterTree = ({ indexedFolders, selected, onToggle }) => {
+  const { t } = useTranslation('filters');
   const [expanded, setExpanded] = useState(() => new Set());
   const trees = useMemo(
     () => connectedFirst((indexedFolders || []).map(root => (
@@ -100,7 +109,7 @@ export const FolderFilterTree = ({ indexedFolders, selected, onToggle }) => {
   }, []);
 
   if (trees.length === 0) {
-    return <p className="text-xs text-neutral-500 dark:text-neutral-400">No indexed folders</p>;
+    return <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('tree.empty')}</p>;
   }
 
   return (

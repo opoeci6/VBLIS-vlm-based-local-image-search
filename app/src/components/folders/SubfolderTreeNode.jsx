@@ -9,6 +9,7 @@ import {
   ImageIcon,
   Eye
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Recursive Subfolder Tree Node Component
@@ -27,6 +28,7 @@ export const SubfolderTreeNode = ({
   uiTheme = 'modern',
   rootFolder
 }) => {
+  const { t } = useTranslation('folders');
   const isModern = uiTheme === 'modern';
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = !!expandedNodes[node.path];
@@ -61,12 +63,12 @@ export const SubfolderTreeNode = ({
   const rowTooltip = hasChildren
     ? isExpanded
       ? node.exists
-        ? `Click to view media in ${node.name}`
-        : `${node.name} is missing or inaccessible on disk`
-      : `Click to expand ${node.name}`
+        ? t('tree.clickToViewMedia', { name: node.name })
+        : t('tree.missingOrInaccessible', { name: node.name })
+      : t('tree.clickToExpand', { name: node.name })
     : node.exists
-    ? `Click to view media in ${node.name}`
-    : `${node.name} is missing or inaccessible on disk`;
+    ? t('tree.clickToViewMedia', { name: node.name })
+    : t('tree.missingOrInaccessible', { name: node.name });
 
   const cursorClass = hasChildren || node.exists ? 'cursor-pointer' : 'cursor-not-allowed opacity-90';
 
@@ -101,7 +103,7 @@ export const SubfolderTreeNode = ({
                 ? 'bg-cyan-100 dark:bg-cyan-500/20 border-cyan-400 text-cyan-600 dark:text-cyan-400'
                 : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
             }`}
-            title={isSelected ? 'Deselect folder' : 'Select folder and subfolders'}
+            title={isSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
           >
             {isIndeterminate ? (
               <div className="w-2 h-0.5 bg-current rounded-full" />
@@ -129,7 +131,7 @@ export const SubfolderTreeNode = ({
                 onToggleNodeExpand(node.path);
               }}
               className="p-0.5 text-neutral-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-black/5 dark:hover:bg-white/5 rounded transition-colors shrink-0 cursor-pointer"
-              title={isExpanded ? 'Collapse subfolders' : 'Expand subfolders'}
+              title={isExpanded ? t('tree.collapseSubfolders') : t('tree.expandSubfolders')}
             >
               {isExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
@@ -169,7 +171,7 @@ export const SubfolderTreeNode = ({
 
             {!node.exists && (
               <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-500 bg-rose-500/10 px-1 py-0.2 rounded whitespace-nowrap">
-                Missing
+                {t('tree.missing')}
               </span>
             )}
 
@@ -183,7 +185,7 @@ export const SubfolderTreeNode = ({
                 }}
                 className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-200/60 dark:border-cyan-500/20 transition-colors cursor-pointer"
               >
-                {node.children.length} subfolder{node.children.length > 1 ? 's' : ''}
+                {t('tree.subfolders', { count: node.children.length })}
               </button>
             )}
 
@@ -198,15 +200,15 @@ export const SubfolderTreeNode = ({
                   }
                   title={
                     node.disk_image_count && node.disk_image_count > node.total_image_count
-                      ? `${node.total_image_count} of ${node.disk_image_count} images indexed in this folder (${node.disk_image_count - node.total_image_count} unindexed)`
-                      : `${node.total_image_count} image${node.total_image_count > 1 ? 's' : ''} indexed in this folder`
+                      ? t('tree.imagesPartialFolder', { indexed: node.total_image_count, total: node.disk_image_count, unindexed: node.disk_image_count - node.total_image_count })
+                      : t('tree.imagesTotalFolder', { count: node.total_image_count })
                   }
                 >
                   <ImageIcon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                   <span>
                     {node.disk_image_count && node.disk_image_count > node.total_image_count
-                      ? `${node.total_image_count}/${node.disk_image_count} imgs`
-                      : `${node.total_image_count} img${node.total_image_count > 1 ? 's' : ''}`}
+                      ? t('tree.imgsOfDisk', { indexed: node.total_image_count, total: node.disk_image_count })
+                      : t('tree.imgs', { count: node.total_image_count })}
                   </span>
                 </span>
               )}
@@ -220,15 +222,15 @@ export const SubfolderTreeNode = ({
                   }
                   title={
                     node.disk_video_count && node.disk_video_count > node.total_video_count
-                      ? `${node.total_video_count} of ${node.disk_video_count} videos indexed in this folder (${node.disk_video_count - node.total_video_count} unindexed)`
-                      : `${node.total_video_count} video${node.total_video_count > 1 ? 's' : ''} indexed in this folder`
+                      ? t('tree.videosPartialFolder', { indexed: node.total_video_count, total: node.disk_video_count, unindexed: node.disk_video_count - node.total_video_count })
+                      : t('tree.videosTotalFolder', { count: node.total_video_count })
                   }
                 >
                   <Video className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
                   <span>
                     {node.disk_video_count && node.disk_video_count > node.total_video_count
-                      ? `${node.total_video_count}/${node.disk_video_count} vids`
-                      : `${node.total_video_count} vid${node.total_video_count > 1 ? 's' : ''}`}
+                      ? t('tree.vidsOfDisk', { indexed: node.total_video_count, total: node.disk_video_count })
+                      : t('tree.vids', { count: node.total_video_count })}
                   </span>
                 </span>
               )}
@@ -246,7 +248,7 @@ export const SubfolderTreeNode = ({
             }}
             disabled={!node.exists}
             className="p-1.5 text-neutral-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-            title={node.exists ? "View media gallery & contents" : "Folder is missing or inaccessible on disk"}
+            title={node.exists ? t('tree.viewGallery') : t('tree.folderMissingOrInaccessible')}
           >
             <Eye className="w-3.5 h-3.5" />
           </button>
@@ -260,7 +262,7 @@ export const SubfolderTreeNode = ({
             }}
             disabled={isIndexing}
             className="p-1.5 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors disabled:opacity-30 cursor-pointer"
-            title={node.exists ? "Re-sync only this subfolder" : "Re-sync subfolder (e.g. reconnect USB drive)"}
+            title={node.exists ? t('tree.resyncSub') : t('tree.resyncSubMissing')}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -273,7 +275,7 @@ export const SubfolderTreeNode = ({
             }}
             disabled={isIndexing}
             className="p-1.5 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors disabled:opacity-30 cursor-pointer"
-            title="Delete only this subfolder from index"
+            title={t('tree.deleteSub')}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>

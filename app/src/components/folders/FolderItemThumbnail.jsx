@@ -1,10 +1,12 @@
 import { useState, memo } from 'react';
 import { Image as ImageIcon, AlertTriangle, Video } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { API_BASE } from '../../config';
 
 export const FolderItemThumbnail = memo(function FolderItemThumbnail({ item, uiTheme = 'modern', onSelect }) {
+  const { t } = useTranslation('folders');
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const isModern = uiTheme === 'modern';
@@ -20,7 +22,7 @@ export const FolderItemThumbnail = memo(function FolderItemThumbnail({ item, uiT
             ? "rounded-xl ring-1 ring-rose-500/30 bg-rose-50 dark:bg-rose-950/40 text-rose-500"
             : "border border-rose-500 bg-black text-rose-400"
         )}
-        title={`${item.name} is missing from disk`}
+        title={t('thumbnail.missingTitle', { name: item.name })}
       >
         <AlertTriangle className="w-5 h-5 text-rose-500" />
       </div>
@@ -46,7 +48,7 @@ export const FolderItemThumbnail = memo(function FolderItemThumbnail({ item, uiT
           timestamp_seconds: isVideo ? 1.0 : 0
         });
       }}
-      title={`Click to preview ${item.name}`}
+      title={t('previewTooltip', { name: item.name })}
     >
       {/* Placeholder skeleton / icon while loading or if error */}
       {(!loaded || error) && (

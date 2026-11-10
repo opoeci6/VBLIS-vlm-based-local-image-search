@@ -1,0 +1,25 @@
+{
+  "duration": {
+    "zero": "0s",
+    "calculating": "Calculating...",
+    "hms": "{{h}}h {{m}}m {{s}}s",
+    "ms": "{{m}}m {{s}}s",
+    "s": "{{s}}s"
+  },
+  "timeAgo": {
+    "justNow": "Just now",
+    "minutes": "{{n}}m ago",
+    "hours": "{{n}}h ago",
+    "days": "{{n}}d ago"
+  },
+  "score": {
+    "label": {
+      "match": "{{percent}} Match",
+      "similar": "{{percent}} Similar"
+    },
+    "labelUpper": {
+      "match": "{{percent}} MATCH",
+      "similar": "{{percent}} SIMILAR"
+    }
+  }
+}

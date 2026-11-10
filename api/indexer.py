@@ -27,6 +27,7 @@ from media_video import (
 from folder_registry import FolderRegistry
 from media_registry import MediaRegistry
 from collection_cache import CachedCollection
+from duplicate_index import DuplicateIndex
 from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY, make_scorer
 from search_filters import compile_filters, filter_options, empty_filter_options
 from search_session import (
@@ -35,9 +36,15 @@ from search_session import (
 
 paths.ensure_dirs()
 
-# How many leading search results carry their embedding for the frontend's visual-duplicate detection.
-# Must match maxVisualLimit in app/src/utils/searchResults.js.
+# How many leading image results duplicate detection covers. The backend owns this cap for both kinds: the
+# exact-copy lookup (`copies`, see _attach_exact_copies) and the visual copies (`visual_copies`, see
+# _finish_results) look at the first DUPLICATE_CHECK_LIMIT image results only.
 DUPLICATE_CHECK_LIMIT = 800
+
+# Two images are visual duplicates when the dot product of their stored (unit length) embeddings is at least
+# this. Among the head results the pairs join through union-find, so a chain of such pairs is one group; the
+# library-wide index (see duplicate_index) lists direct pairs only.
+VISUAL_DUPLICATE_THRESHOLD = 0.985
 
 # A search asks Chroma for at least this many candidates (distances only). A text query sits far from every
 # image embedding, so the HNSW graph finds its true best matches only when it searches wide: measured in round S
@@ -215,21 +222,16 @@ def _walk_ranking(collection, ids, scores, cut, top_k, metas_by_id, file_exists,
         pos = end
     return found, items
 
-def _format_search_result(record_id, meta, score, score_kind, embedding=None):
+def _format_search_result(record_id, meta, score, score_kind):
     filepath = meta.get("path")
     file_hash = meta.get("hash")
 
-    # If hash is missing from metadata, compute on the fly so frontend duplicate detection always works
+    # If hash is missing from metadata, compute on the fly so duplicate detection always works
     if not file_hash:
         try:
             file_hash = compute_file_hash(filepath)
         except Exception:
             pass
-
-    if hasattr(embedding, "tolist"):
-        embedding = embedding.tolist()
-    elif isinstance(embedding, (list, tuple)):
-        embedding = [float(x) for x in embedding]
 
     return {
         "id": record_id,
@@ -239,9 +241,8 @@ def _format_search_result(record_id, meta, score, score_kind, embedding=None):
         "timestamp_seconds": meta.get("timestamp_seconds"),
         "scene_id": meta.get("scene_id"),
         "sampling_reason": meta.get("sampling_reason"),
-        "score": float(score),
-        "score_kind": score_kind,
-        "embedding": embedding
+        "score": None if score is None else float(score),
+        "score_kind": score_kind
     }
 
 def _walk_file_entries(top):
@@ -391,6 +392,8 @@ class Indexer:
         self.client = chromadb.PersistentClient(path=self.db_path)
         self.collection = None
         self.search_sessions = SearchSessions()
+        # Library-wide duplicates of the active collection (the "Duplicates" filter, visual copies, counts)
+        self.duplicate_index = DuplicateIndex(VISUAL_DUPLICATE_THRESHOLD, METADATA_GET_MAX)
         self.data_dir = pathlib.Path(data_dir if data_dir is not None else paths.DATA_DIR)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = pathlib.Path(cache_dir if cache_dir is not None else paths.CACHE_DIR)
@@ -447,6 +450,7 @@ class Indexer:
 
     def switch_collection(self, collection_name: str):
         print(f"Switching to Chroma collection: {collection_name}")
+        self.duplicate_index.reset()
         self.collection = CachedCollection(self.client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"}
@@ -475,6 +479,7 @@ class Indexer:
             self.client.delete_collection(name=collection_name)
             if self.collection and self.collection.name == collection_name:
                 self.collection = None
+                self.duplicate_index.reset()
             self.folders.forget(collection_name)
             self.run_maintenance()
         except Exception as e:
@@ -1525,8 +1530,10 @@ class Indexer:
         q = self.model_manager.embed_text_query(query)
         self._check_query_collection(collection, q.model_id)
         scorer = make_scorer("text", q.score_params, min_score)
-        record_filter = compile_filters(filters, self.media_registry.snapshot)
-        results = self._do_search(collection, q.embedding, top_k, scorer, record_filter=record_filter)
+        file_exists = _FileExistenceCache()
+        record_filter = self._compile_filters(filters, collection, file_exists)
+        results = self._do_search(collection, q.embedding, top_k, scorer, record_filter=record_filter,
+                                  file_exists=file_exists)
         return {"results": results, "query_ref": self._store_session(collection, "text", q.embedding, q.score_params, query)}
 
     def run_image_search(self, image: Image.Image, top_k: int = 50, min_score: float = DEFAULT_IMAGE_MIN_SIMILARITY,
@@ -1538,8 +1545,10 @@ class Indexer:
         q = self.model_manager.embed_image_query(image)
         self._check_query_collection(collection, q.model_id)
         scorer = make_scorer("image", None, min_score)
-        record_filter = compile_filters(filters, self.media_registry.snapshot)
-        results = self._do_search(collection, q.embedding, top_k, scorer, record_filter=record_filter)
+        file_exists = _FileExistenceCache()
+        record_filter = self._compile_filters(filters, collection, file_exists)
+        results = self._do_search(collection, q.embedding, top_k, scorer, record_filter=record_filter,
+                                  file_exists=file_exists)
         return {"results": results, "query_ref": self._store_session(collection, "image", q.embedding, None, None)}
 
     def search(self, query: str, top_k: int = 50, min_score: float = DEFAULT_TEXT_MIN_SCORE):
@@ -1570,9 +1579,33 @@ class Indexer:
         if session is None:
             raise SearchSessionExpired(EXPIRED_MESSAGE)
         scorer = make_scorer(session.kind, session.score_params, min_score)
-        record_filter = compile_filters(filters, self.media_registry.snapshot)
-        results = self._do_search(collection, session.embedding, top_k, scorer, record_filter=record_filter)
+        file_exists = _FileExistenceCache()
+        record_filter = self._compile_filters(filters, collection, file_exists)
+        results = self._do_search(collection, session.embedding, top_k, scorer, record_filter=record_filter,
+                                  file_exists=file_exists)
         return {"results": results, "query_ref": query_ref}
+
+    def _compile_filters(self, filters, collection, file_exists):
+        """The RecordFilter of one search or browse (None without active filters). A duplicates filter gets its
+        predicate here: the exact level is built when stale (cheap), the visual level when there is none (a
+        stale one is kept while the library is being indexed), and a partner counts only while its file exists
+        (`file_exists`, the search's own cache)."""
+        return compile_filters(filters, self.media_registry.snapshot,
+                               lambda: self._duplicates_predicate(collection, filters.duplicates, file_exists))
+
+    def _duplicates_predicate(self, collection, kinds, file_exists):
+        exact = self.duplicate_index.exact_level(collection) if "exact" in kinds else None
+        visual = None
+        if "visual" in kinds:
+            visual = self.duplicate_index.ensure_visual(collection, reuse_stale=self.is_indexing)
+        isfile = file_exists.isfile
+
+        def has_duplicate(path):
+            key = os.path.normcase(path)
+            return ((exact is not None and exact.has_existing_partner(key, isfile))
+                    or (visual is not None and visual.has_existing_partner(key, isfile)))
+
+        return has_duplicate
 
     def expand_video(self, path: str, min_score=None, query_ref=None, query=None):
         """Every frame of one video that matches a search, best first. The query comes from the ref; when the
@@ -1628,7 +1661,17 @@ class Indexer:
         scan = self.collection.get(include=["metadatas"])  # the call CachedCollection caches
         snapshot = self.media_registry.snapshot()
         roots = list(self.folders.selected_folders_by_collection.get(self.collection.name, ()))
-        return filter_options(scan, snapshot, roots, registry_available)
+        return filter_options(scan, snapshot, roots, registry_available, self._duplicate_counts(self.collection))
+
+    def _duplicate_counts(self, collection):
+        """The image files with an existing exact copy and with an existing visual partner. The visual count
+        comes from an index that already exists (None when there is none): opening the panel never builds it."""
+        isfile = _FileExistenceCache().isfile
+        visual = self.duplicate_index.existing_visual(collection)
+        return {
+            "exact": self.duplicate_index.exact_level(collection).count_existing(isfile),
+            "visual": None if visual is None else visual.count_existing(isfile),
+        }
 
     def _search_collection(self):
         if not self.collection:
@@ -1643,7 +1686,7 @@ class Indexer:
             if collection.name != expected:
                 raise RuntimeError("The active model changed during the search. Please search again.")
 
-    def _do_search(self, collection, query_embedding, top_k, scorer, record_filter=None):
+    def _do_search(self, collection, query_embedding, top_k, scorer, record_filter=None, file_exists=None):
         if top_k < 1:
             return []
         total = collection.count()
@@ -1657,7 +1700,8 @@ class Indexer:
         # larger n (the HNSW order can shift slightly, so start from scratch; known metadata is kept).
         candidates = SEARCH_CANDIDATES if record_filter is None else FILTERED_SEARCH_CANDIDATES
         n = min(max(top_k, candidates), total)
-        file_exists = _FileExistenceCache()  # shared by the re-query passes
+        if file_exists is None:
+            file_exists = _FileExistenceCache()  # shared by the re-query passes
         metas_by_id = {}
         while True:
             results = collection.query(
@@ -1678,7 +1722,18 @@ class Indexer:
                 break
             n = min(total, max(2 * n, math.ceil(1.25 * n * top_k / max(items, 1))), 8 * n)
 
-        # Embeddings are only needed for the images the frontend runs duplicate detection on
+        return self._finish_results(collection, found, scorer.kind, file_exists)
+
+    def _finish_results(self, collection, found, score_kind, file_exists):
+        """The formatted results of `found`, a flat list of (record_id, metadata, score) in result order: the
+        first DUPLICATE_CHECK_LIMIT images (the head) carry their exact copies (`copies`) and, when they have
+        visual duplicates, their paths (`visual_copies`: the look-alikes among the head plus those of the
+        library-wide index; sorted by path, the image itself left out, only files that exist). Where the
+        library-wide levels exist they cover every image result, not just the head: an existing visual level
+        (fresh or stale, never built for this) gives `visual_copies`, and a fresh exact level gives `copies`
+        (absent when empty), so a badge agrees with the duplicates filter wherever the result ranks. No result
+        carries its embedding."""
+        # Embeddings are only needed for the images the duplicate detection covers
         embeddings_by_id = {}
         head_ids = []
         for record_id, meta, _ in found:
@@ -1693,7 +1748,211 @@ class Indexer:
                 for record_id, emb in zip(fetched["ids"], fetched_embeddings):
                     embeddings_by_id[record_id] = emb
 
-        return [
-            _format_search_result(record_id, meta, score, scorer.kind, embeddings_by_id.get(record_id))
-            for record_id, meta, score in found
-        ]
+        # Formatted first: a hash computed on the fly (a record without one) is then reused for the copy lookup
+        # and for telling copies from look-alikes
+        formatted = [_format_search_result(record_id, meta, score, score_kind) for record_id, meta, score in found]
+        head_id_set = set(head_ids)
+        local = Indexer._head_visual_partners(formatted, head_id_set, embeddings_by_id)
+        indexed = self._indexed_visual_partners(collection, formatted, head_id_set, file_exists)
+        for result in formatted:
+            if result["media_type"] == "video":
+                continue
+            own = os.path.normcase(result["path"]) if result.get("path") else None
+            partners = {}
+            for path in itertools.chain(local.get(result["id"], ()), indexed.get(result["id"], ())):
+                key = os.path.normcase(path)
+                if key != own:
+                    partners.setdefault(key, path)
+            if partners:
+                result["visual_copies"] = [partners[key] for key in sorted(partners)]
+        exact = self.duplicate_index.fresh_exact(collection)  # never built here
+        if exact is not None:
+            self._attach_copies_from_level(exact, formatted, file_exists)
+        else:
+            Indexer._attach_exact_copies(collection, formatted, head_id_set, file_exists)
+        return formatted
+
+    @staticmethod
+    def _attach_copies_from_level(level, formatted, file_exists):
+        """Adds `copies` to every image result from the fresh exact level: the other existing files with the same
+        hash, sorted by path, the image itself left out; absent when there are none. A failing lookup leaves the
+        results as they are."""
+        try:
+            for result in formatted:
+                if result["media_type"] == "video" or not result.get("path") or not result.get("hash"):
+                    continue
+                own = os.path.normcase(result["path"])
+                copies = {}
+                for key in level.keys_by_hash.get(result["hash"], ()):
+                    if key != own and file_exists.isfile(level.path_by_key[key]):
+                        copies[key] = level.path_by_key[key]
+                if copies:
+                    result["copies"] = [copies[key] for key in sorted(copies)]
+        except Exception as e:
+            print(f"[Warning] Indexer: could not look up exact copies of the search results: {e}")
+
+    def _indexed_visual_partners(self, collection, formatted, head_ids, file_exists):
+        """{result id: paths} of the existing look-alikes the library-wide visual index lists for the image
+        results (all of them, `head_ids` is not used). Uses an index that exists (fresh or stale) and never
+        builds one. A failing lookup gives {}."""
+        try:
+            level = self.duplicate_index.existing_visual(collection)
+            if level is None:
+                return {}
+            partners = {}
+            for result in formatted:
+                if result["media_type"] == "video" or not result.get("path"):
+                    continue
+                paths = [level.path_by_key[key] for key in level.partners(os.path.normcase(result["path"]))]
+                paths = [path for path in paths if file_exists.isfile(path)]
+                if paths:
+                    partners[result["id"]] = paths
+            return partners
+        except Exception as e:
+            print(f"[Warning] Indexer: could not look up the visual copies of the search results: {e}")
+            return {}
+
+    @staticmethod
+    def _head_visual_partners(formatted, head_ids, embeddings_by_id):
+        """{result id: paths} of the other head images that each head image result looks like. Pairs whose
+        embeddings have a dot product of at least VISUAL_DUPLICATE_THRESHOLD are joined, except pairs with the
+        same non-empty hash (exact copies are shown as such, see `copies`); joined pairs merge into groups (a
+        chain is one group) and every member lists the others. A head image without an embedding joins no
+        group. A failing computation gives {}."""
+        head = [r for r in formatted if r["id"] in head_ids and r["media_type"] != "video"
+                and embeddings_by_id.get(r["id"]) is not None]
+        if len(head) < 2:
+            return {}
+        try:
+            vectors = np.asarray([embeddings_by_id[r["id"]] for r in head], dtype=np.float32)
+            if vectors.ndim != 2:
+                return {}
+            pairs = np.argwhere(np.triu((vectors @ vectors.T) >= np.float32(VISUAL_DUPLICATE_THRESHOLD), 1))
+        except Exception as e:
+            print(f"[Warning] Indexer: could not group the visually similar search results: {e}")
+            return {}
+
+        parent = list(range(len(head)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for i, j in pairs.tolist():
+            if head[i].get("hash") and head[i]["hash"] == head[j].get("hash"):
+                continue
+            root_i, root_j = find(i), find(j)
+            if root_i != root_j:
+                # The smaller index stays the root, so a root is always the first member of its group
+                parent[max(root_i, root_j)] = min(root_i, root_j)
+
+        members = {}
+        for index, result in enumerate(head):
+            members.setdefault(find(index), []).append(result)
+        partners = {}
+        for group in members.values():
+            if len(group) < 2:
+                continue
+            for result in group:
+                partners[result["id"]] = [other["path"] for other in group if other is not result and other.get("path")]
+        return partners
+
+    def browse_library(self, filters=None, sort="newest", top_k=None):
+        """The indexed library of the active model without a query, by date taken (newest or oldest first), in
+        the shape of search results (score None, score_kind "none", plus `taken_at`). `total` counts the items
+        (an image, or a video however many frames it has) that match before the top_k cut; top_k None (the
+        default) means no cut. Files that are
+        gone and records the filters reject are skipped; undated items come last in both orders."""
+        collection = self._search_collection()
+        if collection.count() == 0:
+            return {"results": [], "total": 0}
+        scan = collection.get(include=["metadatas"])  # the call CachedCollection caches; its dicts are shared
+        file_exists = _FileExistenceCache()
+        record_filter = self._compile_filters(filters, collection, file_exists)
+        facts = self.media_registry.snapshot().facts
+
+        # normcased path -> [path of its first record, is_video, [(record_id, meta)]]: one record of an image,
+        # every frame record of a video
+        entries = {}
+        for record_id, meta in zip(scan.get("ids") or [], scan.get("metadatas") or []):
+            path = meta.get("path") if meta else None
+            if not path:
+                continue
+            key = os.path.normcase(path)
+            is_video = _is_video(meta)
+            entry = entries.get(key)
+            if entry is None:
+                entries[key] = [path, is_video, [(record_id, meta)]]
+            elif is_video and entry[1]:
+                entry[2].append((record_id, meta))
+
+        items = []  # (normcased path, taken_at or None, is_video, records)
+        for key, (path, is_video, records) in entries.items():
+            if record_filter is not None and not record_filter.allows_path(path, is_video):
+                continue
+            if not file_exists.isfile(path):
+                continue
+            fact = facts.get(MediaRegistry.key_for(path))
+            taken_at = fact.taken_at if fact is not None and fact.taken_at else None
+            if taken_at is None:
+                for _, meta in records:
+                    mtime_ns = meta.get("mtime_ns")
+                    if isinstance(mtime_ns, (int, float)) and not isinstance(mtime_ns, bool):
+                        taken_at = media_sync._mtime_date(mtime_ns)[0]
+                        break
+            items.append((key, taken_at, is_video, records))
+
+        newest = sort != "oldest"
+        dated = sorted((item for item in items if item[1] is not None), key=lambda item: item[0])
+        # sort is stable, also with reverse=True: equal dates stay in path order
+        dated.sort(key=lambda item: item[1], reverse=newest)
+        undated = sorted((item for item in items if item[1] is None), key=lambda item: item[0])
+        ordered = dated + undated
+        total = len(ordered)
+
+        found = []
+        taken_by_id = {}
+        for _, taken_at, is_video, records in (ordered if top_k is None else ordered[:max(top_k, 0)]):
+            if is_video:
+                records = sorted(records, key=lambda r: r[1].get("timestamp_seconds") or 0.0)[:VIDEO_FRAMES_PER_RESULT]
+            else:
+                records = records[:1]
+            for record_id, meta in records:
+                found.append((record_id, meta, None))
+                taken_by_id[record_id] = taken_at
+
+        results = self._finish_results(collection, found, "none", file_exists)
+        for result in results:
+            result["taken_at"] = taken_by_id.get(result["id"])
+        return {"results": results, "total": total}
+
+    @staticmethod
+    def _attach_exact_copies(collection, formatted, head_ids, file_exists):
+        """Adds `copies` to the image results of the head: the other indexed files with the same SHA-256 hash,
+        wherever they are in the library (the frontend's exact-copy badge must not depend on Max Results).
+        Copies are not filtered by the search filters; only files that are gone are dropped. A failing lookup
+        leaves the results as they are."""
+        head = [r for r in formatted if r["id"] in head_ids and r["media_type"] != "video"]
+        hashes = sorted({r["hash"] for r in head if r.get("hash")})
+        if not hashes:
+            return
+        try:
+            fetched = collection.get(where={"hash": {"$in": hashes}}, include=["metadatas"])
+            paths_by_hash = {}
+            for meta in fetched.get("metadatas") or []:
+                path = meta.get("path") if meta else None
+                # A video frame's hash is not a file hash
+                if not path or _is_video(meta) or not meta.get("hash"):
+                    continue
+                if not file_exists.isfile(path):
+                    continue
+                paths_by_hash.setdefault(meta["hash"], {}).setdefault(os.path.normcase(path), path)
+        except Exception as e:
+            print(f"[Warning] Indexer: could not look up exact copies of the search results: {e}")
+            return
+        for result in head:
+            own = os.path.normcase(result["path"]) if result.get("path") else None
+            by_key = paths_by_hash.get(result.get("hash"), {})
+            result["copies"] = [by_key[key] for key in sorted(by_key) if key != own]

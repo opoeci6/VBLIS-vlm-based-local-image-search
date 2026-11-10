@@ -1,12 +1,18 @@
 import { memo } from 'react';
-import { FolderOpen, ChevronRight, Video } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { CalendarDays, FolderOpen, ChevronRight, Video } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { formatTakenDate } from '../../utils/formatters';
 import { getMediaPreviewUrl, prewarmVideoGroup } from '../../utils/media';
 import { API_BASE } from '../../config';
-import { formatScorePercent } from '../../utils/scoreLabel';
+import { formatScorePercent, hasScore } from '../../utils/scoreLabel';
 
 export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, onSelect, uiTheme = 'modern' }) {
+  const { t } = useTranslation('search');
   const isModern = uiTheme === 'modern';
+  // A library item (no query) has no score: the video shows its date taken instead of "BEST x%".
+  const scored = hasScore(group.bestFrame);
+  const takenDate = scored ? '' : formatTakenDate(group.bestFrame?.taken_at);
 
   return (
     <div
@@ -41,7 +47,7 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
       )}>
         <img
           src={getMediaPreviewUrl(API_BASE, group.bestFrame)}
-          alt={`Best matching frame from ${group.name}`}
+          alt={t('videoFolder.bestFrameAlt', { name: group.name })}
           className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
           loading="lazy"
         />
@@ -50,14 +56,24 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
           isModern ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10" : "bg-black border border-white text-white"
         )}>
           <FolderOpen className="w-4 h-4 text-indigo-400" />
-          VIDEO
+          {t('videoFolder.badge')}
         </div>
-        <div className={cn(
-          "absolute bottom-3 right-3 px-3 py-1 text-xs font-bold shadow-lg",
-          isModern ? "bg-black/70 backdrop-blur-md text-emerald-400 rounded-full ring-1 ring-white/10" : "bg-black border border-white text-emerald-400"
-        )}>
-          BEST {formatScorePercent(group.bestScore)}
-        </div>
+        {scored ? (
+          <div className={cn(
+            "absolute bottom-3 right-3 px-3 py-1 text-xs font-bold shadow-lg",
+            isModern ? "bg-black/70 backdrop-blur-md text-emerald-400 rounded-full ring-1 ring-white/10" : "bg-black border border-white text-emerald-400"
+          )}>
+            {t('videoFolder.best', { percent: formatScorePercent(group.bestScore) })}
+          </div>
+        ) : takenDate ? (
+          <div className={cn(
+            "absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1 text-xs font-bold shadow-lg",
+            isModern ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10" : "bg-black border border-white text-white"
+          )}>
+            <CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />
+            {takenDate}
+          </div>
+        ) : null}
       </div>
 
       <div className={cn(
@@ -75,7 +91,11 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
             {group.name}
           </p>
           <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5">
-            {group.frames.length} {group.isExpanded ? 'matching' : 'returned'} frame{group.frames.length === 1 ? '' : 's'}
+            {scored
+              ? (group.isExpanded
+                ? t('videoFolder.matchingFrames', { count: group.frames.length })
+                : t('videoFolder.returnedFrames', { count: group.frames.length }))
+              : t('videoFolder.frames', { count: group.frames.length })}
           </p>
         </div>
         <ChevronRight className={cn(
