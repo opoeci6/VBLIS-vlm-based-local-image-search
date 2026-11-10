@@ -1,7 +1,9 @@
 import React from 'react';
 import { Minus, Square, X, Moon, Sun, Shirt, Check, Sparkles, Terminal } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
+  const { t } = useTranslation('settings');
   const [showThemeMenu, setShowThemeMenu] = React.useState(false);
   const themeMenuRef = React.useRef(null);
 
@@ -33,8 +35,8 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
   };
 
   const themeOptions = [
-    { id: 'modern', label: 'Modern Rounded', icon: Sparkles, desc: 'Soft curves, gradients & glassmorphism' },
-    { id: 'terminal', label: 'Retro Terminal', icon: Terminal, desc: 'Monospace, sharp borders & ASCII art' }
+    { id: 'modern', label: t('theme.modern.name'), icon: Sparkles, desc: t('titleBar.themeOptions.modern.desc') },
+    { id: 'terminal', label: t('theme.terminal.name'), icon: Terminal, desc: t('titleBar.themeOptions.terminal.desc') }
   ];
 
   return (
@@ -47,8 +49,8 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
           <button
             onClick={() => setShowThemeMenu(current => !current)}
             className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-indigo-400 transition-colors"
-            title="Switch UI Theme Style"
-            aria-label="Switch UI Theme Style"
+            title={t('titleBar.switchTheme')}
+            aria-label={t('titleBar.switchTheme')}
             aria-expanded={showThemeMenu}
           >
             <Shirt className="w-4 h-4" />
@@ -57,7 +59,7 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
           {showThemeMenu && (
             <div className="absolute right-0 top-full z-[220] mt-1 w-64 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 rounded-xl p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
               <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                UI Theme Style
+                {t('theme.title')}
               </div>
               <div className="space-y-1">
                 {themeOptions.map((opt) => {
@@ -95,7 +97,7 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
         <button
           onClick={toggleTheme}
           className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-amber-400 transition-colors"
-          title={theme === 'dark' ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          title={theme === 'dark' ? t('titleBar.switchToLight') : t('titleBar.switchToDark')}
         >
           {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-3.5 h-3.5" />}
         </button>
@@ -103,21 +105,21 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
         <button
           onClick={handleMinimize}
           className="h-full px-4 flex items-center justify-center text-neutral-500 hover:bg-gray-100 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white transition-colors"
-          title="Minimize"
+          title={t('titleBar.minimize')}
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleMaximize}
           className="h-full px-4 flex items-center justify-center text-neutral-500 hover:bg-gray-100 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white transition-colors"
-          title="Maximize"
+          title={t('titleBar.maximize')}
         >
           <Square className="w-3 h-3" />
         </button>
         <button
           onClick={handleClose}
           className="h-full px-4 flex items-center justify-center text-neutral-500 hover:bg-rose-600 hover:text-white dark:text-neutral-400 dark:hover:bg-rose-600 dark:hover:text-white transition-colors"
-          title="Close"
+          title={t('common:close')}
         >
           <X className="w-4 h-4" />
         </button>

@@ -3,6 +3,7 @@ import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
 import { isModelDependentTask } from '../utils/taskTypes';
+import i18n from '../i18n';
 
 export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchStart }) => {
   const [modelLoadError, setModelLoadError] = useState(null);
@@ -104,19 +105,19 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         .then((data) => {
           setModels(data);
           if (data.active_model === pendingModel) {
-            setToast({ message: `Model ${modelName} downloaded and activated successfully!`, type: 'success' });
+            setToast({ message: i18n.t('messages:modelManager.downloadedAndActivated', { name: modelName }), type: 'success' });
           } else {
-            setToast({ message: `Model ${modelName} downloaded successfully.`, type: 'success' });
+            setToast({ message: i18n.t('messages:modelManager.downloaded', { name: modelName }), type: 'success' });
           }
         })
         .catch(() => {
-          setToast({ message: `Model ${modelName} downloaded successfully.`, type: 'success' });
+          setToast({ message: i18n.t('messages:modelManager.downloaded', { name: modelName }), type: 'success' });
         });
     }
 
     // 2. Error case: download error detected
     if (status.download_error && status.download_error !== lastToastedError.current) {
-      setToast({ message: `Download failed: ${status.download_error}`, type: 'error' });
+      setToast({ message: i18n.t('messages:modelManager.downloadFailed', { error: status.download_error }), type: 'error' });
       setModelLoadError({ model: pendingModel, message: status.download_error });
       lastToastedError.current = status.download_error;
     }
@@ -145,16 +146,22 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        const detail = typeof error?.detail === 'string' && error.detail ? error.detail : i18n.t('messages:modelManager.performanceFailed');
+        setToast({ message: detail, type: 'error' });
+        return;
+      }
       const data = await res.json();
       setGpuSettings(data);
-      setToast({ message: "Performance settings updated.", type: 'success' });
+      setToast({ message: i18n.t('messages:modelManager.performanceUpdated'), type: 'success' });
       
       const resModels = await apiFetch(`${API_BASE}/models`);
       const dataModels = await resModels.json();
       setModels(dataModels);
     } catch (err) {
       console.error(err);
-      setToast({ message: "Failed to update settings.", type: 'error' });
+      setToast({ message: i18n.t('messages:modelManager.performanceFailed'), type: 'error' });
     } finally {
       setIsSwitchingGpu(false);
     }
@@ -204,8 +211,8 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ detail: res.statusText }));
-        const errorMessage = errorData.detail || "Failed to load model into memory.";
-        setToast({ message: `Model load error: ${errorMessage}`, type: 'error' });
+        const errorMessage = errorData.detail || i18n.t('messages:modelManager.loadFailedFallback');
+        setToast({ message: i18n.t('messages:modelManager.loadError', { message: errorMessage }), type: 'error' });
         setModelLoadError({ model: model_name, message: errorMessage });
         
         // Refresh models list to ensure status is accurate
@@ -220,11 +227,11 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
       setModels(data);
       setPendingModel(model_name);
       setModelLoadError(null);
-      setToast({ message: `Successfully activated ${model_name.split('/').pop()}`, type: 'success' });
+      setToast({ message: i18n.t('messages:modelManager.activated', { name: model_name.split('/').pop() }), type: 'success' });
       queue.fetchQueue();
     } catch (err) {
       console.error(err);
-      setToast({ message: `Network error while loading model: ${err.message}`, type: 'error' });
+      setToast({ message: i18n.t('messages:modelManager.loadNetworkError', { message: err.message }), type: 'error' });
       setModelLoadError({ model: model_name, message: err.message });
     } finally {
       setIsSwitchingModel(false);
@@ -236,18 +243,18 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
     try {
       const res = await apiFetch(`${API_BASE}/models/unload`, { method: 'POST' });
       if (res.ok) {
-        setToast({ message: 'Model unloaded and GPU memory freed successfully.', type: 'success' });
+        setToast({ message: i18n.t('messages:modelManager.unloaded'), type: 'success' });
         // Refresh models list
         const resModels = await apiFetch(`${API_BASE}/models`);
         const data = await resModels.json();
         setModels(data);
       } else {
         const error = await res.json();
-        setToast({ message: `Unload error: ${error.detail}`, type: 'error' });
+        setToast({ message: i18n.t('messages:modelManager.unloadError', { detail: error.detail }), type: 'error' });
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Failed to unload model.', type: 'error' });
+      setToast({ message: i18n.t('messages:modelManager.unloadFailed'), type: 'error' });
     } finally {
       setIsUnloadingModel(false);
     }
@@ -288,18 +295,23 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         })
       });
       if (res.ok) {
-        setToast({ message: `Model ${model_name} ${deleteIndexWithModel ? 'and index ' : ''}deleted successfully.`, type: 'success' });
+        setToast({
+          message: deleteIndexWithModel
+            ? i18n.t('messages:modelManager.deletedWithIndex', { name: model_name })
+            : i18n.t('messages:modelManager.deleted', { name: model_name }),
+          type: 'success'
+        });
         // Refresh models list
         const resModels = await apiFetch(`${API_BASE}/models`);
         const data = await resModels.json();
         setModels(data);
       } else {
         const error = await res.json();
-        setToast({ message: `Error: ${error.detail}`, type: 'error' });
+        setToast({ message: i18n.t('messages:modelManager.deleteError', { detail: error.detail }), type: 'error' });
       }
     } catch (err) {
       console.error(err);
-      setToast({ message: 'Failed to delete model.', type: 'error' });
+      setToast({ message: i18n.t('messages:modelManager.deleteFailed'), type: 'error' });
     } finally {
       setIsDeletingModel(false);
       setShowConfirmDeleteModel(null);

@@ -1,8 +1,11 @@
 import { Loader2, AlertTriangle, XCircle, Play, Pause } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
 import { hasModelDependentTask } from '../../utils/taskTypes';
+import { taskTitle } from '../../utils/taskTitle';
 
 export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, isCancellingIndexing, handleCancelIndexing }) => {
+  const { t } = useTranslation('status');
   if (!(status.is_indexing || queue.activeTask || (queue.pendingCount > 0 && queue.workerState === 'paused'))) return null;
   const isQueuePaused = status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused';
   const displayTask = queue.activeTask || queue.pendingTasks[0];
@@ -46,7 +49,7 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
               </div>
             )}
             <span className="truncate">
-              {displayTask?.title || "Indexing Media"}
+              {(displayTask && taskTitle(displayTask)) || t('indexing.fallbackTitle')}
               {" "}
               <span className="font-mono text-xs opacity-75 font-normal ml-1">
                 ({processedCount}/{totalCount || status.progress || 0})
@@ -55,15 +58,15 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
 
             {isMissingModel ? (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-rose-200/80 dark:bg-rose-500/20 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30 shrink-0">
-                NO MODEL LOADED
+                {t('indexing.noModelPill')}
               </span>
             ) : isModelMismatch ? (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-200/80 dark:bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-500/30 shrink-0">
-                MODEL MISMATCH
+                {t('indexing.mismatchPill')}
               </span>
             ) : isQueuePaused ? (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-200/80 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 shrink-0">
-                PAUSED
+                {t('indexing.pausedPill')}
               </span>
             ) : null}
           </div>
@@ -79,7 +82,7 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
                 onClick={() => {
                   if (isMissingModel) {
                     setToast({
-                      message: 'Cannot resume queue: No AI model is currently loaded in memory. Please select a model in Settings.',
+                      message: t('indexing.cannotResumeNoModel'),
                       type: 'error'
                     });
                     setShowSettings(true);
@@ -97,10 +100,10 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
                   }
                 }}
                 className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                title={isModelMismatch ? `Resume and proceed with active model (${queue.modelMismatch.active_model?.split('/').pop()})` : "Resume indexing"}
+                title={isModelMismatch ? t('indexing.resumeAdoptTitle', { model: queue.modelMismatch.active_model?.split('/').pop() }) : t('indexing.resumeTitle')}
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{isModelMismatch ? "Adopt & Resume" : "Resume"}</span>
+                <span>{isModelMismatch ? t('indexing.adoptAndResume') : t('common:resume')}</span>
               </button>
             ) : (
               <button
@@ -112,10 +115,10 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
                   }
                 }}
                 className="px-2.5 py-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-bold rounded-lg transition-all border border-gray-200 dark:border-neutral-700 flex items-center gap-1.5 cursor-pointer"
-                title="Pause indexing"
+                title={t('indexing.pauseTitle')}
               >
                 <Pause className="w-3.5 h-3.5" />
-                <span>Pause</span>
+                <span>{t('common:pause')}</span>
               </button>
             )}
 
@@ -132,10 +135,10 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
               }}
               disabled={isCancellingIndexing || status.cancel_requested}
               className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 text-xs font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              title="Stop and cancel current task"
+              title={t('indexing.cancelTitle')}
             >
               <XCircle className="w-3.5 h-3.5" />
-              <span>{isCancellingIndexing || status.cancel_requested ? "Cancelling..." : "Cancel"}</span>
+              <span>{isCancellingIndexing || status.cancel_requested ? t('indexing.cancelling') : t('common:cancel')}</span>
             </button>
           </div>
         </div>
@@ -158,18 +161,18 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
         <div className="flex justify-between items-center text-xs text-neutral-500 dark:text-neutral-400 font-medium pt-0.5 gap-3">
           <p className="flex-1 min-w-0 font-mono text-[11px] leading-snug" title={displayTask?.current_item || status.current_file}>
             {isMissingModel
-              ? `No AI model loaded. Select a model in Settings to resume.`
+              ? t('indexing.noModelLine')
               : isModelMismatch
-              ? `Queued for '${queue.modelMismatch.queued_model?.split('/').pop()}', active: '${queue.modelMismatch.active_model?.split('/').pop()}'. Click Resume to adopt active model.`
+              ? t('indexing.mismatchLine', { queued: queue.modelMismatch.queued_model?.split('/').pop(), active: queue.modelMismatch.active_model?.split('/').pop() })
               : isQueuePaused
-              ? `Paused at: ${displayTask?.current_item || status.current_file || "Current item"}`
-              : `Processing: ${displayTask?.current_item || status.current_file || "Preparing..."}`}
+              ? t('indexing.pausedAt', { item: displayTask?.current_item || status.current_file || t('indexing.currentItemFallback') })
+              : t('indexing.processing', { item: displayTask?.current_item || status.current_file || t('indexing.preparingFallback') })}
           </p>
           <button
             onClick={() => queue.setIsDrawerOpen(true)}
             className="px-2 py-0.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ml-2 rounded-md border border-indigo-200/50 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
           >
-            View in Task Queue →
+            {t('indexing.viewInQueue')}
           </button>
         </div>
       </div>

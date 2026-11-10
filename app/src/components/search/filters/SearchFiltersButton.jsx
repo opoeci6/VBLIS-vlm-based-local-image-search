@@ -1,10 +1,12 @@
 import { SlidersHorizontal } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../../utils/cn';
 
 export const SearchFiltersButton = ({ activeCount = 0, isOpen = false, onToggle }) => {
+  const { t } = useTranslation('filters');
   const label = activeCount > 0
-    ? `Search filters (${activeCount} active)`
-    : 'Search filters';
+    ? t('button.labelActive', { count: activeCount })
+    : t('button.label');
   return (
     <button
       type="button"
@@ -14,7 +16,7 @@ export const SearchFiltersButton = ({ activeCount = 0, isOpen = false, onToggle 
       aria-haspopup="dialog"
       aria-expanded={isOpen}
       aria-label={label}
-      title="Search filters"
+      title={t('button.label')}
       className={cn(
         'inline-flex items-center gap-2 px-4 py-3 border rounded-2xl transition-all active:scale-95 font-medium text-sm shadow-sm cursor-pointer',
         activeCount > 0 || isOpen
@@ -23,7 +25,7 @@ export const SearchFiltersButton = ({ activeCount = 0, isOpen = false, onToggle 
       )}
     >
       <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
-      <span>Filters</span>
+      <span>{t('button.text')}</span>
       {activeCount > 0 && (
         <span
           data-testid="filters-count"

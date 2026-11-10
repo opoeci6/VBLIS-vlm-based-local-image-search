@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { BackendLoading, ModelSetupState, NoMatches, ReadyToSearch } from './EmptyStates';
+import i18n from '../../i18n';
 
 // AsciiLogo needs canvas and matchMedia, which jsdom lacks.
 vi.mock('../common/AsciiLogo', () => ({ AsciiLogo: () => 'ascii-logo-stub' }));
@@ -49,6 +50,11 @@ describe('NoMatches', () => {
       expect(screen.getByText('5 files have no media details yet, so these filters skip them.')).toBeTruthy();
       expect(screen.getByText('Reading media details...')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Read details now' })).toBeNull();
+    });
+
+    it('uses the singular for one file', () => {
+      render(<NoMatches filtersActive missingDetails={1} onReadDetails={vi.fn()} />);
+      expect(screen.getByText('1 file has no media details yet, so these filters skip it.')).toBeTruthy();
     });
 
     it('says nothing about details when none are missing', () => {
@@ -192,6 +198,34 @@ describe('browse wording', () => {
       />
     );
     expect(screen.getByText('Press Search with an empty box to browse your library.')).toBeTruthy();
+  });
+
+  const SEARCH_TIP = '为保证搜索效果，请使用常见的词语进行搜索，如“猫”或“寺庙”。网络用语和叠词可能影响搜索结果，可以使用英文进行尝试。';
+  const readyProps = (uiTheme) => ({
+    uiTheme,
+    indexedFolders: [],
+    models: { active_model: 'org/model-a' },
+    setShowSettings: vi.fn(),
+    handleUnloadModel: vi.fn(),
+    isUnloadingModel: false,
+    status: { is_indexing: false },
+  });
+
+  it.each(['modern', 'terminal'])('ReadyToSearch shows no search tip in English in the %s theme', (uiTheme) => {
+    const { container } = render(<ReadyToSearch {...readyProps(uiTheme)} />);
+    // The folder sentence and the browse hint only.
+    expect(container.querySelectorAll('p')).toHaveLength(2);
+  });
+
+  it.each(['modern', 'terminal'])('ReadyToSearch shows the search tip in Chinese in the %s theme', async (uiTheme) => {
+    await act(() => i18n.changeLanguage('zh-CN'));
+    const { container } = render(<ReadyToSearch {...readyProps(uiTheme)} />);
+    const tip = screen.getByText(SEARCH_TIP);
+    expect(container.querySelectorAll('p')).toHaveLength(3);
+    // Right after the browse hint, in the same style.
+    const hint = tip.previousElementSibling;
+    expect(hint.tagName).toBe('P');
+    expect(tip.className).toBe(hint.className);
   });
 
   it('NoMatches for a browse with filters offers Clear filters', () => {

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../i18n';
 import {
   formatBytes,
   formatDuration,
+  formatNumber,
   formatTakenDate,
   formatTimeAgo,
   formatVideoTimestamp,
@@ -168,8 +170,9 @@ describe('formatTimeAgo', () => {
 });
 
 describe('formatTakenDate', () => {
+  // The interface language decides the format, not the Windows regional settings. Tests run in English.
   const expected = (year, monthIndex, day) => new Date(year, monthIndex, day)
-    .toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    .toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' });
 
   it('formats the date part as a short local date', () => {
     const text = formatTakenDate('2024-03-12T15:45:10');
@@ -188,6 +191,19 @@ describe('formatTakenDate', () => {
     expect(formatTakenDate('2024-03-12')).toBe(expected(2024, 2, 12));
   });
 
+  it('writes English dates the US way', () => {
+    expect(formatTakenDate('2024-03-12T15:45:10')).toBe('Mar 12, 2024');
+  });
+
+  it('follows the interface language', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatTakenDate('2024-03-12T15:45:10')).toBe(
+      new Date(2024, 2, 12).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }),
+    );
+    expect(formatTakenDate('2024-03-12T15:45:10')).not.toBe('Mar 12, 2024');
+    expect(formatTakenDate('2024-03-12T15:45:10')).toContain('2024');
+  });
+
   it('returns an empty string for null, undefined and non-strings', () => {
     expect(formatTakenDate(null)).toBe('');
     expect(formatTakenDate(undefined)).toBe('');
@@ -200,5 +216,43 @@ describe('formatTakenDate', () => {
     expect(formatTakenDate('2024-13-01T00:00:00')).toBe('');
     expect(formatTakenDate('2024-02-30T00:00:00')).toBe('');
     expect(formatTakenDate('2024-3-12')).toBe('');
+  });
+});
+
+describe('formatNumber', () => {
+  it('groups digits in English', () => {
+    expect(formatNumber(1234567)).toBe('1,234,567');
+    expect(formatNumber(0)).toBe('0');
+  });
+
+  it('follows the interface language', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatNumber(1234567)).toBe(new Intl.NumberFormat('zh-CN').format(1234567));
+  });
+});
+
+describe('formatters in Chinese', () => {
+  it('translates durations', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatDuration(0)).toBe('0 秒');
+    expect(formatDuration(Infinity)).toBe('正在计算……');
+    expect(formatDuration(45)).toBe('45 秒');
+    expect(formatDuration(125)).toBe('2 分 5 秒');
+    expect(formatDuration(3725)).toBe('1 小时 2 分 5 秒');
+  });
+
+  it('translates relative times', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2024-03-12T12:00:00Z'));
+      const now = Date.now() / 1000;
+      await i18n.changeLanguage('zh-CN');
+      expect(formatTimeAgo(now - 5)).toBe('刚刚');
+      expect(formatTimeAgo(now - 5 * 60)).toBe('5 分钟前');
+      expect(formatTimeAgo(now - 3 * 3600)).toBe('3 小时前');
+      expect(formatTimeAgo(now - 2 * 86400)).toBe('2 天前');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

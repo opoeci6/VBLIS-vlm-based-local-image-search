@@ -1,0 +1,110 @@
+{
+  "taskQueue": {
+    "completed_one": "Task completed: {{title}} ({{count}} item)",
+    "completed_other": "Task completed: {{title}} ({{count}} items)",
+    "failed": "Task failed: {{title}}",
+    "alreadyQueued": "Folder is already in the queue: {{path}}",
+    "enqueued_one": "Enqueued {{count}} task.",
+    "enqueued_other": "Enqueued {{count}} tasks.",
+    "enqueuedWithSkipped": "Enqueued {{tasks}} task(s). ({{duplicates}} duplicate(s) skipped)",
+    "added_one": "Added {{count}} folder to queue.",
+    "added_other": "Added {{count}} folders to queue.",
+    "queueError": "Queue error: {{detail}}",
+    "connectFailed": "Failed to connect to task queue.",
+    "cancelRequested": "Task cancellation requested.",
+    "cancelFailed": "Failed to cancel task.",
+    "cancelNetworkError": "Network error cancelling task.",
+    "paused": "Task paused.",
+    "pauseFailed": "Failed to pause task.",
+    "pauseNetworkError": "Network error pausing task.",
+    "resumed": "Task resumed.",
+    "resumeFailed": "Failed to resume task.",
+    "resumeNetworkError": "Network error resuming task.",
+    "workerStarted": "Queue worker started.",
+    "workerStopped": "Queue worker stopped immediately.",
+    "workerStopsAfterCurrent": "Queue will stop after active task completes.",
+    "workerUpdateFailed": "Failed to update queue worker state.",
+    "workerSignalFailed": "Failed to send worker control signal.",
+    "requeued": "Re-queued task: {{title}}",
+    "retryFailed": "Failed to retry task.",
+    "retryNetworkError": "Network error retrying task.",
+    "historyCleared": "Cleared task history."
+  },
+  "modelManager": {
+    "downloadedAndActivated": "Model {{name}} downloaded and activated successfully!",
+    "downloaded": "Model {{name}} downloaded successfully.",
+    "downloadFailed": "Download failed: {{error}}",
+    "performanceUpdated": "Performance settings updated.",
+    "performanceFailed": "Failed to update settings.",
+    "loadFailedFallback": "Failed to load model into memory.",
+    "loadError": "Model load error: {{message}}",
+    "activated": "Successfully activated {{name}}",
+    "loadNetworkError": "Network error while loading model: {{message}}",
+    "unloaded": "Model unloaded and GPU memory freed successfully.",
+    "unloadError": "Unload error: {{detail}}",
+    "unloadFailed": "Failed to unload model.",
+    "deleted": "Model {{name}} deleted successfully.",
+    "deletedWithIndex": "Model {{name}} and index deleted successfully.",
+    "deleteError": "Error: {{detail}}",
+    "deleteFailed": "Failed to delete model."
+  },
+  "indexedFolders": {
+    "reindexStarted": "Re-indexing started in background.",
+    "folderNotAccessible": "Folder is still not accessible on disk. Please reconnect the drive and try again.",
+    "error": "Error: {{detail}}",
+    "reindexConnectFailed": "Failed to connect to backend for re-indexing.",
+    "indexRemoved": "Folder index removed successfully.",
+    "removeFailed": "Failed to delete folder index.",
+    "batchRemoved_one": "Successfully removed {{count}} folder.",
+    "batchRemoved_other": "Successfully removed {{count}} folders.",
+    "batchDeleteFailed": "Batch deletion failed.",
+    "batchReindexStarted_one": "Re-indexing started for {{count}} folder.",
+    "batchReindexStarted_other": "Re-indexing started for {{count}} folders.",
+    "batchReindexFailed": "Batch re-indexing failed."
+  },
+  "mediaSearch": {
+    "searchFailed": "Search failed.",
+    "sortChangeFailed": "Failed to change the sort order.",
+    "libraryLoadFailed": "Failed to load the library.",
+    "dropImage": "Please drop an image file.",
+    "foundSimilar_one": "Found {{count}} similar media result.",
+    "foundSimilar_other": "Found {{count}} similar media results.",
+    "imageSearchFailed": "Failed to search by image.",
+    "filtersFailed": "Failed to apply the filters.",
+    "searchExpired": "This search has expired. Please search again.",
+    "moreFramesFailed": "Failed to load more frames.",
+    "videoUnavailable": "This video is no longer available."
+  },
+  "searchFilters": {
+    "optionsError": "Could not load the filter options.",
+    "scanAlreadyRunning": "Media details are already being read",
+    "scanStarted": "Reading media details in the background",
+    "scanStartedFor_one": "Reading media details for {{formatted}} file in the background (no re-indexing needed)",
+    "scanStartedFor_other": "Reading media details for {{formatted}} files in the background (no re-indexing needed)",
+    "scanFailed": "Failed to start reading media details."
+  },
+  "cacheStats": {
+    "cleared": {
+      "all": "All thumbnail cache cleared successfully.",
+      "images": "Image thumbnail cache cleared successfully.",
+      "videos": "Video thumbnail cache cleared successfully."
+    },
+    "clearFailed": "Failed to clear thumbnail cache.",
+    "rebuildStarted": "Video thumbnail rebuilding started in background.",
+    "rebuildFailed": "Failed to start video thumbnail rebuilding.",
+    "connectFailed": "Failed to connect to backend."
+  },
+  "backendStatus": {
+    "indexedFrames": "Indexed {{frames}} adaptive frame(s) from {{videos}} video file(s).",
+    "noMediaFound": "No supported images or videos were found in the selected folder.",
+    "cancelRequested": "Indexing cancellation requested.",
+    "cancelFailed": "Failed to cancel indexing."
+  },
+  "fileDrop": {
+    "noModel": "Please select or download a model first.",
+    "dropFolderOrImage": "Please drop a folder or an image file."
+  },
+  "folderContents": {
+    "browseFailed": "Failed to browse folder contents."
+  }
+}

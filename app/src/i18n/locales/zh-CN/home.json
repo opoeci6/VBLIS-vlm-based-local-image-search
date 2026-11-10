@@ -1,0 +1,38 @@
+{
+  "searchTip": "为保证搜索效果，请使用常见的词语进行搜索，如“猫”或“寺庙”。网络用语和叠词可能影响搜索结果，可以使用英文进行尝试。",
+  "noMatches": {
+    "filtered": {
+      "browsingTitle": "媒体库中没有符合当前筛选条件的内容",
+      "searchTitle": "没有符合当前筛选条件的结果",
+      "browsingHint": "移除一个筛选条件，可查看更多媒体库内容。",
+      "searchHint": "移除一个筛选条件，或换个关键词试试。"
+    },
+    "missingDetails_other": "{{formatted}} 个文件尚无媒体详情，因此这些筛选会跳过它们。",
+    "clearFilters": "清除筛选",
+    "browseEmpty": "还没有可浏览的内容：添加文件夹以建立索引。",
+    "title": "未找到匹配项",
+    "hint": "换个关键词试试，或索引更多图片。"
+  },
+  "loading": {
+    "switchingTitle": "正在切换模型",
+    "initializingTitle": "正在初始化 AI 引擎",
+    "switchingDesc": "正在将模型权重加载到内存中，可能需要一些时间……",
+    "initializingDesc": "正在连接后端，并将模型权重加载到内存中……"
+  },
+  "setup": {
+    "noModelTitle": "未加载模型",
+    "noModelDesc": "内存中当前没有已加载的视觉语言模型。请选择一个已下载的模型来激活，或在设置中管理模型。",
+    "activate": "激活 {{name}}",
+    "requiredTitle": "需要 AI 模型",
+    "requiredDesc": "必须先将视觉语言模型下载到本地，才能为图片建立索引或进行搜索。",
+    "download": "下载 {{name}}",
+    "openaiClip": "OpenAI CLIP"
+  },
+  "ready": {
+    "title": "已准备好搜索",
+    "foldersReady_other": "{{count}} 个文件夹已就绪。可使用自然语言搜索媒体。",
+    "selectFolder": "选择一个文件夹进行分析，然后用自然语言搜索其中的回忆。",
+    "browseHint": "搜索框为空时点击“搜索”，可浏览媒体库。",
+    "activeModelLabel": "当前模型："
+  }
+}

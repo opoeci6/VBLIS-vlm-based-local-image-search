@@ -1,0 +1,44 @@
+{
+  "errorsAlert": {
+    "title": "索引时出现错误",
+    "failedFiles_other": "以下 {{count}} 个文件无法成功处理："
+  },
+  "indexing": {
+    "fallbackTitle": "正在索引媒体",
+    "noModelPill": "未加载模型",
+    "mismatchPill": "模型不一致",
+    "pausedPill": "已暂停",
+    "cannotResumeNoModel": "无法继续队列：内存中当前未加载 AI 模型。请在设置中选择一个模型。",
+    "resumeAdoptTitle": "继续并使用当前模型（{{model}}）",
+    "resumeTitle": "继续索引",
+    "adoptAndResume": "采用并继续",
+    "pauseTitle": "暂停索引",
+    "cancelTitle": "停止并取消当前任务",
+    "cancelling": "正在取消……",
+    "noModelLine": "未加载 AI 模型。请在设置中选择模型以继续。",
+    "mismatchLine": "任务是为“{{queued}}”排队的，当前模型是“{{active}}”。点击“继续”即可改用当前模型。",
+    "pausedAt": "已暂停于：{{item}}",
+    "currentItemFallback": "当前项目",
+    "processing": "正在处理：{{item}}",
+    "preparingFallback": "正在准备……",
+    "viewInQueue": "在任务队列中查看 →"
+  },
+  "download": {
+    "finalizing": "正在完成并加载 AI 视觉引擎……",
+    "verifying": "正在验证并完成下载……",
+    "downloading": "正在下载 AI 视觉引擎：{{model}}",
+    "cancelling": "正在取消……",
+    "starting": "正在开始……",
+    "size": "大小：{{current}} / {{total}}",
+    "speed": "速度：{{speed}}/s",
+    "eta": "预计剩余时间：{{eta}}",
+    "warmingUp": "正在内存中预热模型……"
+  },
+  "loadError": {
+    "title": "模型加载失败：{{model}}",
+    "fallbackModel": "视觉模型",
+    "description": "无法将视觉模型的权重或配置初始化到内存中。",
+    "retryResume": "重试 / 继续",
+    "dismiss": "关闭错误提示"
+  }
+}

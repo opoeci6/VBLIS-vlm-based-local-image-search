@@ -1,0 +1,163 @@
+{
+  "theme": {
+    "title": "界面主题风格",
+    "modern": {
+      "name": "现代圆角",
+      "desc": "柔和曲线与玻璃质感"
+    },
+    "terminal": {
+      "name": "复古终端",
+      "desc": "等宽字体与 ASCII"
+    }
+  },
+  "language": {
+    "title": "语言",
+    "system": "跟随系统"
+  },
+  "titleBar": {
+    "switchTheme": "切换界面主题风格",
+    "themeOptions": {
+      "modern": {
+        "desc": "柔和曲线、渐变与玻璃拟态"
+      },
+      "terminal": {
+        "desc": "等宽字体、锐利边框与 ASCII 艺术"
+      }
+    },
+    "switchToLight": "切换到浅色模式",
+    "switchToDark": "切换到深色模式",
+    "minimize": "最小化",
+    "maximize": "最大化"
+  },
+  "asciiLogo": {
+    "label": "VBLIS 旋转 3D ASCII 标志"
+  },
+  "overlay": {
+    "addToQueue": "松开以添加到队列（#{{position}}）",
+    "addToQueueHint": "文件夹将被添加到后台处理队列",
+    "searchOrIndex": "松开以搜索或索引",
+    "searchOrIndexHint": "拖入图片可进行搜索，拖入文件夹可开始索引"
+  },
+  "modelSwitch": {
+    "activeTaskTitle": "有任务正在进行",
+    "queuedTasksTitle": "有任务在队列中等待",
+    "target": "目标：{{model}}",
+    "activeTaskBody": "索引或重建任务进行期间无法切换模型。必须先取消当前任务，以防止数据库损坏。",
+    "taskProgress_other": "{{processed}} / {{total}} 项（{{progress}}%）",
+    "cancelledNote": "取消后，此任务会保存到任务历史中，可随时重置或重试。",
+    "independentIndex": "每个 AI 模型都有各自独立的向量数据库索引。",
+    "queued_other": "{{count}} 个任务在队列中等待",
+    "queuedNote": "现在切换模型，排队的任务将索引到新选择的模型的集合中。",
+    "cancelAndSwitch": "取消任务并切换",
+    "keepModel": "保留当前模型",
+    "proceed": "继续并切换模型",
+    "clearQueue": "清空队列并切换"
+  },
+  "settingsModal": {
+    "title": "设置",
+    "closeTooltip": "关闭设置"
+  },
+  "dangerZone": {
+    "confirm": "确定吗？此操作无法撤销。",
+    "deleting": "正在删除……",
+    "confirmDelete": "确定删除",
+    "clearing": "正在清除数据库……",
+    "clear": "清除索引数据库",
+    "description": "永久删除当前模型的所有向量嵌入和哈希值。"
+  },
+  "modelManagement": {
+    "title": "模型管理",
+    "description": "每个模型都有各自的索引。切换模型可能需要重新索引。"
+  },
+  "modelCard": {
+    "readyToUse": "已就绪",
+    "downloadingProgress": "正在下载（{{current}} / {{total}}）",
+    "incompleteProgress": "未完成（{{current}} / {{total}}）",
+    "notDownloaded": "未下载",
+    "active": "已激活",
+    "switchBlockedIndexing": "索引进行中，无法切换模型",
+    "activateTooltip": "激活模型",
+    "activate": "激活",
+    "downloading": "正在下载……",
+    "cancelling": "正在取消……",
+    "downloadSpeed": "{{speed}}/s",
+    "resumeTooltip": "继续中断的下载",
+    "download": "下载",
+    "wipeIndex": "清除索引",
+    "del": "删除",
+    "deletePartial": "删除不完整的文件",
+    "deleteLocal": "删除本地文件",
+    "clipNote": "使用英文可获得最佳搜索效果"
+  },
+  "performance": {
+    "title": "硬件加速与批处理",
+    "gpuSupport": "NVIDIA GPU 支持",
+    "gpuUsing": "正在使用 {{name}}",
+    "gpuUsingCuda": "正在使用 CUDA",
+    "gpuDirects": "将任务交给 GPU 处理",
+    "gpuNotDetected": "未检测到 NVIDIA GPU",
+    "gpuDisable": "停用 NVIDIA GPU 支持",
+    "gpuEnable": "启用 NVIDIA GPU 支持",
+    "cudaRequired": "GPU 加速需要支持 CUDA 的 GPU。",
+    "batchSize": {
+      "title": "批大小",
+      "auto": "自动",
+      "autoActive": "自动模式已启用（实际批大小：{{size}}）",
+      "higher": "批大小越大，GPU 利用率越高。"
+    },
+    "precision": {
+      "title": "精度模式",
+      "auto": "自动（{{precision}}）",
+      "fp16": "FP16（半精度）",
+      "fp32": "FP32（全精度）",
+      "fp16Supported": "支持 FP16 Tensor Core",
+      "fallback": "旧款 GPU 自动回退到 FP32"
+    },
+    "oom": {
+      "title": "已触发 OOM / 内存安全回退",
+      "detail": "已自动缩小为微批次，以保护显存"
+    }
+  },
+  "searchTuning": {
+    "minScore": {
+      "title": "最低匹配度",
+      "hint": "文本搜索：模型需要有多大把握认为结果与关键词匹配。"
+    },
+    "minSimilarity": {
+      "title": "最低相似度",
+      "hint": "图片搜索：结果与拖入的图片在视觉上至少要有多相似。"
+    },
+    "maxResults": {
+      "title": "最大显示结果数",
+      "unlimited": "不限制",
+      "value_other": "{{count}} 个结果",
+      "hint": "每个视频算作一个结果。数值越大，占用的系统内存可能越多。媒体库视图始终显示全部内容。",
+      "warning": "警告：不限制结果数可能影响性能和内存。"
+    },
+    "reset": "恢复默认值"
+  },
+  "thumbnailCache": {
+    "title": "缩略图缓存管理",
+    "total": "总计：{{size}}",
+    "images": {
+      "title": "图片缩略图",
+      "summary_other": "{{size}} · {{count}} 项",
+      "confirm": "清除所有图片缩略图？（图片缩略图会在需要时快速重新生成）",
+      "confirmYes": "确定清除",
+      "clear": "清除图片缓存"
+    },
+    "videos": {
+      "title": "视频关键帧",
+      "summary_other": "{{size}} · {{count}} 帧",
+      "rebuilding": "正在重建视频缩略图……",
+      "starting": "正在开始……",
+      "rebuiltProgress_other": "已缓存 {{rebuilt}} / {{total}} 帧",
+      "active": "进行中",
+      "confirm": "清除视频缩略图？（重新生成需要解码视频）",
+      "confirmYes": "确定清除",
+      "rebuild": "重建缩略图",
+      "clearTooltip": "仅清除视频缩略图",
+      "clear": "清除"
+    }
+  }
+}

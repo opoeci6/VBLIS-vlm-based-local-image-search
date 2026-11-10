@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
+import i18n from '../i18n';
 
 export const useBackendStatus = ({ setToast }) => {
   const [status, setStatus] = useState({
@@ -65,12 +66,15 @@ export const useBackendStatus = ({ setToast }) => {
         setShowErrorAlert(true);
       } else if (status.discovered_video_count > 0) {
         setToast({
-          message: `Indexed ${status.indexed_video_frames || 0} adaptive frame(s) from ${status.discovered_video_count} video file(s).`,
+          message: i18n.t('messages:backendStatus.indexedFrames', {
+            frames: status.indexed_video_frames || 0,
+            videos: status.discovered_video_count
+          }),
           type: 'success'
         });
       } else if (status.total_files === 0 && !status.is_indexing) {
         // Only toast about 0 files if it's a "fresh" completion
-        setToast({ message: "No supported images or videos were found in the selected folder.", type: 'error' });
+        setToast({ message: i18n.t('messages:backendStatus.noMediaFound'), type: 'error' });
       }
     }
 
@@ -93,10 +97,10 @@ export const useBackendStatus = ({ setToast }) => {
     setIsCancellingIndexing(true);
     try {
       await apiFetch(`${API_BASE}/index/cancel`, { method: 'POST' });
-      setToast({ message: "Indexing cancellation requested.", type: 'info' });
+      setToast({ message: i18n.t('messages:backendStatus.cancelRequested'), type: 'info' });
     } catch (err) {
       console.error(err);
-      setToast({ message: "Failed to cancel indexing.", type: 'error' });
+      setToast({ message: i18n.t('messages:backendStatus.cancelFailed'), type: 'error' });
     } finally {
       setIsCancellingIndexing(false);
     }

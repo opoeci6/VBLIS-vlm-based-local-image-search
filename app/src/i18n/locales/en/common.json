@@ -1,0 +1,27 @@
+{
+  "cancel": "Cancel",
+  "close": "Close",
+  "retry": "Retry",
+  "resume": "Resume",
+  "pause": "Pause",
+  "eject": "Eject",
+  "unloading": "Unloading...",
+  "ejectTooltip": {
+    "indexing": "Cannot eject model while indexing is in progress",
+    "idle": "Unload model to free GPU VRAM"
+  },
+  "showInExplorer": "Show in Explorer",
+  "openSettings": "Open Settings",
+  "readingMediaDetails": "Reading media details...",
+  "readDetailsNow": "Read details now",
+  "openFileFailed": "Failed to open file in explorer.",
+  "videoFrameAt": "Video frame at {{ts}}",
+  "itemsProgress_one": "{{x}} of {{count}} item",
+  "itemsProgress_other": "{{x}} of {{count}} items",
+  "errors": {
+    "fileNoLongerExists": "File no longer exists.",
+    "nothingToCopy": "Nothing to copy.",
+    "couldNotCopy": "Could not copy.",
+    "clipboardUnavailable": "Clipboard is not available."
+  }
+}

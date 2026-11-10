@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import i18n from '../i18n';
 import {
   formatScorePercent,
   scoreWord,
@@ -94,5 +95,15 @@ describe('hasScore', () => {
     expect(hasScore({ score: NaN })).toBe(false);
     expect(hasScore(null)).toBe(false);
     expect(hasScore(undefined)).toBe(false);
+  });
+});
+
+describe('score labels in Chinese', () => {
+  it('uses the translated words', async () => {
+    await i18n.changeLanguage('zh-CN');
+    expect(formatScoreLabel(0.976, 'match')).toBe('匹配度 97%');
+    expect(formatScoreLabel(0.84, 'similarity')).toBe('相似度 84%');
+    expect(formatScoreLabelUpper(0.976, 'match')).toBe('匹配度 97%');
+    expect(formatScoreLabelUpper(0.84, 'similarity')).toBe('相似度 84%');
   });
 });

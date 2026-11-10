@@ -1,6 +1,9 @@
 import { Layers, Loader2, Pause, Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { taskTitle } from '../../utils/taskTitle';
 
 export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
+  const { t } = useTranslation('queue');
   const { activeTask, pendingCount, workerState, isDrawerOpen, setIsDrawerOpen } = queue;
   const isModern = uiTheme === 'modern';
 
@@ -8,15 +11,15 @@ export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
   const isPaused = workerState === 'paused' || (activeTask && (activeTask.status === 'paused' || activeTask.is_paused));
   const isStoppingAfterCurrent = workerState === 'stopping_after_current';
 
-  let titleText = "Open Background Task Queue";
+  let titleText = t('badge.open');
   if (isPaused) {
     titleText = pendingCount > 0 || activeTask
-      ? `Queue is Paused (${pendingCount + (activeTask ? 1 : 0)} task${(pendingCount + (activeTask ? 1 : 0)) > 1 ? 's' : ''} waiting). Click to open and start queue.`
-      : "Queue is Paused. Click to open Task Manager.";
+      ? t('badge.pausedWaiting', { count: pendingCount + (activeTask ? 1 : 0) })
+      : t('badge.paused');
   } else if (isRunning) {
-    titleText = `Processing: ${activeTask.title} (${activeTask.progress}%). Click to open Task Manager.`;
+    titleText = t('badge.processing', { title: taskTitle(activeTask), progress: activeTask.progress });
   } else if (pendingCount > 0) {
-    titleText = `${pendingCount} task(s) queued. Click to open Task Manager.`;
+    titleText = t('badge.queued', { count: pendingCount });
   }
 
   return (
@@ -47,15 +50,15 @@ export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
 
       {activeTask ? (
         <div className="flex items-center gap-1.5 max-w-[170px] truncate">
-          <span className="truncate">{activeTask.title}</span>
+          <span className="truncate">{taskTitle(activeTask)}</span>
           <span className="font-mono text-[11px] font-bold opacity-90">
             {activeTask.progress}%
           </span>
         </div>
       ) : isPaused ? (
-        <span className="font-semibold text-amber-900 dark:text-amber-200">Queue Paused</span>
+        <span className="font-semibold text-amber-900 dark:text-amber-200">{t('badge.queuePaused')}</span>
       ) : (
-        <span>Queue</span>
+        <span>{t('badge.queue')}</span>
       )}
 
       {pendingCount > 0 && (
@@ -73,7 +76,7 @@ export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
       )}
 
       {isStoppingAfterCurrent && (
-        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" title="Stopping after current" />
+        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" title={t('badge.stoppingAfterCurrent')} />
       )}
     </button>
   );

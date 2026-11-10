@@ -1,12 +1,14 @@
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ModelCard } from './ModelCard';
 
 export const ModelManagementSection = ({ models, status, pendingModel, uiTheme, handleUnloadModel, isUnloadingModel, handleModelSwitch, isSwitchingModel, setPendingModel, handleDownloadModel, handleCancelDownload, showConfirmDeleteModel, setShowConfirmDeleteModel, deleteIndexWithModel, setDeleteIndexWithModel, handleDeleteModel, isDeletingModel }) => {
+  const { t } = useTranslation('settings');
   return (
     <div className="pt-2">
-      <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-0.5">Model Management</label>
+      <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-0.5">{t('modelManagement.title')}</label>
       <p className="text-[11px] text-neutral-400 dark:text-neutral-500 mb-3 leading-relaxed italic">
-        Each model has its own index. Switching models may require reindexing.
+        {t('modelManagement.description')}
       </p>
       {!models.models || models.models.length === 0 ? (
         <div className="flex items-center justify-center py-8">

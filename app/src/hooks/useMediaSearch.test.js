@@ -188,6 +188,69 @@ describe('useMediaSearch', () => {
       expect(result.current.hasSearched).toBe(true);
       expect(result.current.showSearchResults).toBe(false);
     });
+
+    describe('when the backend rejects the search', () => {
+      it('shows the detail the backend sent and shows no results', async () => {
+        fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ detail: 'Model not loaded' }) });
+        const { result, setToast } = render();
+        await submit(result, 'q');
+        await runSearch(result);
+
+        expect(setToast).toHaveBeenCalledTimes(1);
+        expect(setToast).toHaveBeenCalledWith({ message: 'Model not loaded', type: 'error' });
+        expect(result.current.isSearching).toBe(false);
+        expect(result.current.showSearchResults).toBe(false);
+        expect(result.current.results).toEqual([]);
+      });
+
+      it('shows a generic message when there is no detail', async () => {
+        const { result, setToast } = render();
+        for (const response of [
+          { ok: false, status: 500, json: async () => ({}) },
+          { ok: false, status: 500, json: async () => ({ detail: [{ msg: 'invalid' }] }) },
+          { ok: false, status: 502, json: async () => { throw new SyntaxError('not json'); } },
+        ]) {
+          fetchMock.mockResolvedValueOnce(response);
+          await submit(result, 'q');
+          await runSearch(result);
+        }
+        expect(setToast.mock.calls.map(([toast]) => toast)).toEqual([
+          { message: 'Search failed.', type: 'error' },
+          { message: 'Search failed.', type: 'error' },
+          { message: 'Search failed.', type: 'error' },
+        ]);
+        expect(result.current.isSearching).toBe(false);
+      });
+
+      it('shows the generic message when the request itself fails', async () => {
+        fetchMock.mockRejectedValue(new Error('down'));
+        const { result, setToast } = render();
+        await submit(result, 'q');
+        await runSearch(result);
+        expect(setToast).toHaveBeenCalledWith({ message: 'Search failed.', type: 'error' });
+      });
+
+      it('says nothing when a newer search has overtaken the failed one', async () => {
+        const slow = deferred();
+        fetchMock.mockReturnValueOnce(slow.promise);
+        const { result, setToast } = render();
+        await submit(result, 'slow');
+        let first;
+        act(() => { first = result.current.handleSearch({ preventDefault: vi.fn() }); });
+
+        fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/fast.jpg')] }));
+        await submit(result, 'fast');
+        await runSearch(result);
+
+        await act(async () => {
+          slow.resolve({ ok: false, status: 400, json: async () => ({ detail: 'Model not loaded' }) });
+          await first;
+        });
+        expect(setToast).not.toHaveBeenCalled();
+        expect(result.current.results.map(r => r.path)).toEqual(['/fast.jpg']);
+        expect(result.current.isSearching).toBe(false);
+      });
+    });
   });
 
   describe('handleImageDrop', () => {
@@ -236,7 +299,7 @@ describe('useMediaSearch', () => {
       expect(result.current.hasSearched).toBe(true);
       expect(result.current.showSearchResults).toBe(true);
       expect(result.current.results).toHaveLength(2);
-      expect(setToast).toHaveBeenCalledWith({ message: 'Found 2 similar media result(s).', type: 'success' });
+      expect(setToast).toHaveBeenCalledWith({ message: 'Found 2 similar media results.', type: 'success' });
       expect(result.current.isSearching).toBe(false);
     });
 
@@ -246,7 +309,7 @@ describe('useMediaSearch', () => {
       }));
       const { result, setToast } = render();
       await act(async () => { await result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' })); });
-      expect(setToast).toHaveBeenCalledWith({ message: 'Found 2 similar media result(s).', type: 'success' });
+      expect(setToast).toHaveBeenCalledWith({ message: 'Found 2 similar media results.', type: 'success' });
     });
 
     it('reports a failure with an error toast', async () => {
@@ -305,6 +368,20 @@ describe('useMediaSearch', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(onSearchStart).toHaveBeenCalledTimes(1);
       expect(result.current.visibleResultsCount).toBe(240);
+    });
+
+    it('shows the backend detail and keeps nothing when re-posting a text search fails', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: [imageHit('/a.jpg')] }));
+      const { result, setToast } = render();
+      await submit(result, 'cats');
+      await runSearch(result);
+
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ detail: 'Model not loaded' }) });
+      await refresh(result);
+      expect(setToast).toHaveBeenCalledTimes(1);
+      expect(setToast).toHaveBeenCalledWith({ message: 'Model not loaded', type: 'error' });
+      expect(result.current.results).toEqual([]);
+      expect(result.current.isSearching).toBe(false);
     });
 
     describe('image search with a query_ref', () => {
