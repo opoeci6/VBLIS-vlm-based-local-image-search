@@ -1,1 +1,103 @@
-{}
+{
+  "taskQueue": {
+    "completed_other": "任务已完成：{{title}}（{{count}} 项）",
+    "failed": "任务失败：{{title}}",
+    "alreadyQueued": "文件夹已在队列中：{{path}}",
+    "enqueued_other": "已将 {{count}} 个任务加入队列。",
+    "enqueuedWithSkipped": "已将 {{tasks}} 个任务加入队列。（跳过 {{duplicates}} 个重复项）",
+    "added_other": "已将 {{count}} 个文件夹添加到队列。",
+    "queueError": "队列错误：{{detail}}",
+    "connectFailed": "无法连接到任务队列。",
+    "cancelRequested": "已请求取消任务。",
+    "cancelFailed": "无法取消任务。",
+    "cancelNetworkError": "取消任务时出现网络错误。",
+    "paused": "任务已暂停。",
+    "pauseFailed": "无法暂停任务。",
+    "pauseNetworkError": "暂停任务时出现网络错误。",
+    "resumed": "任务已继续。",
+    "resumeFailed": "无法继续任务。",
+    "resumeNetworkError": "继续任务时出现网络错误。",
+    "workerStarted": "队列处理已启动。",
+    "workerStopped": "队列处理已立即停止。",
+    "workerStopsAfterCurrent": "当前任务完成后，队列将停止。",
+    "workerUpdateFailed": "无法更新队列处理状态。",
+    "workerSignalFailed": "无法发送队列控制信号。",
+    "requeued": "任务已重新加入队列：{{title}}",
+    "retryFailed": "无法重试任务。",
+    "retryNetworkError": "重试任务时出现网络错误。",
+    "historyCleared": "已清除任务历史。"
+  },
+  "modelManager": {
+    "downloadedAndActivated": "模型 {{name}} 已下载并成功激活！",
+    "downloaded": "模型 {{name}} 已成功下载。",
+    "downloadFailed": "下载失败：{{error}}",
+    "performanceUpdated": "性能设置已更新。",
+    "performanceFailed": "无法更新设置。",
+    "loadFailedFallback": "无法将模型加载到内存。",
+    "loadError": "模型加载错误：{{message}}",
+    "activated": "已成功激活 {{name}}",
+    "loadNetworkError": "加载模型时出现网络错误：{{message}}",
+    "unloaded": "模型已卸载，GPU 显存已成功释放。",
+    "unloadError": "卸载错误：{{detail}}",
+    "unloadFailed": "无法卸载模型。",
+    "deleted": "模型 {{name}} 已成功删除。",
+    "deletedWithIndex": "模型 {{name}} 及其索引已成功删除。",
+    "deleteError": "错误：{{detail}}",
+    "deleteFailed": "无法删除模型。"
+  },
+  "indexedFolders": {
+    "reindexStarted": "已在后台开始重新索引。",
+    "folderNotAccessible": "仍然无法访问磁盘上的文件夹。请重新连接驱动器后重试。",
+    "error": "错误：{{detail}}",
+    "reindexConnectFailed": "无法连接到后端以重新索引。",
+    "indexRemoved": "已成功移除文件夹索引。",
+    "removeFailed": "无法删除文件夹索引。",
+    "batchRemoved_other": "已成功移除 {{count}} 个文件夹。",
+    "batchDeleteFailed": "批量删除失败。",
+    "batchReindexStarted_other": "已开始重新索引 {{count}} 个文件夹。",
+    "batchReindexFailed": "批量重新索引失败。"
+  },
+  "mediaSearch": {
+    "searchFailed": "搜索失败。",
+    "sortChangeFailed": "无法更改排序方式。",
+    "libraryLoadFailed": "无法加载媒体库。",
+    "dropImage": "请拖放图片文件。",
+    "foundSimilar_other": "找到 {{count}} 个相似的媒体结果。",
+    "imageSearchFailed": "以图搜图失败。",
+    "filtersFailed": "无法应用筛选。",
+    "searchExpired": "此次搜索已过期，请重新搜索。",
+    "moreFramesFailed": "无法加载更多帧。",
+    "videoUnavailable": "此视频已不可用。"
+  },
+  "searchFilters": {
+    "optionsError": "无法加载筛选选项。",
+    "scanAlreadyRunning": "媒体详情已在读取中",
+    "scanStarted": "正在后台读取媒体详情",
+    "scanStartedFor_other": "正在后台读取 {{formatted}} 个文件的媒体详情（无需重新索引）",
+    "scanFailed": "无法开始读取媒体详情。"
+  },
+  "cacheStats": {
+    "cleared": {
+      "all": "已成功清除全部缩略图缓存。",
+      "images": "已成功清除图片缩略图缓存。",
+      "videos": "已成功清除视频缩略图缓存。"
+    },
+    "clearFailed": "无法清除缩略图缓存。",
+    "rebuildStarted": "已在后台开始重建视频缩略图。",
+    "rebuildFailed": "无法开始重建视频缩略图。",
+    "connectFailed": "无法连接到后端。"
+  },
+  "backendStatus": {
+    "indexedFrames": "已从 {{videos}} 个视频文件中索引 {{frames}} 个自适应帧。",
+    "noMediaFound": "在所选文件夹中未找到受支持的图片或视频。",
+    "cancelRequested": "已请求取消索引。",
+    "cancelFailed": "无法取消索引。"
+  },
+  "fileDrop": {
+    "noModel": "请先选择或下载一个模型。",
+    "dropFolderOrImage": "请拖放文件夹或图片文件。"
+  },
+  "folderContents": {
+    "browseFailed": "无法读取文件夹内容。"
+  }
+}

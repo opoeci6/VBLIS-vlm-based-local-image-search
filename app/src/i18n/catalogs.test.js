@@ -3,11 +3,8 @@ import { describe, expect, it } from 'vitest';
 // Guards for the translation catalogs (src/i18n/locales/<language>/<namespace>.json):
 //  - every literal t('...') / i18n.t('...') key in the source exists in the English catalogs;
 //  - zh-CN has no key that English lacks, and keeps the same {{placeholders}};
-//  - (later) every English key has a zh-CN value;
+//  - every English key has a zh-CN value, none of them empty, and zh-CN has no _one forms;
 //  - the JSON is valid, has no duplicate keys and no keys that break dot paths.
-
-// T3 turns this on: every English key must then have a zh-CN value. The other zh-CN checks are always on.
-const REQUIRE_FULL_ZH = false;
 
 const rawCatalogs = import.meta.glob('./locales/*/*.json', { eager: true, query: '?raw', import: 'default' });
 const rawSources = import.meta.glob('../**/*.{js,jsx}', { eager: true, query: '?raw', import: 'default' });
@@ -215,11 +212,24 @@ describe('zh-CN against en', () => {
   });
 
   // Chinese has one plural form: an English _one/_other pair needs only zh _other.
-  (REQUIRE_FULL_ZH ? it : it.skip)('has a value (an empty one counts) for every English key', () => {
+  it('has a value for every English key', () => {
     const missing = Object.keys(en).filter((path) => {
       if (path.endsWith('_one')) return false;
       return typeof zh[path] !== 'string';
     });
     expect(missing).toEqual([]);
+  });
+
+  it('has no empty value, and English only has home:searchTip empty', () => {
+    expect(Object.keys(zh).filter(path => zh[path] === '')).toEqual([]);
+    expect(Object.keys(en).filter(path => en[path] === '')).toEqual(['home:searchTip']);
+  });
+
+  it('has no three-dot ellipsis', () => {
+    expect(Object.keys(zh).filter(path => zh[path].includes('...'))).toEqual([]);
+  });
+
+  it('has no _one plural forms', () => {
+    expect(Object.keys(zh).filter(path => path.endsWith('_one'))).toEqual([]);
   });
 });

@@ -21,5 +21,85 @@
     "PRUNE_DELETED": "清理缺失的文件",
     "CLEAR_CACHE": "清除缓存",
     "SCAN_MEDIA_INFO": "读取媒体详情"
+  },
+  "activeTask": {
+    "emptyTitle": "没有正在进行的任务",
+    "emptyHint": "拖入文件夹或触发维护操作，即可加入新任务。",
+    "paused": "已暂停",
+    "running": "运行中",
+    "current": "当前：{{item}}",
+    "processing": "正在处理……",
+    "progress_other": "{{processed}} / {{total}} 项",
+    "errors_other": "{{count}} 个错误",
+    "cancelTitle": "取消任务"
+  },
+  "badge": {
+    "open": "打开后台任务队列",
+    "pausedWaiting_other": "队列已暂停（{{count}} 个任务等待中）。点击打开并启动队列。",
+    "paused": "队列已暂停。点击打开任务队列。",
+    "processing": "正在处理：{{title}}（{{progress}}%）。点击打开任务队列。",
+    "queued_other": "{{count}} 个任务在队列中。点击打开任务队列。",
+    "queuePaused": "队列已暂停",
+    "queue": "队列",
+    "stoppingAfterCurrent": "当前任务完成后停止"
+  },
+  "drawer": {
+    "title": "任务队列管理器",
+    "summaryPaused": "队列已暂停 · {{queued}} 个排队中 · {{completed}} 个已完成",
+    "summaryStopping": "当前任务完成后停止…… · {{queued}} 个排队中 · {{completed}} 个已完成",
+    "summaryActive": "队列运行中 · {{queued}} 个排队中 · {{completed}} 个已完成",
+    "resumeWorker": "继续队列处理",
+    "pauseWorker": "暂停队列处理",
+    "startQueue": "启动队列",
+    "stopping": "正在停止……",
+    "pauseQueue": "暂停队列",
+    "tabOverview": "概览",
+    "tabQueued": "排队中（{{n}}）",
+    "tabHistory": "历史（{{n}}）",
+    "activeSummary": "{{title}}（{{progress}}%）",
+    "pendingSummary_other": "{{count}} 个任务待处理",
+    "mismatch": {
+      "noModelTitle": "内存中未加载 AI 模型",
+      "differenceTitle": "检测到模型不一致",
+      "fallbackModel": "AI 模型",
+      "noModelBody": "任务是为“{{queued}}”排队的，但当前没有已激活的模型。请先激活一个模型，再启动队列。",
+      "differenceBody": "任务是为“{{queued}}”排队的，但当前模型是“{{active}}”。",
+      "retargetTitle": "将排队的任务改用 {{model}} 并开始处理",
+      "proceed": "继续使用 {{model}}"
+    },
+    "sectionActive": "当前任务",
+    "sectionNext": "队列中的下一项（{{n}}）",
+    "viewAllTasks_other": "查看全部 {{count}} 个任务 →",
+    "sectionHistory": "最近的任务历史",
+    "viewAllEntries_other": "查看全部 {{count}} 条记录 →",
+    "sectionAllQueued": "全部排队任务（{{n}}）"
+  },
+  "queuedList": {
+    "emptyTitle": "队列为空",
+    "emptyHint": "拖入文件夹或点击“添加文件夹”，即可加入新任务。",
+    "dragToReorder": "拖动以重新排序",
+    "moveToTop": "移到队列顶部",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "remove": "从队列中移除"
+  },
+  "stopModal": {
+    "title": "停止后台队列",
+    "body": "当前正在运行索引或重建任务。要如何暂停队列？",
+    "immediateTitle": "立即停止",
+    "immediateDesc": "就地暂停当前任务，并保留所有排队的任务。可随时继续。",
+    "afterCurrentTitle": "完成当前任务后停止",
+    "afterCurrentDesc": "让当前任务正常完成，但不再启动队列中的下一个任务。"
+  },
+  "history": {
+    "emptyTitle": "没有任务历史",
+    "emptyHint": "已完成和已取消的任务会显示在这里。",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "last_other": "最近 {{count}} 个任务",
+    "clear": "清除历史",
+    "requeueTitle": "将此任务重新加入队列",
+    "errorMessages_other": "{{count}} 条错误信息"
   }
 }

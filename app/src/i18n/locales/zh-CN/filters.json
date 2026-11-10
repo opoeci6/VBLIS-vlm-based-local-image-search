@@ -6,7 +6,9 @@
   },
   "duplicates": {
     "exact": "完全相同的副本",
-    "visual": "视觉重复"
+    "visual": "视觉重复",
+    "withCount": "{{label}}（{{n}}）",
+    "note": "整个媒体库中完全相同的副本和视觉重复项。索引后首次检查视觉重复可能需要几秒钟。"
   },
   "chip": {
     "videosOnly": "仅视频",
@@ -20,5 +22,74 @@
       "from": "自 {{date}} 起",
       "until": "截至 {{date}}"
     }
+  },
+  "activeChips": {
+    "groupLabel": "已启用的筛选",
+    "remove": "移除筛选：{{label}}",
+    "clearAll": "全部清除"
+  },
+  "button": {
+    "label": "搜索筛选",
+    "labelActive_other": "搜索筛选（已启用 {{count}} 项）",
+    "text": "筛选"
+  },
+  "tree": {
+    "collapse": "折叠 {{name}}",
+    "expand": "展开 {{name}}",
+    "missingTitle": "{{name}} 在磁盘上缺失或无法访问",
+    "included": "（已包含）",
+    "missing": "缺失",
+    "empty": "没有已索引的文件夹"
+  },
+  "panel": {
+    "label": "搜索筛选",
+    "title": "筛选",
+    "close": "关闭筛选",
+    "clearAll": "全部清除",
+    "done": "完成"
+  },
+  "sections": {
+    "type": "类型",
+    "folders": "文件夹",
+    "dateTaken": "拍摄日期",
+    "orientation": "方向",
+    "format": "格式",
+    "duplicates": "重复项",
+    "minResolution": "最低分辨率"
+  },
+  "type": {
+    "all": "全部",
+    "images": "图片",
+    "videos": "视频"
+  },
+  "date": {
+    "any": "不限",
+    "last30": "最近 30 天",
+    "last12m": "最近 12 个月",
+    "yearCount": "{{year}} 年（{{n}}）",
+    "custom": "自定义……",
+    "from": "从",
+    "to": "到"
+  },
+  "format": {
+    "images": "图片",
+    "videos": "视频",
+    "other": "其他",
+    "withCount": "{{label}}（{{n}}）",
+    "unavailable": "格式不可用",
+    "loading": "正在加载格式……",
+    "none": "未找到任何格式"
+  },
+  "resolution": {
+    "any": "不限",
+    "megapixels": "{{mp}} MP"
+  },
+  "coverage": {
+    "loadingOptions": "正在加载筛选选项……",
+    "details_other": "已读取 {{withDetails}} / {{total}} 个文件的媒体详情",
+    "detailsWithUnavailable_other": "已读取 {{withDetails}} / {{total}} 个文件的媒体详情（{{unavailable}} 个位于未连接的文件夹）",
+    "unavailable": "媒体详情不可用",
+    "missing_other": "{{formatted}} 个文件尚无媒体详情。在读取其详情之前，日期、方向和分辨率筛选会跳过这些文件。此操作只读取文件头，无需重新索引。",
+    "hidden": "没有媒体详情的文件会被日期、方向和分辨率筛选隐藏。"
   }
 }

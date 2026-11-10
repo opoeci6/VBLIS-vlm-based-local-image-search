@@ -235,7 +235,7 @@ describe('formatters in Chinese', () => {
   it('translates durations', async () => {
     await i18n.changeLanguage('zh-CN');
     expect(formatDuration(0)).toBe('0 秒');
-    expect(formatDuration(Infinity)).toBe('正在计算...');
+    expect(formatDuration(Infinity)).toBe('正在计算……');
     expect(formatDuration(45)).toBe('45 秒');
     expect(formatDuration(125)).toBe('2 分 5 秒');
     expect(formatDuration(3725)).toBe('1 小时 2 分 5 秒');

@@ -1,1 +1,16 @@
-{}
+{
+  "lightbox": {
+    "pathCopied": "已复制路径",
+    "copyFailed": "无法复制路径。",
+    "unavailable": "此文件已被移动或删除，不再可用。",
+    "fullSizeAlt": "完整尺寸的结果",
+    "similarityScore": "相似度：{{percent}}",
+    "matchScore": "匹配度：{{percent}}",
+    "taken": "拍摄于 {{date}}",
+    "exactDetected_other": "在另外 {{count}} 个位置发现完全相同的文件副本",
+    "visualDetected_other": "在另外 {{count}} 个位置发现视觉重复（相似度 98.5% 以上）",
+    "alsoFoundAt": "同时位于：",
+    "copyPath": "复制路径",
+    "showPathInExplorer": "在资源管理器中显示 {{path}}"
+  }
+}

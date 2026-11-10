@@ -182,7 +182,7 @@ describe('App with translations', () => {
     await screen.findByText('Ready to Search');
     await act(() => i18n.changeLanguage('zh-CN'));
 
-    fireEvent.click(screen.getAllByTitle(/Active Vision Engine: org\/model-a/)[0]);
+    fireEvent.click(screen.getAllByTitle(/当前视觉引擎：org\/model-a/)[0]);
     expect(await screen.findByText('界面主题风格')).toBeTruthy();
     expect(screen.getByText('语言')).toBeTruthy();
 
