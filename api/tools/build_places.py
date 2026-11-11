@@ -37,7 +37,15 @@ LEVEL_BY_FEATURE_CODE = {"PPLA3": 1, "PPLA4": 1, "PPLC": 2, "PPLA": 2, "PPLA2": 
 # when nothing else exists: every Chinese name goes through OpenCC t2s afterwards
 ZH_PRIORITY = [b"zh-cn", b"zh-hans", b"zh-sg", b"zh", b"zh-hant", b"zh-tw", b"zh-hk"]
 # The wording of these three country names is a project decision (they stay separate entries)
-ZH_COUNTRY_NAMES = {"HK": "香港 (中国)", "MO": "澳门 (中国)", "TW": "台湾 (中国)"}
+ZH_COUNTRY_NAMES = {"HK": "香港（中国）", "MO": "澳门（中国）", "TW": "台湾（中国）"}
+# GeoNames' one region for most of Taiwan is itself called "Taiwan": it gets the same Chinese name as the
+# entry above it, so that a place line shows the name once in Chinese as it does in English
+ZH_REGION_NAMES = {"TW.04": ZH_COUNTRY_NAMES["TW"]}
+# Here the "cities" of GeoNames are neighbourhoods and housing estates, mostly without a Chinese name:
+# their rows are kept as sections, so a position is named by its district (the region) only
+REGION_ONLY_COUNTRIES = {"HK", "MO"}
+# Hand-kept corrections, applied last: lines of "geonameid <tab> Chinese name <tab> note", # for comments
+OVERRIDES_FILE = Path(__file__).with_name("place_name_overrides.tsv")
 ZH_RANK = {lang: rank for rank, lang in enumerate(ZH_PRIORITY)}
 # Thousands of places in China have their Chinese names only as alternate names without a language
 # (太仓市 for Taicang). For places of these countries such a name, when it is all Chinese characters, is
@@ -46,7 +54,8 @@ ZH_RANK = {lang: rank for rank, lang in enumerate(ZH_PRIORITY)}
 UNTAGGED_ZH_COUNTRIES = {"CN", "HK", "MO", "TW"}
 UNTAGGED_ZH_RANK = len(ZH_PRIORITY)
 UNTAGGED_ZH_SUFFIXES = ("市", "区", "區", "县", "縣", "旗", "镇", "鎮", "乡", "鄉", "街道")
-HAN_RE = re.compile(r"[㐀-䶿一-鿿]+")
+ZH_UNIT_SUFFIXES = ("市", "县", "縣", "旗")
+HAN_RE =re.compile(r"[㐀-䶿一-鿿]+")
 MAX_MEMBER_BYTES = 2 * 1024 ** 3
 ADMIN1_RE = re.compile(r"[A-Za-z0-9]{1,20}")
 COUNTRY_RE = re.compile(r"[A-Z]{2}")
@@ -193,7 +202,12 @@ def scan_alternate_names(zip_path, wanted_ids, city_ids, untagged_ids=()):
                     if gid not in english or alt_id < english[gid][0]:
                         english[gid] = (alt_id, name)
                 else:
-                    key = (rank, _untagged_suffix_rank(name) if is_untagged else int(not preferred), alt_id)
+                    # In these countries GeoNames often lists the seat town's name next to the city's or
+                    # county's (玉山 and 昆山市 for Kunshan): the name of the city, county or banner comes
+                    # first, whatever its language tag
+                    is_unit = gid in untagged and name.endswith(ZH_UNIT_SUFFIXES)
+                    key = (int(not is_unit), rank, _untagged_suffix_rank(name) if is_untagged else int(not preferred),
+                           alt_id)
                     if gid not in chinese or key < chinese[gid][0]:
                         chinese[gid] = (key, name, "untagged" if is_untagged else lang.decode("ascii"))
     english = {int(g): v[1] for g, v in english.items()}
@@ -211,9 +225,28 @@ def load_opencc(folder):
         sys.exit(f"error: cannot import OpenCC from {folder}: {e}")
 
 
-def build(source, out_path, converter, log=print):
-    """converter: an object with convert(text), applied to every Chinese name (OpenCC t2s)."""
+def read_overrides(path):
+    """{geonameid: Chinese name} from the overrides file; a malformed line is an error."""
+    overrides = {}
+    with open(path, encoding="utf-8") as f:
+        for number, line in enumerate(f, 1):
+            line = line.rstrip("\r\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            cols = line.split("\t")
+            name = _clean(cols[1]) if len(cols) > 1 else ""
+            if not cols[0].isdigit() or not name or int(cols[0]) in overrides:
+                raise ValueError(f"{path}: line {number} is not 'geonameid<tab>name' or repeats an id")
+            overrides[int(cols[0])] = name
+    return overrides
+
+
+def build(source, out_path, converter, log=print, overrides=None):
+    """converter: an object with convert(text), applied to every Chinese name (OpenCC t2s).
+    overrides: {geonameid: Chinese name}; None reads OVERRIDES_FILE."""
     source = Path(source)
+    if overrides is None:
+        overrides = read_overrides(OVERRIDES_FILE)
     countries = read_countries(source / COUNTRY_FILE)
     admin1 = read_admin1(source / ADMIN1_FILE)
     city_rows, cities_date = read_cities(source / CITIES_ZIP)
@@ -225,6 +258,8 @@ def build(source, out_path, converter, log=print):
         log(f"dropped {len(unknown_country)} places of countries missing from countryInfo: "
             f"{sorted({r[3] for r in unknown_country})}")
         city_rows = [r for r in city_rows if r[3] in countries]
+    city_rows = [(r[0], r[1], r[2], r[3], r[4], "", r[6], True, 0) if r[3] in REGION_ONLY_COUNTRIES else r
+                 for r in city_rows]
     used_regions = {f"{r[3]}.{r[4]}" for r in city_rows}
     named_regions = {code for code in used_regions if code in admin1}
 
@@ -239,7 +274,12 @@ def build(source, out_path, converter, log=print):
     converted = {}  # one converter call per distinct name
     changed = [0]   # Chinese names (as written to the file) the conversion changed
 
+    used_overrides = set()
+
     def zh(gid):
+        if gid in overrides:
+            used_overrides.add(gid)
+            return overrides[gid]
         if gid not in chinese:
             return ""
         name = chinese[gid][0]
@@ -250,7 +290,7 @@ def build(source, out_path, converter, log=print):
         return converted[name]
 
     country_out = [(code, name, ZH_COUNTRY_NAMES.get(code) or zh(gid)) for code, (name, gid) in countries.items()]
-    region_out = [(code, admin1[code][0], zh(admin1[code][1])) for code in named_regions]
+    region_out = [(code, admin1[code][0], ZH_REGION_NAMES.get(code) or zh(admin1[code][1])) for code in named_regions]
     city_out = [(gid, lat, lon, f"{cc}.{adm}", "" if section else english.get(gid, name),
                  "" if section else zh(gid), population, section, level)
                 for gid, lat, lon, cc, adm, name, population, section, level in city_rows]
@@ -267,6 +307,9 @@ def build(source, out_path, converter, log=print):
     log(f"with a Chinese name: places {share([(x[5],) for x in city_out if not x[7]])}, "
         f"regions {share(region_out)}, countries {share(country_out)}")
     log(f"OpenCC t2s changed {changed[0]} of the Chinese names written ({len(converted)} distinct names converted)")
+    unused = sorted(set(overrides) - used_overrides)
+    log(f"overrides applied: {len(used_overrides)} of {len(overrides)}"
+        + (f" (no such place, region or country: {unused})" if unused else ""))
     log("Chinese name languages used: " + ", ".join(f"{k}={v}" for k, v in sorted(
         Counter(v[1] for g, v in chinese.items() if g in wanted).items())))
     return count
