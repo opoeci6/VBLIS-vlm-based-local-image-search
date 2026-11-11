@@ -14,6 +14,7 @@
     "videosOnly": "仅视频",
     "imagesOnly": "仅图片",
     "folder": "文件夹：{{name}}",
+    "place": "地点：{{name}}",
     "megapixels": "≥ {{mp}} MP",
     "date": {
       "last30": "最近 30 天",
@@ -52,6 +53,7 @@
     "type": "类型",
     "folders": "文件夹",
     "dateTaken": "拍摄日期",
+    "place": "地点",
     "orientation": "方向",
     "format": "格式",
     "duplicates": "重复项",
@@ -71,6 +73,14 @@
     "from": "从",
     "to": "到"
   },
+  "place": {
+    "countryOrRegion": "国家或地区",
+    "other": "其他",
+    "noData": "没有任何文件包含位置信息。",
+    "credit": "地名数据：GeoNames（CC BY 4.0）",
+    "loading": "正在加载地点……",
+    "unavailable": "地点不可用"
+  },
   "format": {
     "images": "图片",
     "videos": "视频",
@@ -89,7 +99,7 @@
     "details_other": "已读取 {{withDetails}} / {{total}} 个文件的媒体详情",
     "detailsWithUnavailable_other": "已读取 {{withDetails}} / {{total}} 个文件的媒体详情（{{unavailable}} 个位于未连接的文件夹）",
     "unavailable": "媒体详情不可用",
-    "missing_other": "{{formatted}} 个文件尚无媒体详情。在读取其详情之前，日期、方向和分辨率筛选会跳过这些文件。此操作只读取文件头，无需重新索引。",
-    "hidden": "没有媒体详情的文件会被日期、方向和分辨率筛选隐藏。"
+    "missing_other": "{{formatted}} 个文件尚无媒体详情。在读取其详情之前，日期、地点、方向和分辨率筛选会跳过这些文件。此操作只读取文件头，无需重新索引。",
+    "hidden": "没有媒体详情的文件会被日期、地点、方向和分辨率筛选隐藏。"
   }
 }

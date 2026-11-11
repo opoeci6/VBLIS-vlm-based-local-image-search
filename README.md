@@ -13,7 +13,8 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 - **Image-to-Image Search**: Find similar images by uploading or dragging an image into the search bar.
 - **Video Search**: Videos are searched by their frames. Each video counts as one result and brings its best-matching frames; **Find more frames** shows the rest. Videos recorded in portrait on a phone are shown and searched upright.
 - **Browse the Library**: Press Search with an empty box to see everything you've indexed, sorted by the date taken, newest or oldest first.
-- **Search Filters**: Narrow any search, or the library view, to images or videos, chosen folders, a date range, orientation, file format, a minimum resolution, or duplicates.
+- **Search Filters**: Narrow any search, or the library view, to images or videos, chosen folders, a date range, a place, orientation, file format, a minimum resolution, or duplicates.
+- **Place Names**: Photos and videos with GPS data show where they were taken (the city, its region, and the country or region), and the Place filter finds them by that. The lookup is built in and works offline.
 - **Duplicate Detection**: Results show badges for exact copies and for images that look alike, counted across the whole library. The Duplicates filter lists only those.
 - **Meaningful Scores**: With SigLIP models, a text search shows how sure the model is that a result fits your words; an image search shows how visually close each result is.
 - **Local Indexing**: Rapidly index large folders of images and videos locally. All data stays on your machine.
@@ -61,7 +62,7 @@ Or use the portable version `VBLIS-<version>-win.7z`: extract it with [7-Zip](ht
 > VBLIS partially supports search while indexing. You can search while the app is indexing your folders, but the results will be limited to the images that have been indexed so far.
 5. **GPU Settings**: If you have an NVIDIA GPU, ensure GPU acceleration is enabled in the settings for optimal performance.
 6. **Result Filtering**: In the settings you can adjust how many results to display (a video counts as one result and brings its best frames; open it and use **Find more frames** to see all of its matching frames) and two minimums: a **match score** for text searches (with SigLIP models, how sure the model is that a result fits your words) and a **similarity** for image searches (how visually close a result is to the dropped image). VBLIS remembers these three settings; **Reset to defaults** restores them. The library view always shows everything.
-7. **Search Filters**: The **Filters** button next to the search bar narrows any search to images or videos, chosen folders, a date range (the date a photo or video was taken, or the file's modified date when it has none), orientation, file format, a minimum resolution, and duplicates (exact copies or images that look alike). Changing a filter updates the current results right away. Date, orientation and resolution come from media details that VBLIS reads while indexing; for folders indexed with an older version, use **Read details now** in the Filters panel.
+7. **Search Filters**: The **Filters** button next to the search bar narrows any search to images or videos, chosen folders, a date range (the date a photo or video was taken, or the file's modified date when it has none), a place (a country or region, or a region or city inside it, from the GPS data of the file), orientation, file format, a minimum resolution, and duplicates (exact copies or images that look alike). Changing a filter updates the current results right away. Date, place, orientation and resolution come from media details that VBLIS reads while indexing; for folders indexed with an older version, use **Read details now** in the Filters panel. Places are matched to the nearest known town or city without boundary data, so a photo taken close to a border or in a suburb can be named after the neighbouring place.
 8. **Model Management**: You can download, switch, and delete models in the settings.
 9. **Index and Cache Management**: You can clear the index and cache in the settings.
 10. **Language**: Choose English or Simplified Chinese in the settings, or let VBLIS follow Windows. Searching works best with English queries; in Chinese, use common words.
@@ -70,7 +71,7 @@ Or use the portable version `VBLIS-<version>-win.7z`: extract it with [7-Zip](ht
 
 - Your index, downloaded models and settings are kept. The installer keeps them in `%LOCALAPPDATA%\VBLIS`, and the portable version in the `VBLIS-data` folder next to `VBLIS.exe`. When you install over an older version, its data is moved there automatically.
 - After upgrading from v0.2.0 or older, re-sync your folders once (the **Re-sync** button of each folder in the Indexed Folders panel). That picks up AVIF files, and turns portrait videos and photos that older versions indexed sideways upright. Only those files are embedded again.
-- The date, orientation and resolution filters need media details that older versions didn't read. VBLIS reads them in the background the first time you open the Filters panel; no re-indexing is needed.
+- The date, place, orientation and resolution filters need media details that older versions didn't read. VBLIS reads them in the background the first time you open the Filters panel; no re-indexing is needed.
 
 ## TODO / Roadmap
 
@@ -79,6 +80,10 @@ Or use the portable version `VBLIS-<version>-win.7z`: extract it with [7-Zip](ht
 - [ ] Support for non-NVIDIA GPUs (MPS for Mac, Vulkan/DirectML for AMD/Intel).
 - [x] Interface translations (i18n): English and Simplified Chinese.
 - [x] Browse the library without a search query.
-- [ ] Place names and a location filter, from the GPS data in photos and videos.
+- [x] Place names and a location filter, from the GPS data in photos and videos.
 - [x] Advanced filtering (by date, folder, or image properties).
 - [x] Image-to-Video searching.
+
+## Credits
+
+- Place names: [GeoNames](https://www.geonames.org/), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The Chinese names were converted to Simplified Chinese with OpenCC.

@@ -1,5 +1,5 @@
 /* global process */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
 import {
   buildFilterChips,
@@ -325,5 +325,75 @@ describe('translated labels', () => {
     const state = { folders: ['/data/$t(common.cancel)'], orientations: [], formats: [], duplicates: [] };
     expect(buildFilterChips(state, { removeFolder: () => {} }, undefined).map(chip => chip.label))
       .toEqual(['Folder: $t(common.cancel)']);
+  });
+});
+
+describe('place filter', () => {
+  const japan = { id: 'JP', en: 'Japan', zh: '日本' };
+  const kyoto = { id: 'JP.22', en: 'Kyoto Prefecture', zh: null };
+  const nameless = { id: 'CN.99', en: null, zh: null };
+  const noop = () => {};
+
+  it('sends the place ids sorted, and leaves the key out when none is chosen', () => {
+    expect(buildRequestFilters({ ...emptyState, places: [kyoto, nameless, japan] }))
+      .toEqual({ places: ['CN.99', 'JP', 'JP.22'] });
+    expect(buildRequestFilters({ ...emptyState, places: [] })).toBeNull();
+    expect(buildRequestFilters(emptyState)).toBeNull();
+  });
+
+  it('still works with a state that has no places field', () => {
+    const { places: _ignored, ...withoutPlaces } = { ...emptyState, places: [] };
+    expect(buildRequestFilters(withoutPlaces)).toBeNull();
+    expect(countActiveFilters(withoutPlaces)).toBe(0);
+    expect(buildFilterChips(withoutPlaces, {}).map(chip => chip.label)).toEqual([]);
+  });
+
+  it('counts the places as one kind', () => {
+    expect(countActiveFilters({ ...emptyState, places: [japan] })).toBe(1);
+    expect(countActiveFilters({ ...emptyState, places: [japan, kyoto] })).toBe(1);
+    expect(countActiveFilters({ ...emptyState, mediaType: 'image', places: [japan, kyoto] })).toBe(2);
+  });
+
+  it('counts as a details filter, because the GPS position comes with the media details', () => {
+    expect(hasDetailsFilter({ places: ['JP'] })).toBe(true);
+    expect(hasDetailsFilter({ media_type: 'image' })).toBe(false);
+    expect(hasDetailsFilter(buildRequestFilters({ ...emptyState, places: [japan] }))).toBe(true);
+  });
+
+  it('has one chip per place, named in the interface language', async () => {
+    const state = { ...emptyState, places: [japan, kyoto] };
+    const chips = buildFilterChips(state, { removePlace: noop });
+    expect(chips.map(chip => chip.label)).toEqual(['Place: Japan', 'Place: Kyoto Prefecture']);
+    expect(chips.map(chip => chip.key)).toEqual(['place:JP', 'place:JP.22']);
+
+    await i18n.changeLanguage('zh-CN');
+    expect(buildFilterChips(state, { removePlace: noop }).map(chip => chip.label)).toEqual(['地点：日本', '地点：Kyoto Prefecture']);
+  });
+
+  it('takes the language of the names from its last argument', () => {
+    const state = { ...emptyState, places: [japan] };
+    expect(buildFilterChips(state, {}, undefined, i18n.t, 'zh-CN').map(chip => chip.label)).toEqual(['Place: 日本']);
+  });
+
+  it('names a region without names Other', async () => {
+    const state = { ...emptyState, places: [nameless] };
+    expect(buildFilterChips(state, {}).map(chip => chip.label)).toEqual(['Place: Other']);
+    await i18n.changeLanguage('zh-CN');
+    expect(buildFilterChips(state, {}).map(chip => chip.label)).toEqual(['地点：其他']);
+  });
+
+  it('removes a place through its chip by id', () => {
+    const removePlace = vi.fn();
+    const chips = buildFilterChips({ ...emptyState, places: [japan, kyoto] }, { removePlace });
+    chips[1].onRemove();
+    expect(removePlace).toHaveBeenCalledTimes(1);
+    expect(removePlace).toHaveBeenCalledWith('JP.22');
+  });
+
+  it('puts the place chips after the duplicate chips with unique keys', () => {
+    const state = { ...emptyState, mediaType: 'image', duplicates: ['exact'], places: [japan, kyoto] };
+    const chips = buildFilterChips(state, {});
+    expect(chips.map(chip => chip.label)).toEqual(['Images only', 'Exact copies', 'Place: Japan', 'Place: Kyoto Prefecture']);
+    expect(new Set(chips.map(chip => chip.key)).size).toBe(4);
   });
 });

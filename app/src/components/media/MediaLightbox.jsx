@@ -1,4 +1,4 @@
-import { FolderOpen, X, Sparkles, Copy, ClipboardCopy, Video } from 'lucide-react';
+import { FolderOpen, X, Sparkles, Copy, ClipboardCopy, MapPin, Video } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API_BASE } from '../../config';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
@@ -6,16 +6,20 @@ import { cn } from '../../utils/cn';
 import { copyText, openInExplorer } from '../../utils/electron';
 import { formatBytes, formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
+import { formatPlaceLine } from '../../utils/placeNames';
 import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
 
 export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiTheme }) => {
-  const { t } = useTranslation('media');
+  // `i18n` is destructured too: it re-renders on a language switch, and the place line is named in that language.
+  const { t, i18n } = useTranslation('media');
   const backdropDismiss = useBackdropDismiss(() => setSelectedImage(null));
 
   if (!(selectedImage)) return null;
 
   // An item from the library view (no query) has no score: show when it was taken instead.
   const takenDate = formatTakenDate(selectedImage.taken_at);
+  // Search and library results carry `place` when the file has GPS data; folder explorer items never do.
+  const placeLine = formatPlaceLine(selectedImage.place, i18n.language);
   const duplicateNotice = selectedImage.isDuplicate
     ? (selectedImage.duplicateType === 'exact'
       ? t('lightbox.exactDetected', { count: selectedImage.otherPaths.length })
@@ -95,6 +99,15 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
               <p className="text-xs text-neutral-400 font-mono mt-0.5">{formatBytes(selectedImage.size)}</p>
             ) : null}
           </div>
+        )}
+        {placeLine && (
+          <p
+            className="mb-2 flex items-center justify-center gap-1.5 px-4 text-sm text-neutral-300"
+            title={t('lightbox.place', { place: placeLine })}
+          >
+            <MapPin className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            <span>{placeLine}</span>
+          </p>
         )}
         {selectedImage.media_type === 'video' && (
           <p className={cn(

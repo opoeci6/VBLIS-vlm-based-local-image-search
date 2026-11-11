@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import i18n from '../../i18n';
 import { MediaLightbox } from './MediaLightbox';
 import { formatTakenDate } from '../../utils/formatters';
 
@@ -191,6 +192,79 @@ describe('MediaLightbox', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Close' }));
       expect(props.setSelectedImage).toHaveBeenCalledWith(null);
     });
+  });
+});
+
+describe('MediaLightbox place line', () => {
+  afterEach(cleanup);
+
+  const place = {
+    id: 'JP.26.1857910',
+    country: { en: 'Japan', zh: '日本' },
+    region: { en: 'Kyoto Prefecture', zh: '京都府' },
+    city: { en: 'Kyoto', zh: null },
+  };
+
+  it('shows the place small to large in English, under the score', () => {
+    renderLightbox(imageResult({ place }));
+    const line = screen.getByText('Kyoto, Kyoto Prefecture, Japan');
+    expect(line.closest('p').getAttribute('title')).toBe('Place: Kyoto, Kyoto Prefecture, Japan');
+    expect(line.closest('p').querySelector('svg')).not.toBeNull();
+    const score = screen.getByText('Match Score: 87%');
+    expect(score.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows it large to small in Chinese, with the English name where there is no Chinese one', async () => {
+    renderLightbox(imageResult({ place }));
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    expect(screen.getByText('日本 · 京都府 · Kyoto')).toBeTruthy();
+    expect(screen.queryByText('Kyoto, Kyoto Prefecture, Japan')).toBeNull();
+    expect(screen.getByText('日本 · 京都府 · Kyoto').closest('p').getAttribute('title')).toBe('地点：日本 · 京都府 · Kyoto');
+  });
+
+  it('follows a language switch while it is open', async () => {
+    renderLightbox(imageResult({ place: { ...place, city: { en: 'Kyoto', zh: '京都市' } } }));
+    expect(screen.getByText('Kyoto, Kyoto Prefecture, Japan')).toBeTruthy();
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    expect(screen.getByText('日本 · 京都府 · 京都市')).toBeTruthy();
+    await act(async () => { await i18n.changeLanguage('en'); });
+    expect(screen.getByText('Kyoto, Kyoto Prefecture, Japan')).toBeTruthy();
+  });
+
+  it('shows only what is known', () => {
+    renderLightbox(imageResult({ place: { id: 'JP', country: { en: 'Japan', zh: '日本' }, region: null, city: null } }));
+    expect(screen.getByText('Japan')).toBeTruthy();
+  });
+
+  it('shows it on a library item without a score, below the date taken', () => {
+    renderLightbox(imageResult({ score: null, score_kind: 'none', taken_at: '2024-03-12T10:00:00', place }));
+    const taken = screen.getByText(`Taken ${formatTakenDate('2024-03-12T10:00:00')}`);
+    const line = screen.getByText('Kyoto, Kyoto Prefecture, Japan');
+    expect(taken.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('sits above the video badge', () => {
+    renderLightbox({ path: '/v/clip.mp4', media_type: 'video', score: 0.5, timestamp_seconds: 65, place });
+    const line = screen.getByText('Kyoto, Kyoto Prefecture, Japan');
+    const badge = screen.getByText(/Video frame at 1:05/);
+    expect(line.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('is absent without a place', () => {
+    renderLightbox(imageResult());
+    expect(document.querySelector('svg.lucide-map-pin')).toBeNull();
+    expect(screen.queryByTitle(/^Place:/)).toBeNull();
+  });
+
+  it('is absent for a folder explorer item, which has no place', () => {
+    renderLightbox({ path: '/pics/a.jpg', name: 'a.jpg', size: 1536, media_type: 'image', isBrowsing: true });
+    expect(document.querySelector('svg.lucide-map-pin')).toBeNull();
+    expect(screen.queryByTitle(/^Place:/)).toBeNull();
+  });
+
+  it('is absent when the place has no names at all', () => {
+    renderLightbox(imageResult({ place: { id: 'JP', country: { en: null, zh: null }, region: null, city: null } }));
+    expect(screen.queryByTitle(/^Place:/)).toBeNull();
   });
 });
 
