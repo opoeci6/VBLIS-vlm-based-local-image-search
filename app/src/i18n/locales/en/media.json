@@ -7,6 +7,7 @@
     "similarityScore": "Similarity: {{percent}}",
     "matchScore": "Match Score: {{percent}}",
     "taken": "Taken {{date}}",
+    "place": "Place: {{place}}",
     "exactDetected_one": "Exact File Copy detected in {{count}} other location",
     "exactDetected_other": "Exact File Copy detected in {{count}} other locations",
     "visualDetected_one": "Visual Duplicate (98.5%+ Similarity) detected in {{count}} other location",

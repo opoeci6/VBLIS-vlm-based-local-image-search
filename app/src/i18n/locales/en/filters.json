@@ -14,6 +14,7 @@
     "videosOnly": "Videos only",
     "imagesOnly": "Images only",
     "folder": "Folder: {{name}}",
+    "place": "Place: {{name}}",
     "megapixels": "≥ {{mp}} MP",
     "date": {
       "last30": "Last 30 days",
@@ -53,6 +54,7 @@
     "type": "Type",
     "folders": "Folders",
     "dateTaken": "Date taken",
+    "place": "Place",
     "orientation": "Orientation",
     "format": "Format",
     "duplicates": "Duplicates",
@@ -71,6 +73,14 @@
     "custom": "Custom...",
     "from": "From",
     "to": "To"
+  },
+  "place": {
+    "countryOrRegion": "Country or region",
+    "other": "Other",
+    "noData": "None of your files have location data.",
+    "credit": "Place names: GeoNames (CC BY 4.0)",
+    "loading": "Loading places...",
+    "unavailable": "Places unavailable"
   },
   "format": {
     "images": "Images",
@@ -92,8 +102,8 @@
     "detailsWithUnavailable_one": "Media details for {{withDetails}} of {{total}} file ({{unavailable}} in folders that aren't connected)",
     "detailsWithUnavailable_other": "Media details for {{withDetails}} of {{total}} files ({{unavailable}} in folders that aren't connected)",
     "unavailable": "Media details are unavailable",
-    "missing_one": "{{formatted}} file has no media details yet. Date, orientation and resolution filters skip it until its details are read. That reads file headers only; no re-indexing.",
-    "missing_other": "{{formatted}} files have no media details yet. Date, orientation and resolution filters skip them until their details are read. That reads file headers only; no re-indexing.",
-    "hidden": "Files without details are hidden by the date, orientation and resolution filters."
+    "missing_one": "{{formatted}} file has no media details yet. Date, place, orientation and resolution filters skip it until its details are read. That reads file headers only; no re-indexing.",
+    "missing_other": "{{formatted}} files have no media details yet. Date, place, orientation and resolution filters skip them until their details are read. That reads file headers only; no re-indexing.",
+    "hidden": "Files without details are hidden by the date, place, orientation and resolution filters."
   }
 }

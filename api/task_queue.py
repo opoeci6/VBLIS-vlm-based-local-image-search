@@ -723,9 +723,20 @@ class TaskQueueManager:
 
                     self._check_model_mismatch()
                     self.save_to_disk()
+                self._request_warmup()
             else:
                 self._wake_event.wait(timeout=0.5)
                 self._wake_event.clear()
+
+    def _request_warmup(self):
+        # A finished task may have changed the index or the media details: reload the caches in the background
+        request = getattr(self.indexer, "request_warmup", None)
+        if request is None:
+            return
+        try:
+            request()
+        except Exception as e:
+            print(f"[TaskQueue] Could not request a cache warm-up: {e}")
 
     def _execute_task(self, task: Task):
         if not self.indexer:

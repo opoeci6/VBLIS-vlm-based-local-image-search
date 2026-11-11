@@ -53,6 +53,7 @@ def get_indexed_folder_contents(
 def delete_folder_index(req: FolderDeleteRequest):
     try:
         count = app_state.indexer.delete_folder_index(req.folder_path)
+        app_state.indexer.request_warmup()
         return {"status": "success", "message": f"Deleted {count} entries for folder: {req.folder_path}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -74,6 +75,7 @@ def reindex_folder(req: FolderDeleteRequest):
 def batch_delete_folders(req: BatchFolderRequest):
     try:
         count = app_state.indexer.batch_delete_folders(req.folder_paths)
+        app_state.indexer.request_warmup()
         return {"status": "success", "message": f"Deleted entries for {len(req.folder_paths)} folders. Total records removed: {count}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

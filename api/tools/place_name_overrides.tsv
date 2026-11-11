@@ -1,0 +1,12 @@
+# Corrections to the Chinese place names, applied last by build_places.py (they are not converted).
+# geonameid <tab> Chinese name <tab> note. The id is the GeoNames id of a place, a region or a country.
+1802040	渌口区	GeoNames: 柱洲县 (a typo of 株洲县, which became 渌口区 in 2018)
+1817294	叙州区	宜宾县 became 叙州区 in 2018
+1809380	綦江区	綦江县 became 綦江区 in 2011
+1815477	荣昌区	荣昌县 became 荣昌区 in 2015
+1816329	璧山区	璧山县 became 璧山区 in 2014
+1817848	铜梁区	铜梁县 became 铜梁区 in 2014
+1783700	潼南区	潼南县 became 潼南区 in 2015
+1808950	开州区	开县 became 开州区 in 2016
+1791536	文登区	文登市 became 文登区 in 2014
+2033628	云州区	大同县 became 云州区 in 2018

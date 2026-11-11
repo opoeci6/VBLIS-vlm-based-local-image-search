@@ -14,6 +14,7 @@ import {
   resolveDatePreset,
   toggleFolderSelection
 } from '../utils/searchFilters';
+import { togglePlaceSelection } from '../utils/placeNames';
 
 const toggleInList = (list, value) => (list.includes(value) ? list.filter(item => item !== value) : [...list, value]);
 
@@ -35,6 +36,8 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   const [formats, setFormats] = useState([]);
   const [minMegapixels, setMinMegapixels] = useState(null);
   const [duplicates, setDuplicates] = useState([]);
+  // Selected places as { id, en, zh }: the names are kept so the chips do not need the options.
+  const [places, setPlaces] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
 
   const [options, setOptions] = useState(null);
@@ -46,8 +49,8 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   setToastRef.current = setToast;
 
   const filterState = useMemo(
-    () => ({ mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels, duplicates }),
-    [mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels, duplicates]
+    () => ({ mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels, duplicates, places }),
+    [mediaType, folders, datePreset, dateFrom, dateTo, orientations, formats, minMegapixels, duplicates, places]
   );
 
   // Null while nothing is active; the same object while the filter state is unchanged.
@@ -56,6 +59,11 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
 
   const toggleFolder = useCallback((path) => {
     setFolders(prev => toggleFolderSelection(prev, path));
+  }, []);
+
+  // `node` is a place of the filter options ({ id, en, zh, ... }).
+  const togglePlace = useCallback((node) => {
+    setPlaces(prev => togglePlaceSelection(prev, node));
   }, []);
 
   // A preset fills in the dates now (relative presets are fixed to the day they were chosen);
@@ -99,6 +107,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     setFormats(prev => (prev.length === 0 ? prev : []));
     setMinMegapixels(null);
     setDuplicates(prev => (prev.length === 0 ? prev : []));
+    setPlaces(prev => (prev.length === 0 ? prev : []));
   }, []);
 
   const chipActions = useMemo(() => ({
@@ -112,7 +121,8 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     removeOrientations: () => setOrientations([]),
     removeFormats: () => setFormats([]),
     removeMegapixels: () => setMinMegapixels(null),
-    removeDuplicate: (kind) => setDuplicates(prev => prev.filter(item => item !== kind))
+    removeDuplicate: (kind) => setDuplicates(prev => prev.filter(item => item !== kind)),
+    removePlace: (id) => setPlaces(prev => prev.filter(entry => entry.id !== id))
   }), []);
 
   // Labels of the formats in the index, as the backend names them. Keyed by a string so the chips
@@ -124,7 +134,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   );
 
   const chips = useMemo(
-    () => buildFilterChips(filterState, chipActions, formatLabels, t),
+    () => buildFilterChips(filterState, chipActions, formatLabels, t, i18n.language),
     [filterState, chipActions, formatLabels, t]
   );
 
@@ -231,6 +241,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     formats,
     minMegapixels,
     duplicates,
+    places,
     requestFilters,
     activeCount,
     chips,
@@ -242,6 +253,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     toggleFormat,
     setMinMegapixels,
     toggleDuplicate,
+    togglePlace,
     clearAll,
     isOpen,
     open,

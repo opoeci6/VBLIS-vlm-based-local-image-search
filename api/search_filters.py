@@ -1,6 +1,7 @@
-"""Search filters (media type, folder, date taken, orientation, format, size) that run in the backend before the
+"""Search filters (media type, folder, place, date taken, orientation, format, size) that run in the backend before the
 Max Results cut, and the options the filter panel offers. The filter is answered from a file's path alone
-(media type, format, folder) or from the media registry's per-file facts (date, orientation, megapixels)."""
+(media type, format, folder), from the media registry's per-file facts (date, orientation, megapixels) or from
+the place of the file's GPS position (place_map.PlaceResolver)."""
 import datetime
 import os
 from typing import Annotated, Callable, Literal, Mapping, Optional
@@ -8,6 +9,7 @@ from typing import Annotated, Callable, Literal, Mapping, Optional
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from media_registry import MediaRegistry
+from places import PLACE_ID_PATTERN, place_matches
 
 # format id -> (label, media type, extensions). Keep in step with media_image.IMAGE_EXTENSIONS and
 # media_video.VIDEO_EXTENSIONS (a test pins that).
@@ -29,6 +31,7 @@ FORMAT_BY_EXTENSION = {ext: format_id for format_id, (_, _, exts) in FORMAT_GROU
 
 MAX_FOLDERS = 500
 MAX_FOLDER_LENGTH = 4096
+MAX_PLACES = 200
 MAX_MEGAPIXELS = 1000
 SQUARE_TOLERANCE = 0.01  # |w - h| <= 1% of the longer side counts as square
 
@@ -36,6 +39,8 @@ FormatId = Literal[tuple(FORMAT_GROUPS)]  # one Literal of every format id, so t
 Orientation = Literal["landscape", "portrait", "square"]
 DuplicateKind = Literal["exact", "visual"]
 FolderPath = Annotated[str, StringConstraints(min_length=1, max_length=MAX_FOLDER_LENGTH)]
+# A place id of any level: "JP" (country), "JP.22" (region) or "JP.22.1857910" (city); see places.py
+PlaceId = Annotated[str, StringConstraints(pattern=PLACE_ID_PATTERN, max_length=40)]
 
 
 def _unique(values):
@@ -55,8 +60,11 @@ class SearchFilters(BaseModel):
     # Images that have an exact copy ("exact") and/or a visually similar image ("visual") elsewhere in the library
     # (an item passes when any chosen kind applies); empty is no filter
     duplicates: list[DuplicateKind] = Field(default_factory=list)
+    # Places (country, region or city ids) where the photo was taken, from its GPS position; an item passes when
+    # it lies in any chosen place (a country includes its regions and cities). Files without GPS never pass.
+    places: list[PlaceId] = Field(default_factory=list, max_length=MAX_PLACES)
 
-    @field_validator("orientations", "formats", "duplicates")
+    @field_validator("orientations", "formats", "duplicates", "places")
     @classmethod
     def _dedupe(cls, values):
         return _unique(values)
@@ -76,20 +84,24 @@ class SearchFilters(BaseModel):
     @property
     def is_active(self) -> bool:
         return (self.media_type is not None or bool(self.folders) or bool(self.formats) or bool(self.duplicates)
-                or self.needs_facts)
+                or bool(self.places) or self.needs_facts)
 
 
 def compile_filters(filters: Optional[SearchFilters], snapshot_fn: Callable,
-                    duplicates_fn: Optional[Callable] = None) -> Optional["RecordFilter"]:
+                    duplicates_fn: Optional[Callable] = None,
+                    places_fn: Optional[Callable] = None) -> Optional["RecordFilter"]:
     """The RecordFilter of one search; None when there is nothing to filter. The registry snapshot is read
     once, and only when the filter needs per-file facts. `duplicates_fn()` is called once, and only when the
     filter asks for duplicates; it returns the predicate (path) -> bool that says whether an image has an
-    existing exact copy / visual look-alike (the indexer builds it for the search)."""
+    existing exact copy / visual look-alike (the indexer builds it for the search). `places_fn()` is called
+    once, and only when the filter asks for places; it returns the mapping registry key -> place id of the
+    files that have one (the indexer builds it from the registry snapshot)."""
     if filters is None or not filters.is_active:
         return None
     facts = snapshot_fn().facts if filters.needs_facts else None
     duplicates = duplicates_fn() if filters.duplicates and duplicates_fn is not None else None
-    return RecordFilter(filters, facts, duplicates)
+    place_ids = places_fn() if filters.places and places_fn is not None else None
+    return RecordFilter(filters, facts, duplicates, place_ids)
 
 
 class RecordFilter:
@@ -97,10 +109,13 @@ class RecordFilter:
     answers are memoized and the facts are a snapshot). Checks run cheapest first."""
 
     def __init__(self, filters: SearchFilters, facts: Optional[Mapping] = None,
-                 duplicates: Optional[Callable[[str], bool]] = None):
+                 duplicates: Optional[Callable[[str], bool]] = None, place_ids: Optional[Mapping[str, str]] = None):
         if filters.duplicates and duplicates is None:
             raise ValueError("A duplicates filter needs the duplicates predicate")
         self._duplicates = duplicates if filters.duplicates else None
+        # Chosen place ids, and registry key -> place id; without the mapping (place names are off) nothing passes
+        self._places = tuple(filters.places)
+        self._place_ids = place_ids
         self._media_type = filters.media_type
         self._extensions = None
         if filters.formats:
@@ -138,6 +153,10 @@ class RecordFilter:
             return False
         if self._roots and not any(key == root or key.startswith(root + os.sep) for root in self._roots):
             return False
+        if self._places:
+            place_id = self._place_ids.get(key) if self._place_ids else None
+            if place_id is None or not any(place_matches(place_id, chosen) for chosen in self._places):
+                return False
         if not self._needs_facts:
             return True
         facts = self._facts.get(key)
@@ -168,24 +187,31 @@ def _orientation_of(width: int, height: int) -> str:
     return "landscape" if width > height else "portrait"
 
 
-def empty_filter_options(registry_available: bool) -> dict:
+def empty_filter_options(registry_available: bool, places_available: bool = False) -> dict:
     return {
         "total_files": 0, "with_details": 0, "unavailable": 0, "missing_details": 0,
         "media_types": {"image": 0, "video": 0}, "formats": [], "years": [], "date_range": None,
         "registry_available": registry_available,
         "duplicates": {"exact": 0, "visual": None},
+        "places_available": places_available, "with_gps": 0, "places": [],
     }
 
 
 def filter_options(scan: Mapping, snapshot, selected_roots, registry_available: bool,
-                   duplicates: Optional[Mapping] = None) -> dict:
+                   duplicates: Optional[Mapping] = None, resolver=None) -> dict:
     """What the filter panel offers: the distinct files of the collection (`scan` is a full
     `collection.get(include=["metadatas"])`) counted by media type, format and year taken. `unavailable`
     counts files under a selected folder that can't be reached right now (an unplugged drive);
     `missing_details` counts the other files that have no media details yet, which reading the details
     (the media scan) can fill in. `duplicates` is the indexer's {"exact": n, "visual": n or None} (the image
-    files that have an existing exact copy / visual partner; None while no visual index exists)."""
+    files that have an existing exact copy / visual partner; None while no visual index exists).
+    `resolver` (place_map.PlaceResolver) names the places of the files that have GPS: `places` is the
+    country / region / city tree with the distinct files in each, `with_gps` counts the files with a GPS
+    position (also without a resolver) and `places_available` says whether place names work."""
     facts = snapshot.facts
+    place_ids = resolver.ids(snapshot) if resolver is not None and resolver.available else None
+    place_counts = {}
+    with_gps = 0
     roots = []  # (root key, root path, is a directory right now; None until asked)
     for root in selected_roots:
         roots.append([MediaRegistry.key_for(root).rstrip(os.sep), root, None])
@@ -213,6 +239,11 @@ def filter_options(scan: Mapping, snapshot, selected_roots, registry_available: 
         row = facts.get(key)
         if row is not None:
             with_details += 1
+            if row.gps_lat is not None and row.gps_lon is not None:
+                with_gps += 1
+                place_id = place_ids.get(key) if place_ids else None
+                if place_id is not None:
+                    place_counts[place_id] = place_counts.get(place_id, 0) + 1
             if row.taken_at:
                 day = row.taken_at[:10]
                 if first_day is None or day < first_day:
@@ -249,4 +280,7 @@ def filter_options(scan: Mapping, snapshot, selected_roots, registry_available: 
         "date_range": {"from": first_day, "to": last_day} if first_day is not None else None,
         "registry_available": registry_available,
         "duplicates": dict(duplicates) if duplicates is not None else {"exact": 0, "visual": None},
+        "places_available": place_ids is not None,
+        "with_gps": with_gps,
+        "places": resolver.tree(place_counts) if place_ids is not None else [],
     }

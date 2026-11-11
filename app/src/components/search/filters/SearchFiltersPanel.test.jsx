@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import i18n from '../../../i18n';
 import { useSearchFilters } from '../../../hooks/useSearchFilters';
 import { SearchFiltersPanel } from './SearchFiltersPanel';
 
@@ -32,7 +33,7 @@ const FOLDERS = [
   { path: 'E:\\Backup', name: 'Backup', exists: false, image_count: 7, video_count: 1, item_count: 8, subfolders: [] },
 ];
 
-const MISSING_NOTE = '15 files have no media details yet. Date, orientation and resolution filters skip them until their details are read. That reads file headers only; no re-indexing.';
+const MISSING_NOTE = '15 files have no media details yet. Date, place, orientation and resolution filters skip them until their details are read. That reads file headers only; no re-indexing.';
 
 const jsonResponse = (body) => ({ ok: true, json: async () => body });
 
@@ -471,13 +472,247 @@ describe('SearchFiltersPanel', () => {
     });
   });
 
+  describe('place', () => {
+    const PLACES = [
+      {
+        id: 'JP', en: 'Japan', zh: '日本', count: 12,
+        regions: [
+          {
+            id: 'JP.22', en: 'Kyoto Prefecture', zh: '京都府', count: 8,
+            cities: [{ id: 'JP.22.1857910', en: 'Kyoto', zh: '京都市', count: 6 }],
+          },
+          { id: 'JP.99', en: null, zh: null, count: 2, cities: [] },
+        ],
+      },
+      { id: 'XA', en: 'Atlantis', zh: null, count: 3, regions: [] },
+    ];
+    const withPlaces = (extra = {}) => ({ ...OPTIONS, places_available: true, with_gps: 15, places: PLACES, ...extra });
+    const placeRegion = () => inRegion('Place');
+    // The name is followed by the count (and by "(included)" on a row below a selected place), so Kyoto and Kyoto Prefecture differ.
+    // The name is followed by the count (and by "(included)" below a selected place), so Kyoto and Kyoto Prefecture differ.
+    const row = (name) => placeRegion().getByRole('button', { name: new RegExp(`^${name}\\s*(\\(included\\)\\s*)?\\d`) });
+
+    it('is not rendered when the place data is unavailable', async () => {
+      options = withPlaces({ places_available: false });
+      await renderPanel();
+      expect(screen.queryByRole('region', { name: 'Place' })).toBeNull();
+      expect(screen.queryByText('Country or region')).toBeNull();
+    });
+
+    it('is not rendered when an older backend sends no place keys', async () => {
+      await renderPanel();
+      expect(screen.queryByRole('region', { name: 'Place' })).toBeNull();
+      expect(screen.queryByText(/GeoNames/)).toBeNull();
+    });
+
+    it('sits right after the date section', async () => {
+      options = withPlaces();
+      await renderPanel();
+      const titles = screen.getAllByRole('region').map(region => region.getAttribute('aria-label'));
+      expect(titles.slice(0, 4)).toEqual(['Type', 'Folders', 'Date taken', 'Place']);
+      expect(titles[4]).toBe('Orientation');
+    });
+
+    it('says so when none of the files has location data', async () => {
+      options = withPlaces({ with_gps: 0, places: [] });
+      await renderPanel();
+      expect(placeRegion().getByText('None of your files have location data.')).toBeTruthy();
+      expect(placeRegion().queryByText('Country or region')).toBeNull();
+      expect(placeRegion().queryByText(/GeoNames/)).toBeNull();
+      expect(placeRegion().queryAllByRole('button')).toHaveLength(0);
+    });
+
+    it('also says so when the list is empty although a count is reported', async () => {
+      options = withPlaces({ places: [] });
+      await renderPanel();
+      expect(placeRegion().getByText('None of your files have location data.')).toBeTruthy();
+    });
+
+    it('shows a loading line until the options arrive', async () => {
+      fetchMock.mockImplementation(() => new Promise(() => {}));
+      render(<Harness latest={latest} />);
+      fireEvent.click(screen.getByText('filters-toggle'));
+      const region = await screen.findByRole('region', { name: 'Place' });
+      expect(within(region).getByText('Loading places...')).toBeTruthy();
+      expect(within(region).queryAllByRole('button')).toHaveLength(0);
+    });
+
+    it('lists the countries or regions with their counts, under a caption, with the credit below', async () => {
+      options = withPlaces();
+      await renderPanel();
+      expect(placeRegion().getByText('Country or region').tagName).toBe('P');
+      expect(row('Japan').textContent).toBe('Japan12');
+      expect(row('Atlantis').textContent).toBe('Atlantis3');
+      expect(placeRegion().queryByRole('button', { name: /^Kyoto Prefecture/ })).toBeNull();
+      expect(placeRegion().getByText('Place names: GeoNames (CC BY 4.0)')).toBeTruthy();
+      expect(row('Japan').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('formats large counts with separators', async () => {
+      options = withPlaces({ places: [{ id: 'JP', en: 'Japan', zh: '日本', count: 12034, regions: [] }] });
+      await renderPanel();
+      expect(row('Japan').textContent).toBe('Japan12,034');
+    });
+
+    it('expands a country to its regions and a region to its cities, and collapses them again', async () => {
+      options = withPlaces();
+      await renderPanel();
+      expect(placeRegion().queryByRole('button', { name: /^Kyoto Prefecture/ })).toBeNull();
+      // A country without regions has no chevron.
+      expect(placeRegion().queryByRole('button', { name: 'Expand Atlantis' })).toBeNull();
+
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Japan' }));
+      expect(placeRegion().getByRole('button', { name: 'Collapse Japan' }).getAttribute('aria-expanded')).toBe('true');
+      expect(row('Kyoto Prefecture').textContent).toBe('Kyoto Prefecture8');
+      expect(placeRegion().queryByRole('button', { name: /^Kyoto\s*\d/ })).toBeNull();
+      // A region without cities has no chevron either.
+      expect(placeRegion().queryByRole('button', { name: 'Expand Other' })).toBeNull();
+
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Kyoto Prefecture' }));
+      expect(row('Kyoto').textContent).toBe('Kyoto6');
+      expect(placeRegion().queryByRole('button', { name: 'Expand Kyoto' })).toBeNull();
+
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Collapse Japan' }));
+      expect(placeRegion().queryByRole('button', { name: /^Kyoto/ })).toBeNull();
+      // Opening it again finds the region still open.
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Japan' }));
+      expect(placeRegion().getByRole('button', { name: 'Collapse Kyoto Prefecture' })).toBeTruthy();
+    });
+
+    it('selects a place and sends its id', async () => {
+      options = withPlaces();
+      await renderPanel();
+      fireEvent.click(row('Atlantis'));
+      expect(row('Atlantis').getAttribute('aria-pressed')).toBe('true');
+      expect(latest.current.requestFilters).toEqual({ places: ['XA'] });
+      expect(latest.current.chips.map(chip => chip.label)).toEqual(['Place: Atlantis']);
+
+      fireEvent.click(row('Japan'));
+      expect(latest.current.requestFilters).toEqual({ places: ['JP', 'XA'] });
+
+      fireEvent.click(row('Atlantis'));
+      expect(row('Atlantis').getAttribute('aria-pressed')).toBe('false');
+      expect(latest.current.requestFilters).toEqual({ places: ['JP'] });
+    });
+
+    it('shows the places below a selected one as included and ignores clicks on them', async () => {
+      options = withPlaces();
+      await renderPanel();
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Japan' }));
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Kyoto Prefecture' }));
+      fireEvent.click(row('Japan'));
+      expect(latest.current.places.map(entry => entry.id)).toEqual(['JP']);
+
+      ['Kyoto Prefecture', 'Kyoto', 'Other'].forEach(name => {
+        const child = row(name);
+        expect(child.getAttribute('aria-pressed')).toBe('true');
+        expect(child.getAttribute('aria-disabled')).toBe('true');
+        expect(child.textContent).toContain('(included)');
+        expect(child.className).toContain('cursor-default');
+        fireEvent.click(child);
+      });
+      expect(latest.current.requestFilters).toEqual({ places: ['JP'] });
+      expect(row('Japan').getAttribute('aria-disabled')).toBeNull();
+      expect(row('Japan').textContent).not.toContain('(included)');
+
+      fireEvent.click(row('Japan'));
+      expect(latest.current.requestFilters).toBeNull();
+      expect(row('Kyoto Prefecture').getAttribute('aria-pressed')).toBe('false');
+      expect(row('Kyoto Prefecture').getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('drops the selected children when their parent is selected', async () => {
+      options = withPlaces();
+      await renderPanel();
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Japan' }));
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Kyoto Prefecture' }));
+      fireEvent.click(row('Kyoto'));
+      fireEvent.click(row('Other'));
+      expect(latest.current.requestFilters).toEqual({ places: ['JP.22.1857910', 'JP.99'] });
+
+      fireEvent.click(row('Kyoto Prefecture'));
+      expect(latest.current.requestFilters).toEqual({ places: ['JP.22', 'JP.99'] });
+      // The city is now covered by its region.
+      expect(row('Kyoto').getAttribute('aria-disabled')).toBe('true');
+
+      fireEvent.click(row('Japan'));
+      expect(latest.current.requestFilters).toEqual({ places: ['JP'] });
+      expect(latest.current.places).toEqual([{ id: 'JP', en: 'Japan', zh: '日本' }]);
+    });
+
+    it('lists a region without a name as Other and keeps it selectable', async () => {
+      options = withPlaces();
+      await renderPanel();
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Japan' }));
+      expect(row('Other').textContent).toBe('Other2');
+      fireEvent.click(row('Other'));
+      expect(latest.current.places).toEqual([{ id: 'JP.99', en: null, zh: null }]);
+      expect(latest.current.chips.map(chip => chip.label)).toEqual(['Place: Other']);
+    });
+
+    it('is cleared by Clear all', async () => {
+      options = withPlaces();
+      await renderPanel();
+      fireEvent.click(row('Japan'));
+      expect(screen.getByRole('button', { name: 'Clear all' }).disabled).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+      expect(latest.current.requestFilters).toBeNull();
+      expect(row('Japan').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('uses the shared toggle, so the terminal theme inverts the pressed state through aria-pressed', async () => {
+      options = withPlaces();
+      await renderPanel();
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Japan' }));
+      const toggles = placeRegion().getAllByRole('button').filter(button => !button.hasAttribute('aria-expanded'));
+      expect(toggles).toHaveLength(4);
+      toggles.forEach(button => expect(button.hasAttribute('aria-pressed')).toBe(true));
+    });
+
+    it('follows a language switch, falling back to the English name when there is no Chinese one', async () => {
+      options = withPlaces();
+      await renderPanel();
+      fireEvent.click(placeRegion().getByRole('button', { name: 'Expand Japan' }));
+      fireEvent.click(row('Atlantis'));
+
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      const region = within(screen.getByRole('region', { name: '地点' }));
+      expect(region.getByText('国家或地区').tagName).toBe('P');
+      expect(region.getByRole('button', { name: /^日本/ }).textContent).toBe('日本12');
+      expect(region.getByRole('button', { name: '折叠 日本' })).toBeTruthy();
+      expect(region.getByRole('button', { name: /^京都府/ }).textContent).toBe('京都府8');
+      expect(region.getByRole('button', { name: /^其他/ }).textContent).toBe('其他2');
+      expect(region.getByRole('button', { name: /^Atlantis/ }).getAttribute('aria-pressed')).toBe('true');
+      expect(region.getByText('地名数据：GeoNames（CC BY 4.0）')).toBeTruthy();
+      expect(latest.current.chips.map(chip => chip.label)).toEqual(['地点：Atlantis']);
+
+      await act(async () => { await i18n.changeLanguage('en'); });
+      expect(within(screen.getByRole('region', { name: 'Place' })).getByRole('button', { name: /^Japan/ })).toBeTruthy();
+    });
+
+    it('says in Chinese that no file has location data', async () => {
+      options = withPlaces({ with_gps: 0, places: [] });
+      await renderPanel();
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      expect(within(screen.getByRole('region', { name: '地点' })).getByText('没有任何文件包含位置信息。')).toBeTruthy();
+    });
+
+    it('does not warn about missing details until a place filter is on', async () => {
+      options = withPlaces();
+      await renderPanel();
+      expect(screen.getByTestId('filters-coverage').getAttribute('data-warning')).toBe('false');
+      fireEvent.click(row('Japan'));
+      expect(screen.getByTestId('filters-coverage').getAttribute('data-warning')).toBe('true');
+    });
+  });
+
   describe('coverage', () => {
     it('shows how many files have media details and those in disconnected folders', async () => {
       await renderPanel();
       expect(screen.getByText("Media details for 80 of 100 files (5 in folders that aren't connected)")).toBeTruthy();
       const coverage = screen.getByTestId('filters-coverage');
       expect(coverage.getAttribute('data-warning')).toBe('false');
-      expect(screen.queryByText(/hidden by the date, orientation and resolution filters/)).toBeNull();
+      expect(screen.queryByText(/hidden by the date, place, orientation and resolution filters/)).toBeNull();
     });
 
     it('leaves out the disconnected note when there is none', async () => {
@@ -545,7 +780,7 @@ describe('SearchFiltersPanel', () => {
       await renderPanel();
       fireEvent.click(screen.getByRole('button', { name: 'Square' }));
       expect(screen.getByTestId('filters-coverage').getAttribute('data-warning')).toBe('false');
-      expect(screen.queryByText(/hidden by the date, orientation and resolution filters/)).toBeNull();
+      expect(screen.queryByText(/hidden by the date, place, orientation and resolution filters/)).toBeNull();
     });
 
     it('says media details are unavailable when the registry is', async () => {

@@ -1,6 +1,7 @@
 /* global process */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import i18n from '../i18n';
 import { useSearchFilters } from './useSearchFilters';
 
 const API = 'http://127.0.0.1:8000';
@@ -198,6 +199,80 @@ describe('useSearchFilters', () => {
       act(() => result.current.chips[0].onRemove());
       expect(result.current.requestFilters).toBeNull();
       expect(result.current.chips).toEqual([]);
+    });
+  });
+
+  describe('places', () => {
+    const japan = { id: 'JP', en: 'Japan', zh: '日本', count: 12, regions: [] };
+    const kyoto = { id: 'JP.22', en: 'Kyoto Prefecture', zh: '京都府', count: 5, cities: [] };
+
+    it('sends the chosen place ids sorted and counts them once', () => {
+      const { result } = render();
+      expect(result.current.places).toEqual([]);
+
+      act(() => result.current.togglePlace({ id: 'CN.23', en: 'Heilongjiang', zh: '黑龙江' }));
+      act(() => result.current.togglePlace(japan));
+      expect(result.current.places).toEqual([
+        { id: 'CN.23', en: 'Heilongjiang', zh: '黑龙江' },
+        { id: 'JP', en: 'Japan', zh: '日本' },
+      ]);
+      expect(result.current.requestFilters).toEqual({ places: ['CN.23', 'JP'] });
+      expect(result.current.activeCount).toBe(1);
+      expect(result.current.detailsFilterActive).toBe(true);
+    });
+
+    it('applies the selection rules through togglePlace', () => {
+      const { result } = render();
+      act(() => result.current.togglePlace(kyoto));
+      act(() => result.current.togglePlace(japan));
+      expect(result.current.requestFilters).toEqual({ places: ['JP'] });
+
+      const before = result.current.places;
+      act(() => result.current.togglePlace(kyoto));
+      expect(result.current.places).toBe(before);
+
+      act(() => result.current.togglePlace(japan));
+      expect(result.current.requestFilters).toBeNull();
+    });
+
+    it('has one removable chip per place, named in the interface language', async () => {
+      const { result } = render();
+      act(() => {
+        result.current.togglePlace(japan);
+        result.current.togglePlace({ id: 'CN.99', en: null, zh: null });
+      });
+      expect(result.current.chips.map(chip => chip.label)).toEqual(['Place: Japan', 'Place: Other']);
+
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      expect(result.current.chips.map(chip => chip.label)).toEqual(['地点：日本', '地点：其他']);
+
+      act(() => result.current.chips[0].onRemove());
+      expect(result.current.requestFilters).toEqual({ places: ['CN.99'] });
+      act(() => result.current.chips[0].onRemove());
+      expect(result.current.requestFilters).toBeNull();
+      expect(result.current.chips).toEqual([]);
+    });
+
+    it('is cleared by clearAll, keeping the chips stable when there was nothing to clear', () => {
+      const { result } = render();
+      const { places: untouched } = result.current;
+      act(() => result.current.clearAll());
+      expect(result.current.places).toBe(untouched);
+
+      act(() => result.current.togglePlace(japan));
+      expect(result.current.activeCount).toBe(1);
+      act(() => result.current.clearAll());
+      expect(result.current.places).toEqual([]);
+      expect(result.current.requestFilters).toBeNull();
+      expect(result.current.activeCount).toBe(0);
+    });
+
+    it('keeps togglePlace stable across renders', () => {
+      const { result, rerender } = render();
+      const { togglePlace } = result.current;
+      act(() => result.current.togglePlace(japan));
+      rerender();
+      expect(result.current.togglePlace).toBe(togglePlace);
     });
   });
 

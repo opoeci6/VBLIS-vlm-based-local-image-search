@@ -29,6 +29,7 @@ from media_registry import MediaRegistry
 from collection_cache import CachedCollection
 from duplicate_index import DuplicateIndex
 from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY, make_scorer
+from place_map import PlaceResolver
 from search_filters import compile_filters, filter_options, empty_filter_options
 from search_session import (
     SearchSession, SearchSessions, SearchSessionExpired, EXPIRED_MESSAGE, MODEL_CHANGED_MESSAGE
@@ -401,6 +402,11 @@ class Indexer:
         self.video_cache_dir = self.cache_dir / "videos"
         self.folders = FolderRegistry(self.data_dir, self.cache_dir)
         self.media_registry = MediaRegistry(self.data_dir / "media_registry.sqlite3")
+        # Place names of the files with GPS (the Place filter, the filter options, `place` of results); the
+        # place file is read on first use
+        self.places = PlaceResolver()
+        # The background warm-up (warmup.CacheWarmer); the app sets one, tests and benches run without
+        self.warmer = None
         self.last_media_sync = None
         # (registry key, size, mtime_ns) -> display rotation probed from the file, one probe per file version
         self._probed_video_rotations = {}
@@ -456,6 +462,12 @@ class Indexer:
             metadata={"hnsw:space": "cosine"}
         ))
         
+    def request_warmup(self):
+        """Asks the background warm-up to reload the caches of the active collection (after start, a model
+        switch, a finished task or a deleted folder). Returns at once; does nothing without a warmer."""
+        if self.warmer is not None:
+            self.warmer.request()
+
     def _ensure_collection(self):
         """Ensure the collection is initialized before use."""
         if not self.collection and self.model_manager.current_model_id:
@@ -1591,7 +1603,8 @@ class Indexer:
         stale one is kept while the library is being indexed), and a partner counts only while its file exists
         (`file_exists`, the search's own cache)."""
         return compile_filters(filters, self.media_registry.snapshot,
-                               lambda: self._duplicates_predicate(collection, filters.duplicates, file_exists))
+                               lambda: self._duplicates_predicate(collection, filters.duplicates, file_exists),
+                               lambda: self.places.ids(self.media_registry.snapshot()))
 
     def _duplicates_predicate(self, collection, kinds, file_exists):
         exact = self.duplicate_index.exact_level(collection) if "exact" in kinds else None
@@ -1651,17 +1664,24 @@ class Indexer:
                 scored.append((record_id, meta, score))
         scored.sort(key=lambda item: (-item[2], item[1].get("timestamp_seconds") or 0.0))
         result["frames"] = [_format_search_result(record_id, meta, score, scorer.kind) for record_id, meta, score in scored]
+        self._attach_places(result["frames"])
         return result
 
     def search_filter_options(self):
         """What the search filter panel offers for the active collection (see search_filters.filter_options)."""
         registry_available = self.media_registry.available
         if not self._ensure_collection():
-            return empty_filter_options(registry_available)
+            return empty_filter_options(registry_available, self.places.available)
         scan = self.collection.get(include=["metadatas"])  # the call CachedCollection caches
         snapshot = self.media_registry.snapshot()
         roots = list(self.folders.selected_folders_by_collection.get(self.collection.name, ()))
-        return filter_options(scan, snapshot, roots, registry_available, self._duplicate_counts(self.collection))
+        duplicates = self._duplicate_counts(self.collection)
+        try:
+            return filter_options(scan, snapshot, roots, registry_available, duplicates, self.places)
+        except Exception as e:
+            # Place names must never keep the panel from opening: answer without them
+            print(f"[Places] Could not list the places of the library: {e}")
+            return filter_options(scan, snapshot, roots, registry_available, duplicates)
 
     def _duplicate_counts(self, collection):
         """The image files with an existing exact copy and with an existing visual partner. The visual count
@@ -1770,7 +1790,37 @@ class Indexer:
             self._attach_copies_from_level(exact, formatted, file_exists)
         else:
             Indexer._attach_exact_copies(collection, formatted, head_id_set, file_exists)
+        self._attach_places(formatted)
         return formatted
+
+    def _attach_places(self, formatted):
+        """Adds `place` (PlaceIndex.describe of the place id: names of country, region and city; the dict is shared
+        between results) to every result whose file has GPS inside a place. Place names must never fail a search:
+        on any error the results are left without places."""
+        try:
+            if not formatted or not self.places.available:
+                return
+            place_ids = self.places.ids(self.media_registry.snapshot())
+            if not place_ids:
+                return
+            keys = {}  # path -> registry key, once per distinct path
+            found = []
+            for result in formatted:
+                path = result.get("path")
+                if not path:
+                    continue
+                key = keys.get(path)
+                if key is None:
+                    key = keys[path] = MediaRegistry.key_for(path)
+                place_id = place_ids.get(key)
+                if place_id is not None:
+                    place = self.places.describe(place_id)
+                    if place is not None:
+                        found.append((result, place))
+            for result, place in found:
+                result["place"] = place
+        except Exception as e:
+            print(f"[Places] Could not add place names to the search results: {e}")
 
     @staticmethod
     def _attach_copies_from_level(level, formatted, file_exists):

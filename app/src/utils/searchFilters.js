@@ -1,6 +1,7 @@
 // Pure helpers for the search filters: folder selection rules, date presets and the request/chip
 // builders. Kept free of React so they are easy to test.
 import i18n from '../i18n';
+import { placeName } from './placeNames';
 
 export const ORIENTATIONS = ['landscape', 'portrait', 'square'];
 
@@ -169,9 +170,10 @@ export function countMissingDetails(options) {
   return Math.max(0, derived);
 }
 
-// True when a filter that needs media details (date, orientation, resolution) is active.
+// True when a filter that needs media details (date, orientation, resolution, place: the GPS position is
+// read with the details) is active.
 export function hasDetailsFilter(filters) {
-  return Boolean(filters && (filters.date_from || filters.date_to || filters.orientations || filters.min_megapixels));
+  return Boolean(filters && (filters.date_from || filters.date_to || filters.orientations || filters.min_megapixels || filters.places));
 }
 
 // The `filters` object of the search API, or null when no filter is active.
@@ -186,6 +188,7 @@ export function buildRequestFilters(state) {
   if (state.formats.length > 0) filters.formats = sortedFormats(state.formats);
   if (state.minMegapixels) filters.min_megapixels = state.minMegapixels;
   if (state.duplicates?.length > 0) filters.duplicates = inCanonicalOrder(state.duplicates, DUPLICATE_KINDS);
+  if (state.places?.length > 0) filters.places = state.places.map(entry => entry.id).sort();
   return Object.keys(filters).length > 0 ? filters : null;
 }
 
@@ -199,13 +202,14 @@ export function countActiveFilters(state) {
     state.formats.length > 0,
     Boolean(state.minMegapixels),
     state.duplicates?.length > 0,
+    state.places?.length > 0,
   ].filter(Boolean).length;
 }
 
 // Pills for the active filters: [{ key, label, onRemove }]. `actions` supplies the remove callbacks;
 // `formatLabels` ({ id: label }) comes from the backend's filter options. `t` is the translator for the
-// label text; it defaults to the global one.
-export function buildFilterChips(state, actions, formatLabels, t = i18n.t) {
+// label text; it defaults to the global one. `language` picks the language of the place names.
+export function buildFilterChips(state, actions, formatLabels, t = i18n.t, language = i18n.language) {
   const chips = [];
   if (state.mediaType) {
     chips.push({
@@ -249,6 +253,15 @@ export function buildFilterChips(state, actions, formatLabels, t = i18n.t) {
       key: `duplicates:${kind}`,
       label: duplicateLabels[kind],
       onRemove: () => actions.removeDuplicate(kind),
+    });
+  });
+  (state.places ?? []).forEach(entry => {
+    // A region GeoNames has no name for is shown as "Other".
+    const name = placeName(entry, language) || t('filters:place.other');
+    chips.push({
+      key: `place:${entry.id}`,
+      label: t('filters:chip.place', { name }),
+      onRemove: () => actions.removePlace(entry.id),
     });
   });
   return chips;
