@@ -405,6 +405,8 @@ class Indexer:
         # Place names of the files with GPS (the Place filter, the filter options, `place` of results); the
         # place file is read on first use
         self.places = PlaceResolver()
+        # The background warm-up (warmup.CacheWarmer); the app sets one, tests and benches run without
+        self.warmer = None
         self.last_media_sync = None
         # (registry key, size, mtime_ns) -> display rotation probed from the file, one probe per file version
         self._probed_video_rotations = {}
@@ -460,6 +462,12 @@ class Indexer:
             metadata={"hnsw:space": "cosine"}
         ))
         
+    def request_warmup(self):
+        """Asks the background warm-up to reload the caches of the active collection (after start, a model
+        switch, a finished task or a deleted folder). Returns at once; does nothing without a warmer."""
+        if self.warmer is not None:
+            self.warmer.request()
+
     def _ensure_collection(self):
         """Ensure the collection is initialized before use."""
         if not self.collection and self.model_manager.current_model_id:

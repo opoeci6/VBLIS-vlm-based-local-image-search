@@ -127,6 +127,7 @@ async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTa
                 app_state.indexer.switch_collection(app_state.model_manager.get_collection_name())
                 settings_store.persist_active_model(model_name)
                 app_state.task_queue.retarget_tasks_to_model(model_name)
+                app_state.indexer.request_warmup()
                 print(f"[ModelDownload] Successfully downloaded and auto-activated {model_name}")
             else:
                 print(f"[ModelDownload] Successfully downloaded {model_name}. Preserving active model '{app_state.model_manager.current_model_id}' (queued tasks expect {queued_model_ids or 'existing active model'}).")
@@ -172,6 +173,7 @@ def switch_model(req: ModelSwitchRequest):
         settings_store.persist_active_model(req.model_name)
         # Retarget remaining queued tasks to the newly activated model
         app_state.task_queue.retarget_tasks_to_model(req.model_name)
+        app_state.indexer.request_warmup()
         return {"status": "Model switched correctly", "active_model": req.model_name}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Model not found locally: {str(e)}")
