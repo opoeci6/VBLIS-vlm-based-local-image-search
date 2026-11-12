@@ -539,12 +539,12 @@ class TaskQueueManager:
             is_ready = self._is_model_loaded()
 
             if action in ("start", "resume", "adopt_active_model"):
-                has_model_dependent_tasks = any(
-                    t.type in MODEL_DEPENDENT_TASK_TYPES
-                    for t in self.pending_queue
-                ) or (self.active_task and self.active_task.type in MODEL_DEPENDENT_TASK_TYPES)
+                # Only the task that would run next decides: tasks that need no model (a media details scan,
+                # a cache clear) run without one, and the worker pauses by itself when it reaches one that does
+                next_task = self.active_task or (self.pending_queue[0] if self.pending_queue else None)
+                next_needs_model = next_task is not None and next_task.type in MODEL_DEPENDENT_TASK_TYPES
 
-                if has_model_dependent_tasks and not is_ready:
+                if next_needs_model and not is_ready:
                     self.worker_state = WorkerState.PAUSED
                     self._check_model_mismatch()
                     self.save_to_disk()

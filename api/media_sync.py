@@ -12,7 +12,20 @@ from PIL import UnidentifiedImageError
 from media_image import _format_offset, _format_taken, is_macos_junk_path, probe_image_info
 from media_video import probe_video_info
 
-PROBE_VERSION = 1  # bump to read every file again when the probers change
+# Bump when the probers change. What each version changed, and so which rows are read again:
+#   2: the size and orientation of a HEIC / HEIF file whose container already turns it (irot / imir) no
+#      longer count its EXIF orientation too. Only .heic / .heif rows can be wrong, see _row_is_current.
+PROBE_VERSION = 2
+_HEIF_EXTENSIONS = (".heic", ".heif")
+
+
+def _row_is_current(path, probe_version) -> bool:
+    """True when a row probed under `probe_version` needs no new read (the file itself unchanged)."""
+    if probe_version >= PROBE_VERSION:
+        return True
+    return probe_version == 1 and not path.lower().endswith(_HEIF_EXTENSIONS)
+
+
 SYNC_CHUNK = 500
 _ERROR_LIMIT = 300
 _PROBE_FIELDS = (
@@ -107,7 +120,7 @@ def sync_media_files(registry, files, roots, should_stop=None, on_progress=None,
     unchanged = 0
     for key, (path, media_type, stat) in unique.items():
         row = known.get(key)
-        if row is not None and stat is not None and row[1] == stat[1] and row[2] == stat[0] and row[3] >= PROBE_VERSION:
+        if row is not None and stat is not None and row[1] == stat[1] and row[2] == stat[0] and _row_is_current(path, row[3]):
             unchanged += 1
         else:
             to_probe.append((path, media_type, stat))
