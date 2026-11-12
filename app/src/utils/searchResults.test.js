@@ -448,3 +448,30 @@ describe('getImageResults', () => {
     expect(getImageResults([])).toEqual([]);
   });
 });
+
+describe('place pass-through', () => {
+  const place = { id: 'JP.22', country: { en: 'Japan', zh: '日本' }, region: { en: 'Kyoto', zh: null }, city: null };
+
+  it('keeps the place of an image result when duplicates are annotated', () => {
+    const [withPlace, without] = annotateDuplicates([img('/a.jpg', { place }), img('/b.jpg')]);
+    expect(withPlace.place).toEqual(place);
+    expect(without).not.toHaveProperty('place');
+  });
+
+  it('keeps the place on a duplicate result too', () => {
+    const [first] = annotateDuplicates([
+      img('/a.jpg', { hash: 'h', copies: ['/c.jpg'], place }),
+      img('/c.jpg', { hash: 'h', place }),
+    ]);
+    expect(first.isDuplicate).toBe(true);
+    expect(first.place).toEqual(place);
+  });
+
+  it('keeps the place on video frames, in their groups and in expanded frames', () => {
+    const frame = (id, ts) => ({ id, path: '/v.mp4', media_type: 'video', score: 0.5, timestamp_seconds: ts, place });
+    const annotated = annotateDuplicates([frame('f1', 1)]);
+    const [group] = groupVideoResults(annotated, { '/v.mp4': { frames: [frame('f2', 9)], totalFrames: 2 } });
+    expect(group.bestFrame.place).toEqual(place);
+    expect(group.frames.map(f => f.place)).toEqual([place, place]);
+  });
+});

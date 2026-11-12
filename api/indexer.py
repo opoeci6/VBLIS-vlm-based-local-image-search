@@ -16,8 +16,8 @@ import paths
 import media_sync
 import security
 from media_image import (
-    IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, inspect_file, is_macos_junk_dir,
-    is_macos_junk_file, open_image_upright, read_rotated
+    IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, embed_version_is_current, embedding_is_outdated,
+    inspect_file, is_macos_junk_dir, is_macos_junk_file, open_image_upright, read_rotated
 )
 from media_video import (
     VIDEO_EXTENSIONS, VIDEO_SAMPLING_VERSION, VIDEO_ANALYSIS_INTERVAL_SECONDS,
@@ -29,6 +29,7 @@ from media_registry import MediaRegistry
 from collection_cache import CachedCollection
 from duplicate_index import DuplicateIndex
 from search_scoring import DEFAULT_TEXT_MIN_SCORE, DEFAULT_IMAGE_MIN_SIMILARITY, make_scorer
+from place_map import PlaceResolver
 from search_filters import compile_filters, filter_options, empty_filter_options
 from search_session import (
     SearchSession, SearchSessions, SearchSessionExpired, EXPIRED_MESSAGE, MODEL_CHANGED_MESSAGE
@@ -401,6 +402,11 @@ class Indexer:
         self.video_cache_dir = self.cache_dir / "videos"
         self.folders = FolderRegistry(self.data_dir, self.cache_dir)
         self.media_registry = MediaRegistry(self.data_dir / "media_registry.sqlite3")
+        # Place names of the files with GPS (the Place filter, the filter options, `place` of results); the
+        # place file is read on first use
+        self.places = PlaceResolver()
+        # The background warm-up (warmup.CacheWarmer); the app sets one, tests and benches run without
+        self.warmer = None
         self.last_media_sync = None
         # (registry key, size, mtime_ns) -> display rotation probed from the file, one probe per file version
         self._probed_video_rotations = {}
@@ -456,6 +462,12 @@ class Indexer:
             metadata={"hnsw:space": "cosine"}
         ))
         
+    def request_warmup(self):
+        """Asks the background warm-up to reload the caches of the active collection (after start, a model
+        switch, a finished task or a deleted folder). Returns at once; does nothing without a warmer."""
+        if self.warmer is not None:
+            self.warmer.request()
+
     def _ensure_collection(self):
         """Ensure the collection is initialized before use."""
         if not self.collection and self.model_manager.current_model_id:
@@ -810,6 +822,41 @@ class Indexer:
             stop.set()
             producer.join()
 
+    def _take_records(self, record_ids):
+        """Deletes records and returns them (ids, embeddings, metadatas) for _restore_records; None when there
+        are none. When they cannot be read first they are deleted all the same, as a re-index needs."""
+        if not record_ids:
+            return None
+        backup = None
+        try:
+            ids, embeddings, metadatas = [], [], []
+            for start in range(0, len(record_ids), METADATA_GET_MAX):
+                got = self.collection.get(ids=record_ids[start:start + METADATA_GET_MAX],
+                                          include=["embeddings", "metadatas"])
+                got_embeddings = got.get("embeddings")
+                for index, record_id in enumerate(got.get("ids") or []):
+                    if got_embeddings is None or got_embeddings[index] is None:
+                        continue
+                    ids.append(record_id)
+                    embeddings.append([float(x) for x in got_embeddings[index]])
+                    metadatas.append(got["metadatas"][index])
+            if ids:
+                backup = (ids, embeddings, metadatas)
+        except Exception as e:
+            print(f"[Notice] Could not keep a copy of {len(record_ids)} old video frame records: {e}")
+        self.collection.delete(ids=record_ids)
+        return backup
+
+    def _restore_records(self, backup):
+        """Puts back what _take_records returned; a failure is reported and otherwise ignored."""
+        if not backup:
+            return
+        ids, embeddings, metadatas = backup
+        try:
+            self._write_in_slices(self.collection.upsert, ids, embeddings=embeddings, metadatas=metadatas)
+        except Exception as e:
+            print(f"[Notice] Could not put back {len(ids)} old video frame records: {e}")
+
     def _index_video_files(self, video_files, existing_video_entries=None, task_context=None):
         """Index new or changed videos while preserving unchanged frame records."""
         existing_video_entries = existing_video_entries or {}
@@ -835,13 +882,20 @@ class Indexer:
                     self.indexed_video_frames += len(previous_entries)
                     continue
 
+                # The new frames can have the ids of the old ones, so the old records go first. They are kept
+                # in memory and put back when the video fails or the run is cancelled: the video stays
+                # searchable, and its old signature makes the next run index it again.
                 old_ids = [entry["id"] for entry in previous_entries]
-                if old_ids:
-                    self.collection.delete(ids=old_ids)
-
-                frame_count = self._index_video_file(
-                    normalized_path, source_signature, batch_size, task_context=task_context, rotation=rotation
-                )
+                backup = self._take_records(old_ids)
+                try:
+                    frame_count = self._index_video_file(
+                        normalized_path, source_signature, batch_size, task_context=task_context, rotation=rotation
+                    )
+                except BaseException:
+                    self._restore_records(backup)
+                    raise
+                if frame_count == 0:  # cancelled part-way: the new frames were removed again
+                    self._restore_records(backup)
                 self.indexed_video_frames += frame_count
             except Exception as e:
                 print(f"Error indexing video {normalized_path}: {e}")
@@ -1018,7 +1072,7 @@ class Indexer:
             stat = stats.get(filepath)
             if entry and stat:
                 meta = entry[2]
-                if (meta.get("embed_version", 1) >= IMAGE_EMBED_VERSION
+                if (embed_version_is_current(filepath, meta.get("embed_version", 1))
                         and meta.get("mtime_ns") == stat[0] and meta.get("size") == stat[1]):
                     unchanged.append(filepath)
                     continue
@@ -1041,7 +1095,7 @@ class Indexer:
                 stored_id, stored_hash, stored_meta = known[filepath]
                 # If already in DB with same hash, skip
                 if stored_hash == file_hash:
-                    outdated = stored_meta.get("embed_version", 1) < IMAGE_EMBED_VERSION
+                    outdated = not embed_version_is_current(filepath, stored_meta.get("embed_version", 1))
                     if not (outdated and rotated):
                         if outdated:
                             # Same pixels as when it was embedded, so only the version mark is missing
@@ -1097,7 +1151,8 @@ class Indexer:
             pass
 
     def _find_reusable_embeddings(self, hashes):
-        """One bulk ChromaDB query: {hash: (stored embedding, record is current)} for the hashes already indexed."""
+        """One bulk ChromaDB query: {hash: (stored embedding, record is current, its embed version)} for the
+        hashes already indexed."""
         existing_hash_map = {}
         try:
             db_hits = self.collection.get(
@@ -1107,10 +1162,11 @@ class Indexer:
             if db_hits and db_hits.get("metadatas"):
                 for meta, emb in zip(db_hits["metadatas"], db_hits["embeddings"]):
                     if meta and "hash" in meta and emb is not None and len(emb) > 0:
-                        current = meta.get("embed_version", 1) >= IMAGE_EMBED_VERSION
+                        version = meta.get("embed_version", 1)
+                        current = embed_version_is_current(meta.get("path") or "", version)
                         # Several records can share a hash: prefer one embedded the current way
                         if meta["hash"] not in existing_hash_map or (current and not existing_hash_map[meta["hash"]][1]):
-                            existing_hash_map[meta["hash"]] = (emb, current)
+                            existing_hash_map[meta["hash"]] = (emb, current, version)
         except Exception:
             pass
         return existing_hash_map
@@ -1166,12 +1222,15 @@ class Indexer:
             embed_queue.add(filepath, job.file_hash, stored_id, rest)
 
     @staticmethod
-    def _is_rotated(filepath, rotated):
-        """rotated as inspected, or read now when it was not needed before. A file whose orientation cannot be read
-        counts as rotated, so it never copies an embedding that was made without orientation."""
-        if rotated is not None:
-            return rotated
+    def _is_rotated(filepath, rotated, embed_version=1):
+        """Whether an embedding made under `embed_version` shows this file turned differently from today. For
+        version 1 that is `rotated` as inspected, or read now when it was not needed before. A file whose
+        orientation cannot be read counts as rotated, so it never copies an embedding that may be wrong."""
         try:
+            if embed_version >= 2:
+                return embedding_is_outdated(filepath, embed_version)
+            if rotated is not None:
+                return rotated
             return read_rotated(filepath)
         except Exception:
             return True
@@ -1242,8 +1301,9 @@ class Indexer:
             # The orientation only decides something for records from before IMAGE_EMBED_VERSION, and reading it
             # can cost a full decode (PNG), so it is read up front only for those
             entry = known.get(filepath) if known is not None else None
-            outdated = entry is not None and entry[2].get("embed_version", 1) < IMAGE_EMBED_VERSION
-            return inspect_file(filepath, orientation=outdated)
+            version = entry[2].get("embed_version", 1) if entry is not None else IMAGE_EMBED_VERSION
+            outdated = entry is not None and not embed_version_is_current(filepath, version)
+            return inspect_file(filepath, orientation=outdated, embed_version=version)
 
         stopped = False
         with ThreadPoolExecutor(max_workers=max_workers) as inspect_pool, \
@@ -1273,7 +1333,7 @@ class Indexer:
                         for filepath, file_hash, rotated, stored_id in plan.candidates:
                             hit = existing_hash_map.get(file_hash)
                             # A stored embedding made without orientation is only right for a file that is not rotated
-                            if hit and (hit[1] or not self._is_rotated(filepath, rotated)):
+                            if hit and (hit[1] or not self._is_rotated(filepath, rotated, hit[2])):
                                 reused.append((filepath, file_hash, hit[0], stored_id))
                             else:
                                 embed_queue.add(filepath, file_hash, stored_id)
@@ -1591,7 +1651,8 @@ class Indexer:
         stale one is kept while the library is being indexed), and a partner counts only while its file exists
         (`file_exists`, the search's own cache)."""
         return compile_filters(filters, self.media_registry.snapshot,
-                               lambda: self._duplicates_predicate(collection, filters.duplicates, file_exists))
+                               lambda: self._duplicates_predicate(collection, filters.duplicates, file_exists),
+                               lambda: self.places.ids(self.media_registry.snapshot()))
 
     def _duplicates_predicate(self, collection, kinds, file_exists):
         exact = self.duplicate_index.exact_level(collection) if "exact" in kinds else None
@@ -1651,17 +1712,24 @@ class Indexer:
                 scored.append((record_id, meta, score))
         scored.sort(key=lambda item: (-item[2], item[1].get("timestamp_seconds") or 0.0))
         result["frames"] = [_format_search_result(record_id, meta, score, scorer.kind) for record_id, meta, score in scored]
+        self._attach_places(result["frames"])
         return result
 
     def search_filter_options(self):
         """What the search filter panel offers for the active collection (see search_filters.filter_options)."""
         registry_available = self.media_registry.available
         if not self._ensure_collection():
-            return empty_filter_options(registry_available)
+            return empty_filter_options(registry_available, self.places.available)
         scan = self.collection.get(include=["metadatas"])  # the call CachedCollection caches
         snapshot = self.media_registry.snapshot()
         roots = list(self.folders.selected_folders_by_collection.get(self.collection.name, ()))
-        return filter_options(scan, snapshot, roots, registry_available, self._duplicate_counts(self.collection))
+        duplicates = self._duplicate_counts(self.collection)
+        try:
+            return filter_options(scan, snapshot, roots, registry_available, duplicates, self.places)
+        except Exception as e:
+            # Place names must never keep the panel from opening: answer without them
+            print(f"[Places] Could not list the places of the library: {e}")
+            return filter_options(scan, snapshot, roots, registry_available, duplicates)
 
     def _duplicate_counts(self, collection):
         """The image files with an existing exact copy and with an existing visual partner. The visual count
@@ -1770,7 +1838,37 @@ class Indexer:
             self._attach_copies_from_level(exact, formatted, file_exists)
         else:
             Indexer._attach_exact_copies(collection, formatted, head_id_set, file_exists)
+        self._attach_places(formatted)
         return formatted
+
+    def _attach_places(self, formatted):
+        """Adds `place` (PlaceIndex.describe of the place id: names of country, region and city; the dict is shared
+        between results) to every result whose file has GPS inside a place. Place names must never fail a search:
+        on any error the results are left without places."""
+        try:
+            if not formatted or not self.places.available:
+                return
+            place_ids = self.places.ids(self.media_registry.snapshot())
+            if not place_ids:
+                return
+            keys = {}  # path -> registry key, once per distinct path
+            found = []
+            for result in formatted:
+                path = result.get("path")
+                if not path:
+                    continue
+                key = keys.get(path)
+                if key is None:
+                    key = keys[path] = MediaRegistry.key_for(path)
+                place_id = place_ids.get(key)
+                if place_id is not None:
+                    place = self.places.describe(place_id)
+                    if place is not None:
+                        found.append((result, place))
+            for result, place in found:
+                result["place"] = place
+        except Exception as e:
+            print(f"[Places] Could not add place names to the search results: {e}")
 
     @staticmethod
     def _attach_copies_from_level(level, formatted, file_exists):

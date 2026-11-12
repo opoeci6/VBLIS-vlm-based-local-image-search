@@ -262,6 +262,15 @@ class DuplicateIndex:
             self._publish("_visual", level, generation)
             return level
 
+    def refresh_visual(self, collection):
+        """Rebuilds the visual level of `collection` when there is one and it is stale (the background warm-up
+        after indexing). Never builds a first one. True when the level is current afterwards, False when there
+        is none."""
+        if self.existing_visual(collection) is None:
+            return False
+        self.ensure_visual(collection)
+        return True
+
     @classmethod
     def _usable_visual(cls, level, collection, reuse_stale):
         if level is None or level.collection_name != collection.name:

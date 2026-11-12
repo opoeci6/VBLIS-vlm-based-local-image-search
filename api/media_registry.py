@@ -63,6 +63,8 @@ class MediaFacts(NamedTuple):
     rotation: Optional[int]
     size: Optional[int] = None
     mtime_ns: Optional[int] = None
+    gps_lat: Optional[float] = None
+    gps_lon: Optional[float] = None
 
 
 _FACT_COLUMNS = ("key",) + MediaFacts._fields

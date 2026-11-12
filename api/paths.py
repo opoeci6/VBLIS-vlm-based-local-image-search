@@ -25,6 +25,11 @@ DATA_DIR = DATA_ROOT / "data"
 CHROMA_DIR = DATA_ROOT / "chroma_data"
 ENV_FILE = DATA_ROOT / ".env"
 
+# Read-only files shipped with the program: next to this file, or inside the PyInstaller bundle.
+# Not user data: not in LEGACY_DATA_ITEMS, never created or moved.
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", API_DIR))
+PLACES_FILE = RESOURCE_DIR / "place_data" / "places.npz"
+
 # Everything packaged builds used to keep inside the install folder
 LEGACY_DATA_ITEMS = ("models", "chroma_data", "cache", "data", ".env")
 _STAGING_SUFFIX = ".migrating"

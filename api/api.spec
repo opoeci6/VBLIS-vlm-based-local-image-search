@@ -6,6 +6,7 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_sub
 block_cipher = None
 
 datas = []
+datas += [('place_data/places.npz', 'place_data')]
 binaries = []
 hidden_imports = [
     'uvicorn.logging', 

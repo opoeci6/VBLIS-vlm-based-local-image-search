@@ -13,6 +13,7 @@ import {
 } from '../../../utils/searchFilters';
 import { FilterToggle } from './FilterToggle';
 import { FolderFilterTree } from './FolderFilterTree';
+import { PlaceFilterTree } from './PlaceFilterTree';
 
 const formatCount = (value) => formatNumber(Number(value || 0));
 
@@ -139,6 +140,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
     orientations, toggleOrientation, formats, toggleFormat,
     minMegapixels, setMinMegapixels,
     duplicates, toggleDuplicate,
+    places, togglePlace,
     activeCount, clearAll,
     options, optionsLoading, optionsError, loadOptions, readDetailsNow, isStartingScan,
     scanActive, missingDetails, detailsFilterActive
@@ -146,6 +148,10 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
 
   const formatEntries = listFormats(options, formats);
   const years = options?.years || [];
+  const placeNodes = options?.places || [];
+  // Hidden unless the backend says it has place data (an older backend sends no such key). While the
+  // options are not loaded yet the section is shown with a status line, like the Format section.
+  const showPlaces = !options || options.places_available === true;
   const orientationLabels = getOrientationLabels(t);
   const duplicateLabels = getDuplicateLabels(t);
   const formatTitles = { image: t('format.images'), video: t('format.videos'), other: t('format.other') };
@@ -217,6 +223,23 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
           </div>
         )}
       </Section>
+
+      {showPlaces && (
+        <Section title={t('sections.place')}>
+          {!options && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">{optionsError ? t('place.unavailable') : t('place.loading')}</p>
+          )}
+          {options && (placeNodes.length === 0 || options.with_gps === 0) && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('place.noData')}</p>
+          )}
+          {options && placeNodes.length > 0 && options.with_gps !== 0 && (
+            <>
+              <PlaceFilterTree places={placeNodes} selected={places} onToggle={togglePlace} />
+              <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">{t('place.credit')}</p>
+            </>
+          )}
+        </Section>
+      )}
 
       <Section title={t('sections.orientation')}>
         <div className="flex flex-wrap gap-2">

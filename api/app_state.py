@@ -8,9 +8,11 @@ from fastapi import FastAPI
 from model_manager import ModelManager
 from indexer import Indexer
 from task_queue import TaskQueueManager
+from warmup import CacheWarmer
 
 model_manager = ModelManager()
 indexer = Indexer(model_manager)
+indexer.warmer = CacheWarmer(indexer)
 task_queue = TaskQueueManager(indexer, persistence_path=str(paths.DATA_DIR / "task_queue.json"))
 
 @asynccontextmanager
@@ -28,7 +30,10 @@ async def lifespan(app: FastAPI):
         print(f"[Notice] Active model '{active_model}' not loaded: {e}. Ready for manual download.")
     task_queue.load_from_disk(current_active_model=model_manager.active_model)
     task_queue.start()
+    # Load the library caches in the background so the first library view and Filters panel don't wait
+    indexer.request_warmup()
     yield
     print("Shutting down API backend...")
     task_queue.stop()
+    indexer.warmer.stop()
     indexer.media_registry.close()
