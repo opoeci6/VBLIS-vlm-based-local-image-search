@@ -28,9 +28,12 @@ def is_macos_junk_path(path: str) -> bool:
     parts = re.split(r"[\\/]+", path)
     return is_macos_junk_file(parts[-1]) or any(is_macos_junk_dir(part) for part in parts[:-1])
 
-# Bump when the image preprocessing before embedding changes. Image records without "embed_version"
-# (or with a lower one) are version 1 and get re-checked by reindex.
-IMAGE_EMBED_VERSION = 2
+# Bump when the image preprocessing before embedding changes. Image records without "embed_version" are
+# version 1. What each version changed, and so which older records a reindex has to look at again:
+#   2: the EXIF orientation is applied before embedding (every format).
+#   3: a HEIC / HEIF file that carries its rotation in the container (irot / imir) no longer gets its EXIF
+#      orientation applied on top. Only HEIC / HEIF records can be wrong, see embed_version_is_current.
+IMAGE_EMBED_VERSION = 3
 
 # EXIF orientation tag ID
 _EXIF_ORIENTATION_TAG = 0x0112
@@ -91,24 +94,94 @@ def _apply_exif_orientation(img: Image.Image, exif_bytes: bytes) -> Image.Image:
         img = img.transpose(t)
     return img
 
+_HEIF_TRANSFORM_BOXES = (b"irot", b"imir")
+_HEIF_BOX_LIMIT = 4096  # boxes looked at per level: far more than a real file has, and it bounds a broken one
+
+def _iso_boxes(stream, start, end):
+    """(type, payload start, payload end) of the ISO BMFF boxes between two file offsets."""
+    position = start
+    for _ in range(_HEIF_BOX_LIMIT):
+        if position + 8 > end:
+            return
+        stream.seek(position)
+        header = stream.read(8)
+        if len(header) < 8:
+            return
+        size, payload = int.from_bytes(header[:4], "big"), position + 8
+        if size == 1:  # a 64-bit size follows the type
+            size, payload = int.from_bytes(stream.read(8), "big"), position + 16
+        elif size == 0:  # the box runs to the end
+            size = end - position
+        if size < payload - position or position + size > end:
+            return
+        yield header[4:8], payload, position + size
+        position += size
+
+def _stream_has_heif_transform(stream) -> bool:
+    stream.seek(0, os.SEEK_END)
+    end = stream.tell()
+    for box, start, stop in _iso_boxes(stream, 0, end):
+        if box != b"meta":
+            continue
+        # meta is a full box: 4 bytes of version and flags come before its children
+        for child, child_start, child_stop in _iso_boxes(stream, start + 4, stop):
+            if child != b"iprp":
+                continue
+            for group, group_start, group_stop in _iso_boxes(stream, child_start, child_stop):
+                if group != b"ipco":
+                    continue
+                for prop, prop_start, prop_stop in list(_iso_boxes(stream, group_start, group_stop)):
+                    if prop == b"imir":
+                        return True
+                    if prop == b"irot" and prop_stop > prop_start:
+                        stream.seek(prop_start)
+                        if stream.read(1)[0] & 3:  # the low two bits count quarter turns; 0 turns nothing
+                            return True
+        return False
+    return False
+
+def _heif_has_transform(source) -> bool:
+    """True when a HEIC/HEIF file (path or binary file object) declares a rotation or mirroring in its
+    container (an irot item property that turns, or an imir one). libheif applies those while decoding, and such a file's EXIF
+    orientation describes the same turn, so it must not be applied again. A camera app that writes the
+    orientation to EXIF only has no such property. A file that can't be read this way counts as having none."""
+    try:
+        if isinstance(source, (str, os.PathLike)):
+            with open(source, "rb") as stream:
+                return _stream_has_heif_transform(stream)
+        position = source.tell()
+        try:
+            return _stream_has_heif_transform(source)
+        finally:
+            source.seek(position)
+    except Exception:
+        return False
+
+def _heif_orientations(heif_file, source):
+    """(orientation to apply, EXIF orientation as written) of an opened HEIC/HEIF file: the EXIF value is
+    not applied when the container already turned the picture."""
+    written = _parse_exif_orientation(heif_file.info.get("exif", b"") or b"")
+    if _rotates(written) and _heif_has_transform(source):
+        return 1, written
+    return written, written
+
 def _decode_heif_with_orientation(source):
-    """Decode a HEIC/HEIF path or file object. Returns (upright PIL image, EXIF orientation value)."""
+    """Decode a HEIC/HEIF path or file object. Returns (upright PIL image, orientation value that was
+    applied on top of the decoder's own output)."""
     heif_file = pillow_heif.open_heif(source)
+    orientation, _ = _heif_orientations(heif_file, source)
     img = Image.frombytes(
         heif_file.mode,
         heif_file.size,
         heif_file.data,
         "raw",
     )
-    orientation = 1
-    exif_bytes = heif_file.info.get("exif", b"")
-    if exif_bytes:
-        orientation = _parse_exif_orientation(exif_bytes)
-        img = _apply_exif_orientation(img, exif_bytes)
+    for transform in _ORIENTATION_TRANSFORMS.get(orientation, []):
+        img = img.transpose(transform)
     return img, orientation
 
 def decode_heif(path) -> Image.Image:
-    """Decode a HEIC/HEIF file to a PIL image, applying its EXIF orientation."""
+    """Decode a HEIC/HEIF file to an upright PIL image."""
     return _decode_heif_with_orientation(path)[0]
 
 def _ftyp_brands(head: bytes) -> set:
@@ -173,12 +246,33 @@ def open_image_upright(source):
         raise
 
 def read_orientation(path) -> int:
-    """EXIF orientation value (1-8) of an image file, read from its header without decoding any pixels."""
+    """The orientation value (1-8) open_image_upright applies to an image file, read from its header without
+    decoding any pixels: the EXIF orientation, or 1 for a HEIC/HEIF whose container already turns it."""
     if _is_heif_source(path):
         heif_file = pillow_heif.open_heif(path)  # .data would decode, so only .info is touched
-        return _parse_exif_orientation(heif_file.info.get("exif", b"") or b"")
+        return _heif_orientations(heif_file, path)[0]
     with _open_with_pillow(path) as img:
         return img.getexif().get(_EXIF_ORIENTATION_TAG, 1)
+
+def embed_version_is_current(path, embed_version) -> bool:
+    """True when a record embedded under `embed_version` needs no second look. Version 3 only changed
+    HEIC/HEIF files, so a version 2 record of any other format is as good as a current one."""
+    if embed_version >= IMAGE_EMBED_VERSION:
+        return True
+    return embed_version == 2 and not _is_heif_source(path)
+
+def embedding_is_outdated(path, embed_version) -> bool:
+    """True when the picture embedded under `embed_version` was turned differently from how the file is
+    decoded today, so the record needs a new embedding. Read from the header, no pixels decoded.
+      version 1 applied no EXIF orientation: wrong when one is applied today.
+      version 2 applied it to every file: wrong for a HEIC/HEIF whose container turns it too."""
+    if embed_version < 2:
+        return _rotates(read_orientation(path))
+    if embed_version < 3 and _is_heif_source(path):
+        heif_file = pillow_heif.open_heif(path)
+        applied, written = _heif_orientations(heif_file, path)
+        return applied != written
+    return False
 
 # Header-only metadata probing. The date and GPS helpers are shared with media_video.
 _DATETIME_RE = re.compile(
@@ -299,13 +393,17 @@ def probe_image_info(path) -> dict:
     """Size, EXIF orientation, date taken and GPS of an image file, read from its header without decoding
     any pixels. width/height are the upright size (swapped for orientations 5-8, as open_image_upright
     rotates). Raises when the file cannot be opened as an image."""
+    applied = None
     if _is_heif_source(path):
         heif_file = pillow_heif.open_heif(path)  # .data would decode, so only .size and .info are touched
         (width, height), exif_bytes = heif_file.size, heif_file.info.get("exif") or b""
+        applied = _heif_orientations(heif_file, path)[0]
     else:
         with _open_with_pillow(path) as img:
             (width, height), exif_bytes = img.size, img.info.get("exif") or b""
     info = _read_exif(exif_bytes)
+    if applied is not None and applied != info["orientation"]:
+        info["orientation"] = applied  # the container already turned it: the size is the upright one
     if info["orientation"] in (5, 6, 7, 8):
         width, height = height, width
     return {"width": width, "height": height, **info}
@@ -318,15 +416,19 @@ def read_rotated(path) -> bool:
     """True when the file's EXIF orientation needs a rotation or flip (read as read_orientation does)."""
     return _rotates(read_orientation(path))
 
-def inspect_file(filepath, orientation=True):
-    """Worker function for the multithreaded CPU pool: hashes a file and, when asked, reads its EXIF
-    orientation from the header. That decodes no pixels, except that Pillow loads a PNG whose EXIF comes
-    after its image data, so callers only ask when the orientation decides something.
-    Returns (filepath, hash, rotated, error); rotated is True when the orientation needs a rotation or flip,
-    None when it was not read.
+def inspect_file(filepath, orientation=True, embed_version=1):
+    """Worker function for the multithreaded CPU pool: hashes a file and, when asked, reads from its header
+    whether a record embedded under `embed_version` shows the picture turned differently from today (see
+    embedding_is_outdated; for version 1 that is: the file has an orientation to apply). That decodes no
+    pixels, except that Pillow loads a PNG whose EXIF comes after its image data, so callers only ask when
+    the answer decides something.
+    Returns (filepath, hash, rotated, error); rotated is that answer, None when it was not read.
     """
     try:
         file_hash = compute_file_hash(filepath)
-        return (filepath, file_hash, read_rotated(filepath) if orientation else None, None)
+        if not orientation:
+            return (filepath, file_hash, None, None)
+        rotated = read_rotated(filepath) if embed_version < 2 else embedding_is_outdated(filepath, embed_version)
+        return (filepath, file_hash, rotated, None)
     except Exception as e:
         return (filepath, None, False, str(e))
