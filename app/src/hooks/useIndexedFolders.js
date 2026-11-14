@@ -3,9 +3,11 @@ import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { getAllSelectablePaths, toggleFolderSelection as toggleFolderSelectionPure } from '../utils/folderSelection';
 import { apiFetch } from '../utils/api';
+import { useSession } from '../session/sessionContext';
 import i18n from '../i18n';
 
 export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToast, onIndexChanged }) => {
+  const { isOwner } = useSession();
   const [indexedFolders, setIndexedFolders] = useState([]);
   const [isFetchingFolders, setIsFetchingFolders] = useState(false);
   const [selectedFolders, setSelectedFolders] = useState([]);
@@ -26,6 +28,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
   }, [activeModel]);
 
   const handleReindexFolder = useCallback(async (folder_path) => {
+    if (!isOwner) return;
     try {
       const res = await apiFetch(`${API_BASE}/index/folder/reindex`, {
         method: 'POST',
@@ -52,9 +55,10 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
       setToast({ message: i18n.t('messages:indexedFolders.reindexConnectFailed'), type: 'error' });
       fetchIndexedFolders(true);
     }
-  }, [setToast, fetchIndexedFolders]);
+  }, [setToast, fetchIndexedFolders, isOwner]);
 
   const handleDeleteFolderIndex = async (folder_path) => {
+    if (!isOwner) return;
     try {
       const res = await apiFetch(`${API_BASE}/index/folder/delete`, {
         method: 'POST',
@@ -78,7 +82,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
   };
 
   const handleBatchDelete = async () => {
-    if (selectedFolders.length === 0) return;
+    if (!isOwner || selectedFolders.length === 0) return;
     setIsBatchProcessing(true);
     try {
       const res = await apiFetch(`${API_BASE}/index/folders/batch-delete`, {
@@ -102,7 +106,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
   };
 
   const handleBatchReindex = async () => {
-    if (selectedFolders.length === 0) return;
+    if (!isOwner || selectedFolders.length === 0) return;
     setIsBatchProcessing(true);
     try {
       const res = await apiFetch(`${API_BASE}/index/folders/batch-reindex`, {

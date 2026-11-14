@@ -2,12 +2,15 @@ import { Search, Loader2, Image as ImageIcon, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AsciiLogo } from '../common/AsciiLogo';
 import { formatNumber } from '../../utils/formatters';
+import { useSession } from '../../session/sessionContext';
 
 // `missingDetails`: files without media details that the active date/orientation/resolution filters
 // skip (0 when none of those filters is active); the hint offers to read them.
 // `browsing`: the library was shown without a query (an empty Search), so there is no query to retry.
 export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetails = 0, scanActive = false, onReadDetails, browsing = false }) => {
   const { t } = useTranslation('home');
+  // Reading the missing details starts a background scan, which only the owner can do.
+  const { isOwner } = useSession();
   if (filtersActive) {
     return (
       <div className="flex flex-col items-center justify-center mt-32 gap-3">
@@ -18,7 +21,7 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
         <p className="text-sm text-neutral-500 dark:text-neutral-500 font-medium">
           {browsing ? t('noMatches.filtered.browsingHint') : t('noMatches.filtered.searchHint')}
         </p>
-        {missingDetails > 0 && (
+        {isOwner && missingDetails > 0 && (
           <div className="flex flex-col items-center gap-2" data-testid="no-matches-details-hint">
             <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">
               {t('noMatches.missingDetails', { count: missingDetails, formatted: formatNumber(missingDetails) })}
@@ -84,8 +87,24 @@ export const BackendLoading = ({ isSwitchingModel }) => {
 
 export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, handleDownloadModel, pendingModel }) => {
   const { t } = useTranslation('home');
+  const { isOwner } = useSession();
   const downloadedModels = models.models?.filter(m => m.downloaded) || [];
   const hasDownloaded = downloadedModels.length > 0;
+
+  // Models are the owner's to set up; a viewer can only wait for that.
+  if (!isOwner) {
+    return (
+      <div className="flex flex-col items-center justify-center mt-10 gap-4 animate-in fade-in duration-1000">
+        <div className="w-24 h-24 rounded-full bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center relative">
+          <ImageIcon className="w-10 h-10 text-amber-500 dark:text-amber-400 opacity-80" />
+        </div>
+        <div className="text-center space-y-3 flex flex-col items-center">
+          <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('session:viewer.noModelTitle')}</h2>
+          <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">{t('session:viewer.noModelDesc')}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (hasDownloaded) {
     return (
@@ -148,6 +167,7 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
 
 export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings, handleUnloadModel, isUnloadingModel, status }) => {
   const { t, i18n } = useTranslation('home');
+  const { isOwner } = useSession();
   // English has no tip (home:searchTip is ""). i18next counts an empty value as missing: t() would return
   // the key, or throw in tests, so the value is read straight from the catalog.
   const tip = i18n.getResource(i18n.language, 'home', 'searchTip') || '';
@@ -172,15 +192,17 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
               <div className="model-status-dot model-status-dot-online w-2 h-2 flex-shrink-0" aria-hidden="true" />
               <span>{t('ready.activeModelLabel')} <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
             </button>
-            <button
-              onClick={handleUnloadModel}
-              disabled={isUnloadingModel || status.is_indexing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-              title={status.is_indexing ? t('common:ejectTooltip.indexing') : t('common:ejectTooltip.idle')}
-            >
-              <LogOut className="w-3.5 h-3.5 text-rose-500" />
-              {isUnloadingModel ? t('common:unloading') : t('common:eject')}
-            </button>
+            {isOwner && (
+              <button
+                onClick={handleUnloadModel}
+                disabled={isUnloadingModel || status.is_indexing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                title={status.is_indexing ? t('common:ejectTooltip.indexing') : t('common:ejectTooltip.idle')}
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                {isUnloadingModel ? t('common:unloading') : t('common:eject')}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -207,15 +229,17 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>{t('ready.activeModelLabel')} <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
             </button>
-            <button
-              onClick={handleUnloadModel}
-              disabled={isUnloadingModel || status.is_indexing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
-              title={status.is_indexing ? t('common:ejectTooltip.indexing') : t('common:ejectTooltip.idle')}
-            >
-              <LogOut className="w-3.5 h-3.5 text-rose-500" />
-              {isUnloadingModel ? t('common:unloading') : t('common:eject')}
-            </button>
+            {isOwner && (
+              <button
+                onClick={handleUnloadModel}
+                disabled={isUnloadingModel || status.is_indexing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                title={status.is_indexing ? t('common:ejectTooltip.indexing') : t('common:ejectTooltip.idle')}
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                {isUnloadingModel ? t('common:unloading') : t('common:eject')}
+              </button>
+            )}
           </div>
         </div>
       </div>

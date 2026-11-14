@@ -100,5 +100,29 @@
     "resyncSub": "Re-sync only this subfolder",
     "resyncSubMissing": "Re-sync subfolder (e.g. reconnect USB drive)",
     "deleteSub": "Delete only this subfolder from index"
+  },
+  "picker": {
+    "title": "Add folders from the server",
+    "subtitle": "Choose folders on the server to add to the library.",
+    "roots": "Library folders",
+    "up": "Up",
+    "loading": "Loading...",
+    "empty": "No subfolders here.",
+    "indexed": "Indexed",
+    "unavailable": "Unavailable",
+    "unavailableTooltip": "This folder isn't available on the server right now.",
+    "openFolder": "Open {{name}}",
+    "selectFolder": "Select {{name}}",
+    "deselectFolder": "Deselect {{name}}",
+    "addThisFolder": "Add this folder",
+    "noRootsTitle": "No library folders on the server yet",
+    "noRootsDesc": "The server's owner adds library folders on the server with the <code>add-library-folder</code> command. See SERVER.md.",
+    "truncated": "Only the first folders are shown. Open a subfolder to see more.",
+    "skipped_one": "{{count}} folder name couldn't be shown.",
+    "skipped_other": "{{count}} folder names couldn't be shown.",
+    "readFailed": "Could not read this folder.",
+    "add_one": "Add {{count}} folder",
+    "add_other": "Add {{count}} folders",
+    "adding": "Adding..."
   }
 }

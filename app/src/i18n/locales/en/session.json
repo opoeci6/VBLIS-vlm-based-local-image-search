@@ -1,0 +1,129 @@
+{
+  "connecting": "Connecting to the server...",
+  "connectionError": {
+    "title": "Can't reach the server",
+    "desc": "Check your network connection and that the server is running.",
+    "retry": "Try again"
+  },
+  "signIn": {
+    "title": "Sign in",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in...",
+    "expired": "Your session ended. Sign in again.",
+    "insecure": "This connection isn't encrypted.",
+    "errors": {
+      "wrongPassword": "Wrong password.",
+      "tooManyAttempts_one": "Too many attempts. Try again in {{count}} second.",
+      "tooManyAttempts_other": "Too many attempts. Try again in {{count}} seconds.",
+      "tooManyAttemptsNoWait": "Too many attempts. Try again later.",
+      "busy_one": "The server is busy. Try again in {{count}} second.",
+      "busy_other": "The server is busy. Try again in {{count}} seconds.",
+      "busyNoWait": "The server is busy. Try again later.",
+      "noOwnerPassword": "The server has no owner password yet. Set one on the server: <code>set-password owner</code>",
+      "network": "Could not reach the server. Check your connection and try again.",
+      "generic": "Sign-in failed (HTTP {{status}})."
+    }
+  },
+  "role": {
+    "owner": "owner",
+    "viewer": "viewer"
+  },
+  "signedInAs": "Signed in as {{role}}",
+  "signOut": "Sign out",
+  "viewer": {
+    "noModelTitle": "The owner hasn't set up a model yet",
+    "noModelDesc": "Search will be available once the owner sets one up on the server."
+  },
+  "overlay": {
+    "searchByImage": "Drop an image to search",
+    "searchByImageHint": "Find similar photos and videos in the library"
+  },
+  "fileDrop": {
+    "useAddFolders": "Folders can't be dropped into a browser. Use the Add Folder(s) button instead."
+  },
+  "server": {
+    "title": "Server",
+    "loading": "Loading server settings...",
+    "loadFailed": "Could not load the server settings.",
+    "viewers": {
+      "title": "What viewers may do",
+      "originals": "Open and download original files",
+      "imageSearch": "Search with a picture",
+      "saveFailed": "Could not save the viewer permissions."
+    },
+    "facts": {
+      "title": "Server facts",
+      "libraryFolders": "Library folders",
+      "noLibraryFolders": "None yet",
+      "port": "Port",
+      "https": "HTTPS",
+      "httpsOff": "Off",
+      "httpsSelfSigned": "On (self-signed certificate)",
+      "httpsFiles": "On (certificate files)",
+      "internet": "Internet access",
+      "internetOn": "Allowed",
+      "internetOff": "Local network only",
+      "fromEnvironment": "Set by environment variables: {{names}}",
+      "hint": "These are changed on the server. See SERVER.md."
+    },
+    "password": {
+      "title": "Change password",
+      "role": "Password for",
+      "roleOwner": "Owner",
+      "roleViewer": "Viewer",
+      "new": "New password",
+      "repeat": "Repeat the new password",
+      "current": "Current owner password",
+      "submit": "Change password",
+      "submitting": "Saving...",
+      "changedOwner": "The owner password was changed.",
+      "changedViewer": "The viewer password was changed.",
+      "errors": {
+        "mismatch": "The two new passwords do not match.",
+        "tooShort": "The password must be at least 8 characters.",
+        "tooLong": "The password must be at most 256 characters.",
+        "currentRequired": "Enter the current owner password."
+      }
+    },
+    "removeViewer": {
+      "button": "Remove viewer password",
+      "confirm": "Viewers will no longer be able to sign in. Enter the current owner password to continue.",
+      "submit": "Remove password",
+      "removed": "The viewer password was removed."
+    },
+    "signOutOthers": {
+      "button": "Sign out other browsers",
+      "confirm": "Every other browser signed in to this server will have to sign in again. This browser stays signed in.",
+      "submit": "Sign out other browsers",
+      "done": "Other browsers were signed out.",
+      "failed": "Could not sign out the other browsers."
+    },
+    "errors": {
+      "codes": {
+        "wrong_password": "The current password is wrong.",
+        "empty": "The new password can't be empty.",
+        "too_short": "The new password is too short.",
+        "too_long": "The new password is too long.",
+        "same_as_other": "The owner and viewer passwords must be different.",
+        "config_unreadable": "The server's settings file could not be read, so nothing was changed."
+      },
+      "tooManyAttempts_one": "Too many attempts. Try again in {{count}} second.",
+      "tooManyAttempts_other": "Too many attempts. Try again in {{count}} seconds.",
+      "tooManyAttemptsNoWait": "Too many attempts. Try again later.",
+      "generic": "The server refused the change (HTTP {{status}}).",
+      "network": "Could not reach the server."
+    }
+  },
+  "httpBanner": {
+    "message": "This connection isn't encrypted. Others on this network could see your password and pictures.",
+    "howTo": "How to turn on HTTPS",
+    "hideHowTo": "Hide",
+    "dismiss": "Dismiss",
+    "ownerSelfSigned": "Quickest: run <code>set tls self_signed</code> on the server.",
+    "ownerFiles": "Your own certificate: point the server at your certificate and key files.",
+    "ownerProxy": "Or put the server behind a reverse proxy that provides HTTPS.",
+    "ownerDocs": "See SERVER.md for the steps.",
+    "viewerAsk": "Ask the server's owner to turn on HTTPS."
+  }
+}

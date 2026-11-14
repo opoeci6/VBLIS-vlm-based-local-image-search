@@ -3,9 +3,11 @@ import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
 import { isModelDependentTask } from '../utils/taskTypes';
+import { useSession } from '../session/sessionContext';
 import i18n from '../i18n';
 
 export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchStart }) => {
+  const { isOwner } = useSession();
   const [modelLoadError, setModelLoadError] = useState(null);
 
   const [models, setModels] = useState({ active_model: '', models: [] });
@@ -65,11 +67,12 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
       }
     };
 
-    fetchGpuSettings();
+    // A viewer may list the models but not read or change the performance settings.
+    if (isOwner) fetchGpuSettings();
     fetchModels();
 
     const interval = setInterval(() => {
-      fetchGpuSettings();
+      if (isOwner) fetchGpuSettings();
       fetchModels();
     }, 1500);
 
@@ -77,7 +80,7 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
       mounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [isOwner]);
 
   // Refresh models list when a background download finishes
   useEffect(() => {

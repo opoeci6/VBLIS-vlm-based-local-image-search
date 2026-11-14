@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { apiFetch, API_TOKEN_HEADER } from './api';
+import { setNetworkModeForTests } from '../config';
+import { onSignedOut } from './session';
 
 describe('apiFetch', () => {
   let originalElectronAPI;
@@ -79,5 +81,62 @@ describe('apiFetch', () => {
     it('returns the fetch result', async () => {
       await expect(apiFetch('http://x/a')).resolves.toEqual({ ok: true });
     });
+  });
+});
+
+describe('apiFetch signed-out notice', () => {
+  let fetchMock;
+  let notified;
+  let unsubscribe;
+
+  beforeEach(() => {
+    delete window.electronAPI;
+    notified = vi.fn();
+    unsubscribe = onSignedOut(notified);
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    unsubscribe();
+    setNetworkModeForTests(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('notifies on a 401 in network mode and still returns the response', async () => {
+    setNetworkModeForTests(true);
+    const response = { ok: false, status: 401 };
+    fetchMock.mockResolvedValue(response);
+    await expect(apiFetch('/api/status')).resolves.toBe(response);
+    expect(notified).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not notify on other statuses in network mode', async () => {
+    setNetworkModeForTests(true);
+    for (const status of [200, 403, 429, 500]) {
+      fetchMock.mockResolvedValue({ ok: status === 200, status });
+      await apiFetch('/api/status');
+    }
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it('sends no token header in network mode', async () => {
+    setNetworkModeForTests(true);
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    await apiFetch('/api/status', { method: 'POST' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/status', { method: 'POST' });
+  });
+
+  it('does not notify on a 401 on the desktop', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401 });
+    await apiFetch('http://x/status');
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it('lets a network error through unchanged', async () => {
+    setNetworkModeForTests(true);
+    fetchMock.mockRejectedValue(new TypeError('offline'));
+    await expect(apiFetch('/api/status')).rejects.toThrow('offline');
+    expect(notified).not.toHaveBeenCalled();
   });
 });

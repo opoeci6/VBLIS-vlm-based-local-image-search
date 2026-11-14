@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config';
 import { apiFetch } from '../utils/api';
+import { useSession } from '../session/sessionContext';
 import i18n from '../i18n';
 
 export const useCacheStats = ({ isSettingsOpen, status, setToast }) => {
+  const { isOwner } = useSession();
   const [isClearingThumbnails, setIsClearingThumbnails] = useState(false);
   const [showConfirmClearThumbnails, setShowConfirmClearThumbnails] = useState(null); // null | 'all' | 'images' | 'videos'
   const [cacheStats, setCacheStats] = useState({
@@ -14,6 +16,7 @@ export const useCacheStats = ({ isSettingsOpen, status, setToast }) => {
   const [isTriggeringRebuildThumbnails, setIsTriggeringRebuildThumbnails] = useState(false);
 
   const fetchCacheStats = useCallback(async () => {
+    if (!isOwner) return;
     try {
       const res = await apiFetch(`${API_BASE}/image/cache/stats`);
       if (res.ok) {
@@ -23,7 +26,7 @@ export const useCacheStats = ({ isSettingsOpen, status, setToast }) => {
     } catch (e) {
       console.error("Failed to fetch cache stats:", e);
     }
-  }, []);
+  }, [isOwner]);
 
   const handleClearThumbnailCache = async (target = 'all') => {
     setIsClearingThumbnails(true);
