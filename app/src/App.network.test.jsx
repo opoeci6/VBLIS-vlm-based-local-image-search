@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App';
 import TitleBar from './TitleBar';
 import { FolderContentsModal } from './components/folders/FolderContentsModal';
@@ -64,12 +64,12 @@ const searchPayload = { results: [{ path: '/photos/cat.jpg', media_type: 'image'
 const sessionInfo = (role, permissions = {}) => ({
   signed_in: true,
   role,
-  permissions: { originals: role === 'owner', image_search: true, ...permissions },
+  account: { id: role === 'owner' ? 'o1' : 'v1', name: role === 'owner' ? 'alice' : 'bob' },
+  permissions: { originals: role === 'owner', image_search: true, places: true, ...permissions },
   channel: 'network',
   secure: true,
   case_sensitive_paths: true,
   path_separator: '/',
-  viewer_enabled: true,
 });
 
 // What a viewer may call, from the server's contract. Anything else is a violation.
@@ -86,7 +86,19 @@ const VIEWER_ROUTES = new Set([
   'GET /index/folder/contents',
   'GET /status',
   'GET /models',
+  'POST /auth/password',
 ]);
+
+// The owner's view of the accounts (GET /server/accounts).
+const accountsPayload = {
+  accounts: [
+    { id: 'o1', name: 'alice', role: 'owner', permissions: { originals: true, image_search: true, places: true }, disabled: false },
+    { id: 'v1', name: 'bob', role: 'viewer', permissions: { originals: false, image_search: true, places: true }, disabled: false },
+    { id: 'v2', name: 'carol', role: 'viewer', permissions: { originals: true, image_search: false, places: false }, disabled: true },
+  ],
+  you: 'o1',
+  limits: { max_accounts: 50, name_max: 32, password_min: 8, password_max: 256 },
+};
 
 const json = (body) => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) });
 
@@ -107,6 +119,18 @@ describe('App in a browser', () => {
       if (new URL(String(url)).pathname === '/search/filter-options') {
         calls.push('GET /search/filter-options');
         return json({ total_files: 10, with_details: 2, missing_details: 8, formats: [], years: [], folders: [], places: [] });
+      }
+      return original(url, init);
+    });
+  };
+
+  // The filter options of a library that has place data.
+  const withPlaceData = () => {
+    const original = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation(async (url, init) => {
+      if (new URL(String(url)).pathname === '/search/filter-options') {
+        calls.push('GET /search/filter-options');
+        return json({ total_files: 10, with_details: 10, missing_details: 0, formats: [], years: [], folders: [], places_available: true, with_gps: 4, places: [] });
       }
       return original(url, init);
     });
@@ -151,7 +175,8 @@ describe('App in a browser', () => {
       if (key === 'GET /queue') return json(queuePayload);
       if (key === 'GET /index/folders') return json(foldersPayload);
       if (key === 'POST /search' || key === 'POST /search/image') return json(searchPayload);
-      if (key === 'GET /server/settings') return json({ viewer_permissions: { originals: false, image_search: true }, viewer_password_set: false, library_roots: [], port: 8000, tls_mode: 'off', public_access: false, from_environment: [] });
+      if (key === 'GET /server/settings') return json({ accounts: { owners: 1, viewers: 2 }, library_roots: [], port: 8000, tls_mode: 'off', public_access: false, from_environment: [] });
+      if (key === 'GET /server/accounts') return json(accountsPayload);
       if (key === 'GET /image/cache/stats') {
         return json({
           images: { count: 0, bytes: 0, formatted: '0 B' },
@@ -215,6 +240,24 @@ describe('App in a browser', () => {
       expect(calls).not.toContain('POST /index/media-info/scan');
     });
 
+    it('shows the Place filter only with the places permission', async () => {
+      withPlaceData();
+      const first = renderApp(viewer({ places: false }));
+      await screen.findByText('Ready to Search');
+      fireEvent.click(screen.getByRole('button', { name: 'Search filters' }));
+      await screen.findByRole('dialog', { name: 'Search filters' });
+      await waitFor(() => expect(calls).toContain('GET /search/filter-options'));
+      await screen.findByRole('region', { name: 'Format' });
+      expect(screen.queryByRole('region', { name: 'Place' })).toBeNull();
+      first.unmount();
+
+      renderApp(viewer({ places: true }));
+      await screen.findByText('Ready to Search');
+      fireEvent.click(screen.getByRole('button', { name: 'Search filters' }));
+      expect(await screen.findByRole('region', { name: 'Place' })).toBeTruthy();
+      expect(violations).toEqual([]);
+    });
+
     it('searches with a chosen picture through the search bar button, using only viewer routes', async () => {
       renderApp(viewer({ image_search: true }));
       await screen.findByText('Ready to Search');
@@ -230,8 +273,23 @@ describe('App in a browser', () => {
       expect(screen.queryByRole('button', { name: 'Search with a picture' })).toBeNull();
       openSettings(container);
       await screen.findByText('Settings');
-      expect(screen.queryByText('What viewers may do')).toBeNull();
+      expect(screen.getByText('Your account')).toBeTruthy();
+      expect(screen.queryByText('Server')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Manage accounts' })).toBeNull();
       expect(calls).not.toContain('GET /server/settings');
+      expect(violations).toEqual([]);
+    });
+
+    it('changes its own password from the settings', async () => {
+      const { container } = renderApp(viewer());
+      await screen.findByText('Ready to Search');
+      openSettings(container);
+      await screen.findByText('Your account');
+      fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'old-password' } });
+      fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password-1' } });
+      fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'new-password-1' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+      await waitFor(() => expect(calls).toContain('POST /auth/password'));
       expect(violations).toEqual([]);
     });
 
@@ -315,7 +373,7 @@ describe('App in a browser', () => {
     it('shows the role and signs out from the title bar', async () => {
       const { onSignOut } = renderApp(viewer());
       await screen.findByText('Ready to Search');
-      expect(screen.getByText('Signed in as viewer')).toBeTruthy();
+      expect(screen.getByText('Signed in as bob · Viewer')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
       expect(onSignOut).toHaveBeenCalledTimes(1);
     });
@@ -344,7 +402,7 @@ describe('App in a browser', () => {
 
       expect(screen.getByTitle('Open Background Task Queue')).toBeTruthy();
       expect(screen.getByText('Add Folder(s)')).toBeTruthy();
-      expect(screen.getByText('Signed in as owner')).toBeTruthy();
+      expect(screen.getByText('Signed in as alice · Owner')).toBeTruthy();
       expect(screen.queryByTitle('Minimize')).toBeNull();
       expect(screen.queryByTitle('Maximize')).toBeNull();
       expect(screen.queryByText('Show in Explorer')).toBeNull();
@@ -373,12 +431,20 @@ describe('App in a browser', () => {
       await waitFor(() => expect(calls).toContain('POST /index/media-info/scan'));
     });
 
-    it('has the Server section in the settings', async () => {
+    it('has the Server section in the settings, with the accounts window', async () => {
       const { container } = renderApp(sessionInfo('owner'));
       await screen.findByText('Ready to Search');
       openSettings(container);
-      expect(await screen.findByText('What viewers may do')).toBeTruthy();
+      expect(screen.getByText('Your account')).toBeTruthy();
+      expect(await screen.findByText('1 owner, 2 viewers')).toBeTruthy();
       expect(calls).toContain('GET /server/settings');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Manage accounts' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Accounts' });
+      expect(await within(dialog).findByText('bob')).toBeTruthy();
+      expect(within(dialog).getByText('you')).toBeTruthy();
+      expect(within(dialog).getByRole('switch', { name: 'See places and filter by place for bob' }).getAttribute('aria-checked')).toBe('true');
+      expect(calls).toContain('GET /server/accounts');
     });
 
     it('opens the server folder picker from Add Folder(s) instead of the Electron dialog', async () => {
@@ -419,7 +485,8 @@ describe('App in a browser', () => {
       expect(screen.queryByRole('button', { name: 'Search with a picture' })).toBeNull();
       openSettings(container);
       await screen.findByText('Settings');
-      expect(screen.queryByText('What viewers may do')).toBeNull();
+      expect(screen.queryByText('Your account')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Manage accounts' })).toBeNull();
       expect(calls).not.toContain('GET /server/settings');
       expect(screen.queryByText(/isn't encrypted/)).toBeNull();
     });

@@ -1,0 +1,553 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Loader2, MoreHorizontal, Plus, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { FilterToggle } from '../search/filters/FilterToggle';
+import { Switch, PermissionSwitch } from './PermissionSwitch';
+import { Field, cardClass, dangerButton, errorClass, primaryButton, secondaryButton } from './serverUi';
+import { useAccounts } from '../../hooks/useAccounts';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { useSession } from '../../session/sessionContext';
+import { cn } from '../../utils/cn';
+
+// One grid for the header and the rows, from 640 px up. Below that every account is a stacked card.
+const GRID = 'sm:grid sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_repeat(4,minmax(0,0.9fr))_auto] sm:items-center sm:gap-3';
+
+const DEFAULT_NEW_PERMISSIONS = { originals: false, image_search: true, places: true };
+
+const badgeClass = 'px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider border flex-shrink-0';
+
+// "Original files still contain their location" applies to a viewer who may open files but not see places.
+const showsLocationHint = (role, permissions) => role === 'viewer' && Boolean(permissions?.originals) && !permissions?.places;
+
+function LocationHint() {
+  const { t } = useTranslation('session');
+  return <p className="text-[11px] text-amber-700 dark:text-amber-300">{t('accounts.locationHint')}</p>;
+}
+
+const GRANT_TITLE_KEYS = { originals: 'originals', image_search: 'imageSearch', places: 'places' };
+
+// The step that asks for the acting owner's password (and the step's own fields) before a change.
+// `permission` is the API name of the permission a 'grant' step switches on.
+function ConfirmStep({ kind, permission, account, isYou, limits, onSubmit, onCancel, onBusyChange }) {
+  const { t } = useTranslation('session');
+  const [newName, setNewName] = useState(account.name);
+  const [newPassword, setNewPassword] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [current, setCurrent] = useState('');
+  const [error, setError] = useState(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const backdropDismiss = useBackdropDismiss(() => { if (!isBusy) onCancel(); });
+
+  const { name } = account;
+  let text;
+  if (kind === 'rename') {
+    text = { title: t('accounts.confirm.rename.title', { name }), desc: null, submit: t('accounts.confirm.rename.submit') };
+  } else if (kind === 'changeRole' && account.role === 'viewer') {
+    text = { title: t('accounts.confirm.promote.title', { name }), desc: t('accounts.confirm.promote.desc', { name }), submit: t('accounts.confirm.promote.submit') };
+  } else if (kind === 'changeRole') {
+    text = { title: t('accounts.confirm.demote.title', { name }), desc: t('accounts.confirm.demote.desc', { name }), submit: t('accounts.confirm.demote.submit') };
+  } else if (kind === 'setPassword') {
+    text = {
+      title: t('accounts.confirm.setPassword.title', { name }),
+      desc: isYou ? t('accounts.confirm.setPassword.descYou') : t('accounts.confirm.setPassword.desc', { name }),
+      submit: t('accounts.confirm.setPassword.submit')
+    };
+  } else if (kind === 'delete') {
+    text = { title: t('accounts.confirm.delete.title', { name }), desc: t('accounts.confirm.delete.desc', { name }), submit: t('accounts.confirm.delete.submit') };
+  } else if (kind === 'turnOff') {
+    text = { title: t('accounts.confirm.turnOff.title', { name }), desc: t('accounts.confirm.turnOff.desc', { name }), submit: t('accounts.confirm.turnOff.submit') };
+  } else if (kind === 'grant') {
+    text = {
+      title: t(`accounts.confirm.grant.${GRANT_TITLE_KEYS[permission]}`, { name }),
+      desc: t('accounts.confirm.grant.desc', { name }),
+      submit: t('accounts.confirm.grant.submit')
+    };
+  } else {
+    text = { title: t('accounts.confirm.turnOn.title', { name }), desc: t('accounts.confirm.turnOn.desc', { name }), submit: t('accounts.confirm.turnOn.submit') };
+  }
+  const isDanger = kind === 'delete' || kind === 'turnOff';
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (isBusy) return;
+    const trimmedName = newName.trim();
+    if (kind === 'rename') {
+      if (!trimmedName) return setError(t('accounts.add.nameRequired'));
+      if (trimmedName.length > limits.name_max) return setError(t('accounts.add.nameTooLong', { max: limits.name_max }));
+    }
+    if (kind === 'setPassword') {
+      if (newPassword !== repeat) return setError(t('passwordRules.mismatch'));
+      if (newPassword.length < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
+      if (newPassword.length > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
+    }
+    if (!current) return setError(t('accounts.confirm.passwordRequired'));
+    setError(null);
+    setIsBusy(true);
+    onBusyChange(true);
+    const result = await onSubmit({ name: trimmedName, newPassword, currentPassword: current });
+    setIsBusy(false);
+    onBusyChange(false);
+    if (!result.ok) setError(result.message);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 dark:bg-black/60 p-4"
+      {...backdropDismiss}
+    >
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-label={text.title}
+        onSubmit={handleSubmit}
+        className="w-[420px] max-w-full max-h-full overflow-y-auto bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-2xl p-5 shadow-2xl space-y-3"
+      >
+        <h3 className="text-base font-bold text-neutral-900 dark:text-white">{text.title}</h3>
+        {text.desc && <p className="text-xs text-neutral-600 dark:text-neutral-400">{text.desc}</p>}
+        {kind === 'rename' && (
+          <Field id="confirm-new-name" label={t('accounts.confirm.rename.newName')} autoComplete="off" autoFocus disabled={isBusy} value={newName} onChange={setNewName} />
+        )}
+        {kind === 'setPassword' && (
+          <>
+            <Field id="confirm-new-password" label={t('accounts.confirm.setPassword.new')} type="password" autoComplete="new-password" disabled={isBusy} value={newPassword} onChange={setNewPassword} />
+            <Field id="confirm-repeat-password" label={t('accounts.confirm.setPassword.repeat')} type="password" autoComplete="new-password" disabled={isBusy} value={repeat} onChange={setRepeat} />
+          </>
+        )}
+        <Field
+          id="confirm-current-password"
+          label={t('accounts.confirm.password')}
+          type="password"
+          autoComplete="current-password"
+          autoFocus={kind !== 'rename'}
+          disabled={isBusy}
+          value={current}
+          onChange={setCurrent}
+        />
+        {error && <p className={errorClass} role="alert">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onCancel} disabled={isBusy} className={secondaryButton}>{t('common:cancel')}</button>
+          <button type="submit" disabled={isBusy} className={isDanger ? dangerButton : primaryButton}>
+            {isBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+            {isBusy ? t('accounts.confirm.working') : text.submit}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// The card that creates an account. `onAdd(fields)` resolves to { ok } or { ok: false, message }.
+function AddAccountCard({ limits, onAdd, onClose, uiTheme }) {
+  const { t } = useTranslation('session');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('viewer');
+  const [password, setPassword] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [permissions, setPermissions] = useState(DEFAULT_NEW_PERMISSIONS);
+  const [current, setCurrent] = useState('');
+  const [error, setError] = useState(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (isBusy) return;
+    const trimmed = name.trim();
+    if (!trimmed) return setError(t('accounts.add.nameRequired'));
+    if (trimmed.length > limits.name_max) return setError(t('accounts.add.nameTooLong', { max: limits.name_max }));
+    if (password !== repeat) return setError(t('passwordRules.mismatch'));
+    if (password.length < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
+    if (password.length > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
+    if (!current) return setError(t('accounts.confirm.passwordRequired'));
+    setError(null);
+    setIsBusy(true);
+    const result = await onAdd({ name: trimmed, role, password, permissions, currentPassword: current });
+    setIsBusy(false);
+    if (!result.ok) setError(result.message);
+  };
+
+  const setPermission = (key) => (value) => setPermissions((prev) => ({ ...prev, [key]: value }));
+
+  return (
+    <form onSubmit={handleSubmit} className={cardClass} aria-label={t('accounts.add.title')}>
+      <h3 className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{t('accounts.add.title')}</h3>
+      <Field
+        id="add-account-name"
+        label={t('accounts.add.name')}
+        autoComplete="off"
+        autoFocus
+        disabled={isBusy}
+        value={name}
+        onChange={setName}
+        hint={t('accounts.add.nameHint', { max: limits.name_max })}
+      />
+      <div className="flex items-center gap-2 flex-wrap" role="group" aria-label={t('accounts.add.role')}>
+        <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">{t('accounts.add.role')}</span>
+        <FilterToggle pressed={role === 'viewer'} onClick={() => setRole('viewer')} disabled={isBusy}>{t('role.viewer')}</FilterToggle>
+        <FilterToggle pressed={role === 'owner'} onClick={() => setRole('owner')} disabled={isBusy}>{t('role.owner')}</FilterToggle>
+      </div>
+      <Field id="add-account-password" label={t('accounts.add.password')} type="password" autoComplete="new-password" disabled={isBusy} value={password} onChange={setPassword} />
+      <Field id="add-account-repeat" label={t('accounts.add.repeat')} type="password" autoComplete="new-password" disabled={isBusy} value={repeat} onChange={setRepeat} />
+      {role === 'viewer' && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">{t('accounts.add.permissions')}</p>
+          <PermissionSwitch label={t('accounts.switches.originals')} checked={permissions.originals} disabled={isBusy} onChange={setPermission('originals')} uiTheme={uiTheme} />
+          <PermissionSwitch label={t('accounts.switches.imageSearch')} checked={permissions.image_search} disabled={isBusy} onChange={setPermission('image_search')} uiTheme={uiTheme} />
+          <PermissionSwitch label={t('accounts.switches.places')} checked={permissions.places} disabled={isBusy} onChange={setPermission('places')} uiTheme={uiTheme} />
+          {showsLocationHint('viewer', permissions) && <LocationHint />}
+        </div>
+      )}
+      <Field id="add-account-current" label={t('accounts.confirm.password')} type="password" autoComplete="current-password" disabled={isBusy} value={current} onChange={setCurrent} />
+      {error && <p className={errorClass} role="alert">{error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={isBusy} className={primaryButton}>
+          {isBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
+          {isBusy ? t('accounts.add.submitting') : t('accounts.add.submit')}
+        </button>
+        <button type="button" onClick={onClose} disabled={isBusy} className={secondaryButton}>{t('common:cancel')}</button>
+      </div>
+    </form>
+  );
+}
+
+// One account: a stacked card on a narrow screen, a row of the grid from 640 px up.
+function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, uiTheme, onPermission, onTurn, onToggleMenu, onMenuAction }) {
+  const { t } = useTranslation('session');
+  const { id, name, role, disabled } = account;
+  const isOwner = role === 'owner';
+  const isBusy = Boolean(pendingKey);
+  const ownAccountTip = isYou ? t('accounts.ownAccount') : undefined;
+
+  const permissionColumns = [
+    { api: 'originals', column: t('accounts.columns.originals'), label: t('accounts.switches.originals') },
+    { api: 'image_search', column: t('accounts.columns.imageSearch'), label: t('accounts.switches.imageSearch') },
+    { api: 'places', column: t('accounts.columns.places'), label: t('accounts.switches.places') }
+  ];
+  const switchLabel = (permission) => t('accounts.permissionFor', { permission, name });
+  const cellClass = 'flex items-center justify-between gap-3 min-w-0 sm:justify-start';
+  const cardLabel = (text) => <span className="text-[11px] font-semibold text-neutral-500 sm:hidden" aria-hidden="true">{text}</span>;
+
+  return (
+    <div
+      role="row"
+      className={cn(
+        'flex flex-col gap-2 p-3 rounded-2xl border border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20',
+        'sm:rounded-none sm:border-0 sm:border-b sm:bg-transparent dark:sm:bg-transparent sm:px-3 sm:py-2',
+        GRID
+      )}
+    >
+      <div role="cell" className="flex items-center gap-2 min-w-0">
+        <span className="text-sm font-bold truncate text-neutral-800 dark:text-neutral-200" title={name}>{name}</span>
+        {isYou && <span className={cn(badgeClass, 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30')}>{t('accounts.you')}</span>}
+        {disabled && <span className={cn(badgeClass, 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/30')}>{t('accounts.turnedOff')}</span>}
+      </div>
+
+      <div role="cell" className="text-xs text-neutral-600 dark:text-neutral-400">
+        {isOwner ? t('role.owner') : t('role.viewer')}
+      </div>
+
+      {permissionColumns.map(({ api, column, label }) => (
+        <div key={api} role="cell" className={cellClass}>
+          {cardLabel(column)}
+          {isOwner ? (
+            <span className="text-xs text-neutral-400 dark:text-neutral-500">{t('accounts.always')}</span>
+          ) : (
+            <Switch
+              checked={Boolean(account.permissions?.[api])}
+              disabled={isBusy}
+              busy={pendingKey === api}
+              onChange={(value) => onPermission(account, api, value)}
+              label={switchLabel(label)}
+              uiTheme={uiTheme}
+            />
+          )}
+        </div>
+      ))}
+
+      <div role="cell" className={cellClass}>
+        {cardLabel(t('accounts.columns.on'))}
+        <Switch
+          checked={!disabled}
+          disabled={isBusy || isYou}
+          busy={pendingKey === 'on'}
+          onChange={(value) => onTurn(account, value)}
+          label={switchLabel(t('accounts.switches.on'))}
+          title={ownAccountTip}
+          uiTheme={uiTheme}
+        />
+      </div>
+
+      <div role="cell" className="relative flex justify-end" ref={isMenuOpen ? menuRef : undefined}>
+        <button
+          type="button"
+          onClick={() => onToggleMenu(id)}
+          disabled={isBusy}
+          aria-label={t('accounts.actionsFor', { name })}
+          aria-haspopup="menu"
+          aria-expanded={isMenuOpen}
+          className="p-2 text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all disabled:opacity-40 cursor-pointer"
+        >
+          {isBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <MoreHorizontal className="w-4 h-4" aria-hidden="true" />}
+        </button>
+        {isMenuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 top-full mt-1 z-20 min-w-[11rem] py-1 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl"
+          >
+            {[
+              { action: 'rename', text: t('accounts.menu.rename'), ownDisabled: false },
+              { action: 'changeRole', text: t('accounts.menu.changeRole'), ownDisabled: true },
+              { action: 'setPassword', text: t('accounts.menu.setPassword'), ownDisabled: false },
+              { action: 'signOut', text: t('accounts.menu.signOut'), ownDisabled: false },
+              { action: 'delete', text: t('accounts.menu.delete'), ownDisabled: true }
+            ].map(({ action, text, ownDisabled }) => (
+              <button
+                key={action}
+                type="button"
+                role="menuitem"
+                disabled={isYou && ownDisabled}
+                title={isYou && ownDisabled ? t('accounts.ownAccount') : undefined}
+                onClick={() => onMenuAction(account, action)}
+                className="block w-full text-left px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(showsLocationHint(role, account.permissions) || error) && (
+        <div role="cell" className="space-y-1 sm:col-span-full">
+          {showsLocationHint(role, account.permissions) && <LocationHint />}
+          {error && <p className={errorClass} role="alert">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The owner's list of accounts: who may sign in, what each viewer may do, and the changes to them.
+// It renders in place (not in a portal) so the terminal theme's classes on an ancestor still apply.
+export function AccountsModal({ onClose, uiTheme = 'modern', setToast }) {
+  const { t } = useTranslation('session');
+  const { refresh } = useSession();
+  const { accounts, you, limits, isLoading, loadFailed, reload, add, update, setPassword, signOut, remove } = useAccounts();
+  const backdropDismiss = useBackdropDismiss(onClose);
+  const [menuFor, setMenuFor] = useState(null);
+  const [step, setStep] = useState(null);
+  const [isStepBusy, setIsStepBusy] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  // What each row is doing now, { [id]: 'originals' | 'on' | ... }, and the last refusal of an inline action.
+  const [pending, setPending] = useState({});
+  const [rowErrors, setRowErrors] = useState({});
+  const menuRef = useRef(null);
+
+  const modern = uiTheme === 'modern';
+  const atLimit = accounts.length >= limits.max_accounts;
+
+  const closeStep = useCallback(() => {
+    setStep(null);
+    setIsStepBusy(false);
+  }, []);
+
+  // Esc closes the innermost thing: the menu, then the confirm step, then the dialog.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      if (menuFor) setMenuFor(null);
+      else if (step) {
+        if (!isStepBusy) closeStep();
+      } else onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [menuFor, step, isStepBusy, closeStep, onClose]);
+
+  useEffect(() => {
+    if (!menuFor) return undefined;
+    const onMouseDown = (event) => {
+      if (!menuRef.current?.contains(event.target)) setMenuFor(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [menuFor]);
+
+  // An action of one row that needs no confirmation. Resolves to the call's result.
+  const runInline = async (id, key, action) => {
+    setRowErrors((prev) => ({ ...prev, [id]: null }));
+    setPending((prev) => ({ ...prev, [id]: key }));
+    const result = await action();
+    setPending((prev) => ({ ...prev, [id]: null }));
+    if (!result.ok) setRowErrors((prev) => ({ ...prev, [id]: result.message }));
+    return result;
+  };
+
+  // Taking access away happens at once. Giving it (a permission switched on, an account turned back on)
+  // asks for the owner's password first, as does turning an owner on or off: a browser left signed in
+  // can't be used to widen anyone's access.
+  const handlePermission = (account, api, value) => {
+    if (!value) return runInline(account.id, api, () => update(account.id, { permissions: { [api]: false } }));
+    setStep({ kind: 'grant', id: account.id, permission: api });
+    return undefined;
+  };
+
+  const handleTurn = (account, value) => {
+    if (account.role === 'viewer' && !value) return runInline(account.id, 'on', () => update(account.id, { disabled: true }));
+    setStep({ kind: value ? 'turnOn' : 'turnOff', id: account.id });
+    return undefined;
+  };
+
+  const handleMenuAction = async (account, action) => {
+    setMenuFor(null);
+    if (action !== 'signOut') {
+      setStep({ kind: action, id: account.id });
+      return;
+    }
+    const result = await runInline(account.id, 'menu', () => signOut(account.id));
+    if (result.ok) {
+      setToast?.({
+        message: account.id === you ? t('accounts.done.signedOutYou') : t('accounts.done.signedOut', { name: account.name }),
+        type: 'success'
+      });
+    }
+  };
+
+  const submitStep = async ({ name, newPassword, currentPassword }) => {
+    const account = accounts.find((item) => item.id === step.id);
+    const { kind } = step;
+    let result;
+    if (kind === 'rename') result = await update(account.id, { name }, currentPassword);
+    else if (kind === 'changeRole') result = await update(account.id, { role: account.role === 'viewer' ? 'owner' : 'viewer' }, currentPassword);
+    else if (kind === 'setPassword') result = await setPassword(account.id, newPassword, currentPassword);
+    else if (kind === 'delete') result = await remove(account.id, currentPassword);
+    else if (kind === 'grant') result = await update(account.id, { permissions: { [step.permission]: true } }, currentPassword);
+    else result = await update(account.id, { disabled: kind === 'turnOff' }, currentPassword);
+    if (!result.ok) return result;
+    if (kind === 'rename' && account.id === you) await refresh?.();
+    if (kind === 'setPassword') setToast?.({ message: t('accounts.done.passwordSet', { name: account.name }), type: 'success' });
+    closeStep();
+    return result;
+  };
+
+  const handleAdd = async (fields) => {
+    const result = await add(fields);
+    if (result.ok) {
+      setIsAdding(false);
+      setToast?.({ message: t('accounts.done.added', { name: fields.name }), type: 'success' });
+    }
+    return result;
+  };
+
+  const stepAccount = step ? accounts.find((item) => item.id === step.id) : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      {...backdropDismiss}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('accounts.title')}
+        className={cn(
+          'w-[880px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200',
+          modern
+            ? 'bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl'
+            : 'bg-white dark:bg-black border border-black dark:border-white'
+        )}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="p-5 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between gap-4 bg-gray-50/50 dark:bg-neutral-900/50">
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-neutral-900 dark:text-white">{t('accounts.title')}</h2>
+            <p className="text-xs text-neutral-500 mt-1">{t('accounts.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsAdding(true)}
+              disabled={atLimit}
+              title={atLimit ? t('accounts.atLimit', { max: limits.max_accounts }) : undefined}
+              className={primaryButton}
+            >
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+              {t('accounts.add.button')}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t('common:close')}
+              title={t('common:close')}
+              className="p-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+          {isAdding && (
+            <AddAccountCard limits={limits} onAdd={handleAdd} onClose={() => setIsAdding(false)} uiTheme={uiTheme} />
+          )}
+
+          {isLoading ? (
+            <p className="flex items-center justify-center gap-3 py-16 text-sm font-medium text-neutral-500" role="status">
+              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" aria-hidden="true" />
+              {t('accounts.loading')}
+            </p>
+          ) : loadFailed ? (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20">
+              <p className="flex-1 text-sm text-rose-700 dark:text-rose-300" role="alert">{t('accounts.loadFailed')}</p>
+              <button type="button" onClick={reload} className={secondaryButton}>{t('common:retry')}</button>
+            </div>
+          ) : (
+            <div role="table" aria-label={t('accounts.title')} className="space-y-2 sm:space-y-0">
+              <div
+                role="row"
+                className={cn('hidden px-3 py-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-500 border-b border-gray-100 dark:border-neutral-800', GRID)}
+              >
+                <div role="columnheader">{t('accounts.columns.name')}</div>
+                <div role="columnheader">{t('accounts.columns.role')}</div>
+                <div role="columnheader">{t('accounts.columns.originals')}</div>
+                <div role="columnheader">{t('accounts.columns.imageSearch')}</div>
+                <div role="columnheader">{t('accounts.columns.places')}</div>
+                <div role="columnheader">{t('accounts.columns.on')}</div>
+                <div role="columnheader"><span className="sr-only">{t('accounts.columns.actions')}</span></div>
+              </div>
+              {accounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  account={account}
+                  isYou={account.id === you}
+                  pendingKey={pending[account.id]}
+                  error={rowErrors[account.id]}
+                  isMenuOpen={menuFor === account.id}
+                  menuRef={menuRef}
+                  uiTheme={uiTheme}
+                  onPermission={handlePermission}
+                  onTurn={handleTurn}
+                  onToggleMenu={(id) => setMenuFor((prev) => (prev === id ? null : id))}
+                  onMenuAction={handleMenuAction}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {step && stepAccount && (
+        <ConfirmStep
+          key={`${step.kind}:${step.id}:${step.permission ?? ''}`}
+          kind={step.kind}
+          permission={step.permission}
+          account={stepAccount}
+          isYou={stepAccount.id === you}
+          limits={limits}
+          onSubmit={submitStep}
+          onCancel={closeStep}
+          onBusyChange={setIsStepBusy}
+        />
+      )}
+    </div>
+  );
+}

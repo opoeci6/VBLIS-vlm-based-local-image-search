@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { SessionContext } from '../../session/sessionContext';
 import { SettingsModal } from './SettingsModal';
 
 const makeProps = (overrides = {}) => ({
@@ -105,5 +106,48 @@ describe('SettingsModal', () => {
     expect(props.setMinScore).toHaveBeenCalledWith(0.3);
     fireEvent.change(sliders[1], { target: { value: '0.8' } });
     expect(props.setMinSimilarity).toHaveBeenCalledWith(0.8);
+  });
+
+  describe('network sessions', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const networkSession = (role) => ({
+      mode: 'network',
+      signedIn: true,
+      role,
+      isOwner: role === 'owner',
+      account: { id: 'x1', name: role === 'owner' ? 'alice' : 'bob' },
+      permissions: { originals: true, image_search: true, places: true },
+      may: () => role === 'owner',
+      signOut: vi.fn(),
+      refresh: vi.fn(),
+    });
+
+    const renderAs = (session) => render(
+      <SessionContext.Provider value={session}>
+        <SettingsModal {...makeProps()} />
+      </SessionContext.Provider>
+    );
+
+    it('shows "Your account" to a viewer, and no server section', () => {
+      vi.stubGlobal('fetch', vi.fn());
+      renderAs(networkSession('viewer'));
+      expect(screen.getByRole('heading', { name: 'Your account' })).toBeTruthy();
+      expect(screen.getByText('bob')).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Server' })).toBeNull();
+    });
+
+    it('shows "Your account" before the server section to an owner', () => {
+      vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+      renderAs(networkSession('owner'));
+      const account = screen.getByRole('heading', { name: 'Your account' });
+      const server = screen.getByRole('heading', { name: 'Server' });
+      expect(account.compareDocumentPosition(server) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('shows no account section in the desktop app', () => {
+      render(<SettingsModal {...makeProps()} />);
+      expect(screen.queryByRole('heading', { name: 'Your account' })).toBeNull();
+    });
   });
 });

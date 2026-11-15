@@ -9,10 +9,10 @@ import { getOriginalUrl, isHeicPath } from '../../utils/originals';
 const info = (role, originals) => ({
   signed_in: true,
   role,
-  permissions: { originals, image_search: true },
+  account: { id: 'a1', name: 'alice' },
+  permissions: { originals, image_search: true, places: true },
   secure: true,
   case_sensitive_paths: true,
-  viewer_enabled: true,
 });
 
 const inSession = (session, ui) => render(<SessionProvider info={session} onSignOut={vi.fn()}>{ui}</SessionProvider>);
