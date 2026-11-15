@@ -38,6 +38,9 @@ class AttemptLimiter:
         self._lock = threading.Lock()
         self._clients = {}  # key -> [window start, attempts]
         self._groups = {}  # group -> [window start, attempts]
+        # account id -> [window start, attempts]: a signed-in account confirming its own password, so a
+        # stolen session can't guess that password from many addresses at once
+        self._accounts = {}
 
     def _entry(self, table, key, now):
         entry = table.get(key)
@@ -48,9 +51,11 @@ class AttemptLimiter:
     def _wait(self, entry, limit, now) -> float:
         return self._window - (now - entry[0]) if entry[1] >= limit else 0.0
 
-    def begin(self, host, shared=True) -> float:
+    def begin(self, host, shared=True, account=None) -> float:
         """0.0 and the attempt counted, or the seconds to wait (nothing counted). shared=False
-        leaves the group count out: for someone who already holds an owner session."""
+        leaves the group count out: for someone already signed in, confirming their own password,
+        whom guessing elsewhere must not block. `account` (that account's id) adds a count per
+        account, as strict as the per-client one."""
         now = self._clock()
         key, group = client_key(host), client_group(host)
         with self._lock:
@@ -59,19 +64,26 @@ class AttemptLimiter:
             group_entry = self._entry(self._groups, group, now) if shared else None
             if group_entry is not None:
                 wait = max(wait, self._wait(group_entry, self._overall, now))
+            account_entry = self._entry(self._accounts, account, now) if account else None
+            if account_entry is not None:
+                wait = max(wait, self._wait(account_entry, self._per_client, now))
             if wait > 0:
                 return wait
             client[1] += 1
             if group_entry is not None:
                 group_entry[1] += 1
+            if account_entry is not None:
+                account_entry[1] += 1
             if len(self._clients) > 1000:
                 self._clients = {k: v for k, v in self._clients.items() if now - v[0] < self._window}
+            if len(self._accounts) > 1000:
+                self._accounts = {k: v for k, v in self._accounts.items() if now - v[0] < self._window}
             return 0.0
 
-    def succeeded(self, host, shared=True, clear=False) -> None:
+    def succeeded(self, host, shared=True, clear=False, account=None) -> None:
         """A correct password: its attempt doesn't count. clear=True (the owner) also forgets the
         client's earlier failures; a viewer's password doesn't, so it can't be used to reset the
-        count while guessing the owner's."""
+        count while guessing the owner's. An account's own count is only refunded, never cleared."""
         now = self._clock()
         key, group = client_key(host), client_group(host)
         with self._lock:
@@ -84,3 +96,6 @@ class AttemptLimiter:
             entry = self._groups.get(group) if shared else None
             if entry is not None and entry[1] > 0 and now - entry[0] < self._window:
                 entry[1] -= 1
+            account_entry = self._accounts.get(account) if account else None
+            if account_entry is not None and account_entry[1] > 0 and now - account_entry[0] < self._window:
+                account_entry[1] -= 1

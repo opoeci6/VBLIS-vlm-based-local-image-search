@@ -241,7 +241,8 @@ class NetworkGate:
             origin = (headers.get("origin") or "").strip().lower()
             expected = f"{scheme}://{(headers.get('host') or '').strip().lower()}"
             if origin != expected:
-                self.log(f"[Network] Refused {client}: {method} {sub_path} from origin {origin or 'none'}")
+                # repr: the decoded path and the header can hold a line break, which would forge a log line
+                self.log(f"[Network] Refused {client}: {method} {sub_path!r} from origin {origin or 'none'!r}")
                 await self._refuse(scope, receive, send, 403, "Request refused: it didn't come from this site.")
                 return
             length = headers.get("content-length")
@@ -257,13 +258,16 @@ class NetworkGate:
         session = None
         cookie_name = sessions.cookie_name(scheme, self.port)
         for value in sessions.read_cookies(headers.get("cookie"), cookie_name):
-            session = sessions.verify(value, config.session_secret, config.password_hashes, scheme)
+            session = sessions.verify(value, config.session_secret, config.account_by_id, scheme)
             if session is not None:
                 break
         auth = None
         if session is not None:
-            grants = config.viewer_grants if session.role == VIEWER else frozenset()
-            auth = Auth(session.role, NETWORK, frozenset(grants), client)
+            # Read from this request's config: a permission switched a moment ago applies now
+            account = config.account_by_id(session.account_id)
+            if account is not None:
+                grants = account.grants if account.role == VIEWER else frozenset()
+                auth = Auth(account.role, NETWORK, frozenset(grants), client, account.id, account.name)
         child[NET_SCOPE_KEY] = NetRequest(client, scheme, cookie_name, self.store, self.limiter)
         if auth is not None:
             child[SCOPE_KEY] = auth

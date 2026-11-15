@@ -1,6 +1,6 @@
 """Settings of the network listener, kept in <data>/data/server.json.
 
-The file holds the password hashes and the session secret, so it is written atomically and, on
+The file holds the accounts (with their password hashes) and the session secret, so it is written atomically and, on
 Linux, readable by its owner only. A few VBLIS_SERVER_* environment variables override the file
 (for Docker and systemd); they are read when this module is imported, which bootstrap does before
 .env is loaded, so .env can't change them."""
@@ -12,20 +12,21 @@ import threading
 import time
 from dataclasses import dataclass, replace
 
+import accounts as acct
 import netaddr
-import passwords
 import path_keys
 import paths
 import sessions
 
 CONFIG_FILE_NAME = "server.json"
-FILE_VERSION = 1
+# 2: named accounts. Version 1 (part 1 of server mode, never released) had one password per role.
+FILE_VERSION = 2
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
 DESKTOP_PORT = 8000
 TLS_MODES = ("off", "files", "self_signed")
-# Viewer permissions the owner can grant, with their defaults
-VIEWER_PERMISSIONS = {"originals": False, "image_search": True}
+# Viewer permissions the owner can grant per account, with the defaults of a new viewer
+VIEWER_PERMISSIONS = acct.PERMISSIONS
 
 ENV_PREFIX = "VBLIS_SERVER_"
 ENV_SNAPSHOT = {key: value for key, value in os.environ.items() if key.startswith(ENV_PREFIX)}
@@ -60,21 +61,29 @@ class ServerConfig:
     library_roots: tuple = ()
     public_access: bool = False
     trusted_proxies: tuple = ()
-    owner_password: str = ""
-    viewer_password: str = ""
+    accounts: tuple = ()  # of accounts.Account
     session_secret: str = ""
-    viewer_grants: frozenset = frozenset(name for name, on in VIEWER_PERMISSIONS.items() if on)
     # Not stored: what loading found
     env_fields: frozenset = frozenset()
     problems: tuple = ()
     load_error: str = ""
 
-    @property
-    def password_hashes(self) -> dict:
-        return {"owner": self.owner_password or None, "viewer": self.viewer_password or None}
+    def account_by_id(self, account_id):
+        return acct.find(self.accounts, account_id)
 
-    def viewer_may(self, permission: str) -> bool:
-        return permission in self.viewer_grants
+    def account_by_name(self, name):
+        return acct.find_by_name(self.accounts, name)
+
+    @property
+    def has_owner(self) -> bool:
+        """An owner account that can sign in exists; the listener doesn't start without one."""
+        return acct.has_active_owner(self.accounts)
+
+    def account_counts(self) -> dict:
+        return {
+            "owners": sum(1 for account in self.accounts if account.is_owner),
+            "viewers": sum(1 for account in self.accounts if not account.is_owner),
+        }
 
     @property
     def secure(self) -> bool:
@@ -91,8 +100,7 @@ class ServerConfig:
             "library_roots": list(self.library_roots),
             "public_access": self.public_access,
             "trusted_proxies": list(self.trusted_proxies),
-            "viewer_permissions": {name: name in self.viewer_grants for name in VIEWER_PERMISSIONS},
-            "passwords": {"owner": self.owner_password or None, "viewer": self.viewer_password or None},
+            "accounts": [account.to_json() for account in self.accounts],
             "session_secret": self.session_secret,
         }
 
@@ -213,32 +221,6 @@ def _parse_proxies(value, problems):
     return tuple(kept)
 
 
-def _parse_grants(value, problems):
-    grants = {name for name, on in VIEWER_PERMISSIONS.items() if on}
-    if value is None:
-        return frozenset(grants)
-    if not isinstance(value, dict):
-        problems.append("viewer_permissions: expected an object")
-        return frozenset(grants)
-    for name, on in value.items():
-        if name not in VIEWER_PERMISSIONS:
-            problems.append(f"viewer_permissions: unknown permission {name!r}; ignored")
-        elif _parse_bool(on, f"viewer_permissions.{name}", problems, VIEWER_PERMISSIONS[name]):
-            grants.add(name)
-        else:
-            grants.discard(name)
-    return frozenset(grants)
-
-
-def _parse_password(value, role, problems):
-    if value in (None, ""):
-        return ""
-    if not passwords.is_password_hash(value):
-        problems.append(f"passwords.{role}: not a stored password; the role has no password until it is set again")
-        return ""
-    return value
-
-
 def config_from_json(data) -> ServerConfig:
     """A ServerConfig from the file's JSON. Bad fields fall back to their defaults, which are the
     closed choices, and are listed in problems."""
@@ -246,7 +228,10 @@ def config_from_json(data) -> ServerConfig:
     if not isinstance(data, dict):
         return ServerConfig(problems=("the file does not hold a JSON object",))
     tls = data.get("tls") if isinstance(data.get("tls"), dict) else {}
-    pw = data.get("passwords") if isinstance(data.get("passwords"), dict) else {}
+    old_passwords = data.get("passwords")
+    if isinstance(old_passwords, dict) and any(old_passwords.values()):
+        # Version 1 (an unreleased test version) had one password per role; they aren't carried over
+        problems.append("passwords: from an earlier test version and no longer used; add accounts with add-account")
     secret = data.get("session_secret")
     if secret not in (None, "") and (not isinstance(secret, str) or len(secret) < 32):
         problems.append("session_secret: too short; a new one is made")
@@ -262,10 +247,8 @@ def config_from_json(data) -> ServerConfig:
         library_roots=_parse_roots(data.get("library_roots", []), problems),
         public_access=_parse_bool(data.get("public_access", False), "public_access", problems, False),
         trusted_proxies=_parse_proxies(data.get("trusted_proxies", []), problems),
-        owner_password=_parse_password(pw.get("owner"), "owner", problems),
-        viewer_password=_parse_password(pw.get("viewer"), "viewer", problems),
+        accounts=acct.parse_accounts(data.get("accounts"), problems),
         session_secret=secret or "",
-        viewer_grants=_parse_grants(data.get("viewer_permissions"), problems),
     )
     return replace(config, problems=tuple(problems))
 
@@ -314,8 +297,8 @@ def start_problems(config: ServerConfig) -> list:
     if config.load_error:
         found.append(("config_unreadable", config.load_error))
         return found
-    if not config.owner_password:
-        found.append(("no_owner_password", "Set an owner password first."))
+    if not config.has_owner:
+        found.append(("no_owner_account", "Add an owner account first: add-account NAME --role owner"))
     if config.tls_mode == "files":
         for label, path in (("certificate", config.cert_file), ("key", config.key_file)):
             if not path:
@@ -484,33 +467,35 @@ class ServerConfigStore:
         """A new session secret: every signed-in browser has to sign in again."""
         return self.update(session_secret=sessions.new_secret())
 
-    def set_password(self, role: str, password: str):
-        """(config, None) when stored, or (None, code). Codes: unknown_role, empty, too_short,
-        too_long, same_as_other (owner and viewer must differ)."""
-        if role not in sessions.ROLES:
-            return None, "unknown_role"
-        problem = passwords.password_problem(password)
-        if problem:
-            return None, problem
-        with self._changing():
-            stored = self._stored()
-            other = stored.viewer_password if role == "owner" else stored.owner_password
-            if other and passwords.verify_password(password, other):
-                return None, "same_as_other"
-            field_name = "owner_password" if role == "owner" else "viewer_password"
-            return self.update(**{field_name: passwords.hash_password(password)}), None
+    # Account changes: read the stored accounts, apply one rule-checked change (accounts.py), write, all
+    # under the lock. They raise accounts.AccountError when a rule is broken, ServerConfigError when the
+    # file can't be read. A new password is hashed before the lock is taken: the network listener reads
+    # the config under the same lock on every request.
 
-    def clear_password(self, role: str) -> ServerConfig:
-        """Remove a role's password, which ends its sessions. Only the viewer's can be removed:
-        without an owner password the listener can't start."""
-        if role != "viewer":
-            raise ValueError("only the viewer password can be removed")
-        return self.update(viewer_password="")
-
-    def set_viewer_permission(self, permission: str, granted: bool) -> ServerConfig:
-        if permission not in VIEWER_PERMISSIONS:
-            raise ValueError(f"unknown permission: {permission}")
+    def add_account(self, name, role, password, permissions=None):
+        """(config, the new account)."""
+        password_hash = acct.hash_new_password(password)
         with self._changing():
-            grants = set(self._stored().viewer_grants)
-            (grants.add if granted else grants.discard)(permission)
-            return self.update(viewer_grants=frozenset(grants))
+            changed, account = acct.add(self._stored().accounts, name, role, password_hash, permissions)
+            return self.update(accounts=changed), account
+
+    def update_account(self, account_id, name=None, role=None, permissions=None, disabled=None,
+                       acting_id=None) -> ServerConfig:
+        with self._changing():
+            changed = acct.update(self._stored().accounts, account_id, name=name, role=role,
+                                  permissions=permissions, disabled=disabled, acting_id=acting_id)
+            return self.update(accounts=changed)
+
+    def set_account_password(self, account_id, password) -> ServerConfig:
+        password_hash = acct.hash_new_password(password)
+        with self._changing():
+            return self.update(accounts=acct.set_password(self._stored().accounts, account_id, password_hash))
+
+    def sign_out_account(self, account_id) -> ServerConfig:
+        """A new session salt: that account has to sign in again everywhere."""
+        with self._changing():
+            return self.update(accounts=acct.sign_out(self._stored().accounts, account_id))
+
+    def remove_account(self, account_id, acting_id=None) -> ServerConfig:
+        with self._changing():
+            return self.update(accounts=acct.remove(self._stored().accounts, account_id, acting_id=acting_id))

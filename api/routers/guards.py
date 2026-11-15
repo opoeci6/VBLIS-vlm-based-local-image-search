@@ -6,6 +6,33 @@ from security import is_within
 
 _OUTSIDE = "Path is not inside an indexed folder"
 
+# A viewer account without this permission sees no place names and can't filter by place (place ids
+# would tell where photos were taken just as well). The desktop app's local owner may everything.
+PLACES = "places"
+
+
+def check_place_filters(auth, filters) -> None:
+    if filters is not None and filters.places and not auth.may(PLACES):
+        raise HTTPException(status_code=403, detail="The owner hasn't allowed place names for this account.")
+
+
+def hide_places(auth, payload: dict, key: str = "results") -> dict:
+    """The answer without the `place` of each item in payload[key], unless auth may see places. The
+    items are made fresh for every request (Indexer._finish_results, expand_video), so they are changed
+    in place."""
+    if auth.may(PLACES):
+        return payload
+    for item in payload.get(key) or ():
+        if isinstance(item, dict):
+            item.pop("place", None)
+    return payload
+
+
+def hide_place_options(auth, options: dict) -> dict:
+    if auth.may(PLACES):
+        return options
+    return {**options, "places_available": False, "places": [], "with_gps": 0}
+
 
 def real_path_inside(path: str, roots) -> bool:
     """True when path, with every link resolved, lies in one of roots (also resolved)."""

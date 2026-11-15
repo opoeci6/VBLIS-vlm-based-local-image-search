@@ -32,6 +32,8 @@ function ScreenShell({ children }) {
 
 const cardClass = "bg-white dark:bg-neutral-900/70 border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-xl shadow-black/5 dark:shadow-black/20 p-6";
 
+const inputClass = "w-full bg-white dark:bg-neutral-900/50 border border-gray-200 dark:border-neutral-800 rounded-xl py-3 px-4 text-base outline-none transition-all focus:border-indigo-400 dark:focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 text-neutral-900 dark:text-white";
+
 export function LoadingScreen() {
   const { t } = useTranslation('session');
   return (
@@ -64,38 +66,40 @@ export function ConnectionErrorScreen({ onRetry }) {
   );
 }
 
-// `failure` is what the sign-in call reported: { kind: 'network' } or { kind: 'http', status, detail, retryAfter }.
+// `failure` is what the sign-in call reported: { kind: 'network' } or { kind: 'http', status, detail, code, retryAfter }.
 function FailureMessage({ failure }) {
   const { t } = useTranslation('session');
   if (failure.kind === 'network') return t('signIn.errors.network');
-  const { status, detail, retryAfter } = failure;
-  if (status === 401) return t('signIn.errors.wrongPassword');
+  const { status, code, retryAfter } = failure;
+  if (status === 401) return t('signIn.errors.wrongNameOrPassword');
+  if (status === 403 && code === 'account_off') return t('signIn.errors.accountOff');
   if (status === 429) {
     return retryAfter ? t('signIn.errors.tooManyAttempts', { count: retryAfter }) : t('signIn.errors.tooManyAttemptsNoWait');
   }
   if (status === 503) {
-    if (/owner password/i.test(detail || '')) {
-      return <Trans t={t} i18nKey="signIn.errors.noOwnerPassword" components={{ code: <code className="font-mono font-semibold" /> }} />;
+    if (code === 'no_owner_account') {
+      return <Trans t={t} i18nKey="signIn.errors.noOwnerAccount" components={{ code: <code className="font-mono font-semibold" /> }} />;
     }
     return retryAfter ? t('signIn.errors.busy', { count: retryAfter }) : t('signIn.errors.busyNoWait');
   }
   return t('signIn.errors.generic', { status });
 }
 
-// `onSignIn(password)` resolves to { ok: true } or a failure (see FailureMessage). `expired` is true when
+// `onSignIn(name, password)` resolves to { ok: true } or a failure (see FailureMessage). `expired` is true when
 // the user was signed in and the server ended the session. `secure` is false on a plain HTTP connection.
 export function SignInScreen({ onSignIn, secure = true, expired = false }) {
   const { t } = useTranslation('session');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failure, setFailure] = useState(null);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (isSubmitting || !password) return;
+    if (isSubmitting || !name.trim() || !password) return;
     setIsSubmitting(true);
     setFailure(null);
-    const result = await onSignIn(password);
+    const result = await onSignIn(name.trim(), password);
     // On success the gate swaps this screen for the app, so there is nothing left to update.
     if (!result.ok) {
       setFailure(result);
@@ -111,6 +115,23 @@ export function SignInScreen({ onSignIn, secure = true, expired = false }) {
           <p className="text-sm text-amber-700 dark:text-amber-300 font-medium" role="status">{t('signIn.expired')}</p>
         )}
         <div>
+          <label htmlFor="vblis-name" className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">
+            {t('signIn.name')}
+          </label>
+          <input
+            id="vblis-name"
+            name="username"
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div>
           <label htmlFor="vblis-password" className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">
             {t('signIn.password')}
           </label>
@@ -119,10 +140,9 @@ export function SignInScreen({ onSignIn, secure = true, expired = false }) {
             name="password"
             type="password"
             autoComplete="current-password"
-            autoFocus
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full bg-white dark:bg-neutral-900/50 border border-gray-200 dark:border-neutral-800 rounded-xl py-3 px-4 text-base outline-none transition-all focus:border-indigo-400 dark:focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 text-neutral-900 dark:text-white"
+            className={inputClass}
           />
         </div>
         {failure && (
@@ -132,7 +152,7 @@ export function SignInScreen({ onSignIn, secure = true, expired = false }) {
         )}
         <button
           type="submit"
-          disabled={isSubmitting || !password}
+          disabled={isSubmitting || !name.trim() || !password}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}

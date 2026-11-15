@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../../utils/cn';
 import { formatNumber } from '../../../utils/formatters';
+import { useSession } from '../../../session/sessionContext';
 import {
   DUPLICATE_KINDS,
   MEGAPIXEL_CHOICES,
@@ -111,6 +112,7 @@ function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsF
 // button toggles it. It does not trap focus, and closes on Escape or a click outside it.
 export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
   const { t } = useTranslation('filters');
+  const { may } = useSession();
   const panelRef = useRef(null);
   const { isOpen, close } = filters;
 
@@ -151,7 +153,8 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
   const placeNodes = options?.places || [];
   // Hidden unless the backend says it has place data (an older backend sends no such key). While the
   // options are not loaded yet the section is shown with a status line, like the Format section.
-  const showPlaces = !options || options.places_available === true;
+  // A viewer without the places permission never sees it, whatever the options say.
+  const showPlaces = may('places') && (!options || options.places_available === true);
   const orientationLabels = getOrientationLabels(t);
   const duplicateLabels = getDuplicateLabels(t);
   const formatTitles = { image: t('format.images'), video: t('format.videos'), other: t('format.other') };

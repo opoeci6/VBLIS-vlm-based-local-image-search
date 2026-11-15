@@ -17,6 +17,8 @@ class Auth(NamedTuple):
     channel: str
     grants: frozenset = frozenset()
     client: Optional[str] = None
+    account_id: Optional[str] = None  # the signed-in network account; None for the desktop app
+    account_name: Optional[str] = None
 
     @property
     def is_network(self) -> bool:

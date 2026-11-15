@@ -1,0 +1,36 @@
+import { API_BASE } from '../config';
+import { apiFetch } from './api';
+import i18n from '../i18n';
+
+// A sentence for a refused request: a wait for a 429, else translated by the server's error `code`,
+// else the server's English `detail`, else a generic line with the status.
+const failureMessage = (res, body) => {
+  if (res.status === 429) {
+    const seconds = Number.parseInt(res.headers?.get?.('Retry-After') ?? '', 10);
+    return seconds > 0
+      ? i18n.t('session:server.errors.tooManyAttempts', { count: seconds })
+      : i18n.t('session:server.errors.tooManyAttemptsNoWait');
+  }
+  const key = `session:server.errors.codes.${body?.code}`;
+  if (body?.code && i18n.exists(key)) return i18n.t(key);
+  if (typeof body?.detail === 'string' && body.detail) return body.detail;
+  return i18n.t('session:server.errors.generic', { status: res.status });
+};
+
+// One call to the network server's JSON API. It never throws:
+//   { ok: true, data }                          the answer (null when it has no JSON body)
+//   { ok: false, status, code, message }        a refusal, with a sentence ready to show
+//   { ok: false, status: 0, code: null, message }  the server could not be reached
+// A request without `body` sends no body and no Content-Type.
+export const requestJson = async (method, path, body) => {
+  try {
+    const res = await apiFetch(`${API_BASE}${path}`, body === undefined
+      ? { method }
+      : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => null);
+    if (res.ok) return { ok: true, data };
+    return { ok: false, status: res.status, code: data?.code ?? null, message: failureMessage(res, data) };
+  } catch {
+    return { ok: false, status: 0, code: null, message: i18n.t('session:server.errors.network') };
+  }
+};

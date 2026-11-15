@@ -46,23 +46,53 @@ function NetworkGate({ children }) {
       : prev));
   }), []);
 
-  const signIn = useCallback(async (password) => {
+  // Re-reads the session while signed in, so a change the owner made (name, role, permissions, account
+  // turned off) shows up without a reload. A failed read keeps what is shown; identical info keeps the
+  // same state object, so nothing re-renders.
+  const refresh = useCallback(async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/auth/session`);
+      if (!res.ok) return;
+      const info = await res.json();
+      if (info.signed_in) setCaseSensitivePaths(info.case_sensitive_paths);
+      setState((prev) => {
+        if (prev.phase !== 'signedIn') return prev;
+        if (!info.signed_in) return { phase: 'signedOut', secure: info.secure !== false, expired: true };
+        return JSON.stringify(prev.info) === JSON.stringify(info) ? prev : { phase: 'signedIn', info };
+      });
+    } catch { /* keep the current state; the next call tells if the session ended */ }
+  }, []);
+
+  // An open tab picks up the owner's changes when it comes back to the front.
+  const signedIn = state.phase === 'signedIn';
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [signedIn, refresh]);
+
+  const signIn = useCallback(async (name, password) => {
     try {
       const res = await apiFetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ name, password })
       });
       if (res.ok) {
         acceptSession(await res.json());
         return { ok: true };
       }
       let detail = '';
+      let code = '';
       try {
         const body = await res.json();
         if (typeof body?.detail === 'string') detail = body.detail;
+        if (typeof body?.code === 'string') code = body.code;
       } catch { /* no JSON body */ }
-      return { ok: false, kind: 'http', status: res.status, detail, retryAfter: readRetryAfter(res) };
+      return { ok: false, kind: 'http', status: res.status, detail, code, retryAfter: readRetryAfter(res) };
     } catch {
       return { ok: false, kind: 'network' };
     }
@@ -83,7 +113,7 @@ function NetworkGate({ children }) {
   if (state.phase === 'loading') return <LoadingScreen />;
   if (state.phase === 'error') return <ConnectionErrorScreen onRetry={retry} />;
   if (state.phase === 'signedOut') return <SignInScreen onSignIn={signIn} secure={state.secure} expired={Boolean(state.expired)} />;
-  return <SessionProvider info={state.info} onSignOut={signOut}>{children}</SessionProvider>;
+  return <SessionProvider info={state.info} onSignOut={signOut} onRefresh={refresh}>{children}</SessionProvider>;
 }
 
 // Wraps the app. The desktop app renders it directly: no session request, no extra render.

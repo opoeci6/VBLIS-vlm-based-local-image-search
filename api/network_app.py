@@ -23,6 +23,7 @@ ROUTE_TABLE = {
     ("POST", "/auth/login"): PUBLIC,
     ("POST", "/auth/logout"): PUBLIC,
     ("GET", "/auth/session"): PUBLIC,
+    ("POST", "/auth/password"): VIEWER_ROUTE,  # any signed-in account, its own password
     ("POST", "/auth/sign-out-everywhere"): OWNER_ROUTE,
     # Search and browse
     ("POST", "/search"): VIEWER_ROUTE,
@@ -70,11 +71,14 @@ ROUTE_TABLE = {
     ("GET", "/image/cache/stats"): OWNER_ROUTE,
     ("POST", "/image/cache/clear"): OWNER_ROUTE,
     ("POST", "/video/thumbnails/regenerate"): OWNER_ROUTE,
-    # The owner: server settings
+    # The owner: server settings and accounts
     ("GET", "/server/settings"): OWNER_ROUTE,
-    ("PUT", "/server/viewer-permissions"): OWNER_ROUTE,
-    ("POST", "/server/password"): OWNER_ROUTE,
-    ("POST", "/server/viewer-password/remove"): OWNER_ROUTE,
+    ("GET", "/server/accounts"): OWNER_ROUTE,
+    ("POST", "/server/accounts"): OWNER_ROUTE,
+    ("PATCH", "/server/accounts/{account_id}"): OWNER_ROUTE,
+    ("POST", "/server/accounts/{account_id}/password"): OWNER_ROUTE,
+    ("POST", "/server/accounts/{account_id}/sign-out"): OWNER_ROUTE,
+    ("POST", "/server/accounts/{account_id}/delete"): OWNER_ROUTE,
 }
 
 
@@ -89,7 +93,7 @@ def build_core_app() -> FastAPI:
         # Server errors carry exception text with paths and internals; keep that in the log
         if exc.status_code >= 500:
             error_id = secrets.token_hex(4)
-            print(f"[Network] {request.method} {request.url.path} failed ({error_id}): {exc.detail}")
+            print(f"[Network] {request.method} {request.url.path!r} failed ({error_id}): {exc.detail!r}")
             return JSONResponse(
                 {"detail": "Something went wrong on the server.", "error_id": error_id},
                 status_code=exc.status_code,
@@ -100,7 +104,7 @@ def build_core_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception):
         error_id = secrets.token_hex(4)
-        print(f"[Network] {request.method} {request.url.path} failed ({error_id}): {exc!r}")
+        print(f"[Network] {request.method} {request.url.path!r} failed ({error_id}): {exc!r}")
         return JSONResponse({"detail": "Something went wrong on the server.", "error_id": error_id}, status_code=500)
 
     return app

@@ -5,7 +5,9 @@ import { useSession } from './session/sessionContext';
 
 const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
   const { t } = useTranslation('settings');
-  const { mode, role, signOut } = useSession();
+  const { mode, role, account, signOut } = useSession();
+  const roleLabel = role === 'owner' ? t('session:role.owner') : t('session:role.viewer');
+  const signedInLabel = account ? t('session:signedInAs', { name: account.name, role: roleLabel }) : roleLabel;
   // The window buttons and the drag region belong to the Electron window; a browser tab has its own.
   const hasWindowControls = Boolean(window.electronAPI);
   const [showThemeMenu, setShowThemeMenu] = React.useState(false);
@@ -100,8 +102,8 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
         <div className="w-[1px] h-4 bg-gray-200 dark:bg-neutral-800 mx-1" />
         {mode === 'network' && (
           <>
-            <span className="hidden sm:inline px-3 text-xs text-neutral-500 dark:text-neutral-400">
-              {t('session:signedInAs', { role: role === 'owner' ? t('session:role.owner') : t('session:role.viewer') })}
+            <span className="hidden sm:inline truncate max-w-[16rem] px-3 text-xs text-neutral-500 dark:text-neutral-400" title={signedInLabel}>
+              {signedInLabel}
             </span>
             <button
               onClick={signOut}

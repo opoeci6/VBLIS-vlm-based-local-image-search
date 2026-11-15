@@ -6,10 +6,10 @@ import { SessionProvider } from '../../session/SessionProvider';
 const info = (role, imageSearch) => ({
   signed_in: true,
   role,
-  permissions: { originals: false, image_search: imageSearch },
+  account: { id: 'a1', name: 'alice' },
+  permissions: { originals: false, image_search: imageSearch, places: true },
   secure: true,
   case_sensitive_paths: true,
-  viewer_enabled: true,
 });
 
 const bar = (onPickImage) => (

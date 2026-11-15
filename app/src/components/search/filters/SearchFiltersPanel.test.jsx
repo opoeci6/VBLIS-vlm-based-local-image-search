@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import i18n from '../../../i18n';
 import { useSearchFilters } from '../../../hooks/useSearchFilters';
+import { SessionProvider } from '../../../session/SessionProvider';
 import { SearchFiltersPanel } from './SearchFiltersPanel';
 
 const API = 'http://127.0.0.1:8000';
@@ -503,6 +504,40 @@ describe('SearchFiltersPanel', () => {
       await renderPanel();
       expect(screen.queryByRole('region', { name: 'Place' })).toBeNull();
       expect(screen.queryByText(/GeoNames/)).toBeNull();
+    });
+
+    describe('for a viewer', () => {
+      const viewerInfo = (places) => ({
+        signed_in: true,
+        role: 'viewer',
+        account: { id: 'v1', name: 'bob' },
+        permissions: { originals: false, image_search: true, places },
+        secure: true
+      });
+      const renderAsViewer = async (places) => {
+        render(
+          <SessionProvider info={viewerInfo(places)} onSignOut={() => {}}>
+            <Harness latest={latest} />
+          </SessionProvider>
+        );
+        fireEvent.click(screen.getByText('filters-toggle'));
+        await screen.findByRole('dialog', { name: 'Search filters' });
+        await waitFor(() => expect(latest.current.options).not.toBeNull());
+      };
+
+      it('is hidden without the places permission, even when the options have place data', async () => {
+        options = withPlaces();
+        await renderAsViewer(false);
+        expect(screen.getByRole('region', { name: 'Type' })).toBeTruthy();
+        expect(screen.queryByRole('region', { name: 'Place' })).toBeNull();
+        expect(screen.queryByText('Country or region')).toBeNull();
+      });
+
+      it('is shown with the places permission', async () => {
+        options = withPlaces();
+        await renderAsViewer(true);
+        expect(screen.getByRole('region', { name: 'Place' })).toBeTruthy();
+      });
     });
 
     it('sits right after the date section', async () => {

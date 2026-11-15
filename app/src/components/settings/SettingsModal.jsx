@@ -8,6 +8,7 @@ import { SearchTuningSection } from './SearchTuningSection';
 import { IndexDangerZone } from './IndexDangerZone';
 import { ThumbnailCacheSection } from './ThumbnailCacheSection';
 import { ServerSection } from './ServerSection';
+import { AccountSection } from './AccountSection';
 import { useSession } from '../../session/sessionContext';
 
 export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiTheme, gpuSettings, status, isSwitchingGpu, handleToggleGpu, handleUpdatePerformanceSettings, models, pendingModel, handleUnloadModel, isUnloadingModel, handleModelSwitch, isSwitchingModel, setPendingModel, handleDownloadModel, handleCancelDownload, showConfirmDeleteModel, setShowConfirmDeleteModel, deleteIndexWithModel, setDeleteIndexWithModel, handleDeleteModel, isDeletingModel, minScore, setMinScore, minSimilarity, setMinSimilarity, maxResults, setMaxResults, resetSearchTuning, showConfirmClear, setShowConfirmClear, handleClearCache, isClearing, cacheStats, showConfirmClearThumbnails, setShowConfirmClearThumbnails, handleClearThumbnailCache, isClearingThumbnails, handleRebuildVideoThumbnails, isTriggeringRebuildThumbnails, setToast }) => {
@@ -105,6 +106,8 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
                 isTriggeringRebuildThumbnails={isTriggeringRebuildThumbnails}
               />
             )}
+            {/* Who is signed in from a browser: any role changes its own password here */}
+            {mode === 'network' && <AccountSection uiTheme={uiTheme} setToast={setToast} />}
             {/* The network server's own settings: its owner changes them from a browser */}
             {mode === 'network' && isOwner && <ServerSection uiTheme={uiTheme} setToast={setToast} />}
           </div>

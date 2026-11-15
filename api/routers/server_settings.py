@@ -1,38 +1,35 @@
-"""The owner's server settings in the browser: what a viewer may do, and the passwords. The
-listen address, HTTPS and library folders are changed in server.json, from the command line or
-in the desktop app, not from a browser. Only the network app includes this router."""
+"""The owner's server settings in the browser: the accounts (who may sign in, with which role and which
+permissions) and a summary of the server's settings. The listen address, HTTPS and library folders are
+changed in server.json, from the command line or in the desktop app, not from a browser. Only the network
+app includes this router, and every route here is owner-only (network_app.ROUTE_TABLE).
+
+Changes that give access or could lock an owner out need the acting owner's own password as well as the
+session: adding, renaming, a role, a password, deleting, turning an owner on or off, turning any account
+back on, and switching a viewer's permission on. A stolen session alone then can't create a lasting way
+in or widen anyone's access. Switching a permission off, turning a viewer off and signing an account out
+only take access away, so the session is enough."""
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Response
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+import accounts as acct
 import passwords
-from auth_context import NetRequest, net_request
-from routers.auth import _set_session_cookie, check_password
-from server_config import VIEWER_PERMISSIONS, ServerConfigError
+from auth_context import Auth, NetRequest, current_auth, net_request
+from routers.auth import NAME_INPUT_MAX, account_error, confirm_own_password, error, set_session_cookie
+from server_config import ServerConfigError
 
 router = APIRouter()
 
-_PASSWORD_MESSAGES = {
-    "empty": "The password can't be empty.",
-    "too_short": f"The password needs at least {passwords.MIN_LENGTH} characters.",
-    "too_long": f"The password can have at most {passwords.MAX_LENGTH} characters.",
-    "same_as_other": "The owner and viewer passwords must be different.",
-    "wrong_password": "The current owner password is wrong.",
-    "config_unreadable": "server.json can't be read, so nothing was changed.",
-}
-
-
-def _error(status: int, code: str):
-    return JSONResponse({"detail": _PASSWORD_MESSAGES[code], "code": code}, status_code=status)
+_PASSWORD_FIELD = Field(..., max_length=passwords.MAX_LENGTH)
+# Missing is answered with 403 confirm_password (confirm_own_password), not a validation error
+_CONFIRM_FIELD = Field(None, max_length=passwords.MAX_LENGTH)
 
 
 def settings_view(net: NetRequest) -> dict:
     config = net.store.current()
     return {
-        "viewer_permissions": {name: config.viewer_may(name) for name in VIEWER_PERMISSIONS},
-        "viewer_password_set": bool(config.viewer_password),
+        "accounts": config.account_counts(),
         "library_roots": list(config.library_roots),
         "port": config.port,
         "tls_mode": config.tls_mode,
@@ -41,19 +38,88 @@ def settings_view(net: NetRequest) -> dict:
     }
 
 
-class PermissionsRequest(BaseModel):
+def accounts_view(net: NetRequest, auth: Auth, config=None) -> dict:
+    config = config or net.store.current()
+    return {
+        "accounts": [account.public() for account in config.accounts],
+        "you": auth.account_id,
+        "limits": {
+            "max_accounts": acct.MAX_ACCOUNTS,
+            "name_max": acct.NAME_MAX,
+            "password_min": passwords.MIN_LENGTH,
+            "password_max": passwords.MAX_LENGTH,
+        },
+    }
+
+
+class Permissions(BaseModel):
     originals: Optional[bool] = None
     image_search: Optional[bool] = None
+    places: Optional[bool] = None
+
+    def changes(self) -> dict:
+        return self.model_dump(exclude_none=True)
 
 
-class PasswordRequest(BaseModel):
+class AddAccountRequest(BaseModel):
+    name: str = Field(..., max_length=NAME_INPUT_MAX)
     role: Literal["owner", "viewer"]
-    new_password: str = Field(..., max_length=passwords.MAX_LENGTH)
-    current_password: str = Field(..., max_length=passwords.MAX_LENGTH)
+    password: str = _PASSWORD_FIELD
+    permissions: Optional[Permissions] = None
+    current_password: Optional[str] = _CONFIRM_FIELD
+
+
+class UpdateAccountRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=NAME_INPUT_MAX)
+    role: Optional[Literal["owner", "viewer"]] = None
+    permissions: Optional[Permissions] = None
+    disabled: Optional[bool] = None
+    current_password: Optional[str] = _CONFIRM_FIELD
+
+
+class SetPasswordRequest(BaseModel):
+    new_password: str = _PASSWORD_FIELD
+    current_password: Optional[str] = _CONFIRM_FIELD
 
 
 class ConfirmRequest(BaseModel):
-    current_password: str = Field(..., max_length=passwords.MAX_LENGTH)
+    current_password: Optional[str] = _CONFIRM_FIELD
+
+
+def _gives_access(target, req: "UpdateAccountRequest") -> bool:
+    """Whether the change needs the acting owner's password (see the module docstring)."""
+    if req.name is not None or req.role is not None:
+        return True
+    if req.disabled is not None and (target.is_owner or (req.disabled is False and target.disabled)):
+        return True
+    changes = req.permissions.changes() if req.permissions else {}
+    # The stored grants, also for an owner: they apply if that owner is ever made a viewer
+    return any(on is True and name not in target.grants for name, on in changes.items())
+
+
+def _describe_change(before, after) -> str:
+    """What a change did, for the log: "role viewer -> owner, turned on, originals on"."""
+    if after is None:
+        return "no change"
+    parts = []
+    if after.name != before.name:
+        parts.append(f"renamed to {after.name}")
+    if after.role != before.role:
+        parts.append(f"role {before.role} -> {after.role}")
+    if after.disabled != before.disabled:
+        parts.append("turned off" if after.disabled else "turned on")
+    for name in acct.PERMISSIONS:
+        was, now = name in before.grants, name in after.grants
+        if was != now:
+            parts.append(f"{name} {'on' if now else 'off'}")
+    return ", ".join(parts) or "no change"
+
+
+def _keep_signed_in(response: Response, net: NetRequest, auth: Auth, config) -> None:
+    """After a change to the caller's own account (a new password or salt), a new cookie for this browser."""
+    account = config.account_by_id(auth.account_id)
+    if account is not None and account.can_sign_in:
+        set_session_cookie(response, net, account)
 
 
 @router.get("/server/settings")
@@ -61,41 +127,104 @@ def get_server_settings(net: NetRequest = Depends(net_request)):
     return settings_view(net)
 
 
-@router.put("/server/viewer-permissions")
-def set_viewer_permissions(req: PermissionsRequest, net: NetRequest = Depends(net_request)):
+@router.get("/server/accounts")
+def list_accounts(net: NetRequest = Depends(net_request), auth: Auth = Depends(current_auth)):
+    return accounts_view(net, auth)
+
+
+@router.post("/server/accounts")
+def add_account(req: AddAccountRequest, net: NetRequest = Depends(net_request), auth: Auth = Depends(current_auth)):
+    refusal = confirm_own_password(net, auth, req.current_password)
+    if refusal is not None:
+        return refusal
     try:
-        for name, granted in req.model_dump(exclude_none=True).items():
-            net.store.set_viewer_permission(name, granted)
+        config, account = net.store.add_account(
+            req.name, req.role, req.password, req.permissions.changes() if req.permissions else None)
+    except acct.AccountError as e:
+        return account_error(e)
     except ServerConfigError:
-        return _error(409, "config_unreadable")
-    print(f"[Network] The owner changed the viewer permissions (from {net.client})")
-    return settings_view(net)
+        return error(409, "config_unreadable")
+    print(f"[Network] {auth.account_name} added the {account.role} account {account.name} (from {net.client})")
+    return accounts_view(net, auth, config)
 
 
-@router.post("/server/password")
-def change_password(req: PasswordRequest, response: Response, net: NetRequest = Depends(net_request)):
-    # A session alone isn't enough to change a password: a borrowed or stolen one could lock the owner out
-    if check_password(net, req.current_password, signed_in_owner=True) != "owner":
-        return _error(403, "wrong_password")
+@router.patch("/server/accounts/{account_id}")
+def update_account(account_id: str, req: UpdateAccountRequest, net: NetRequest = Depends(net_request),
+                   auth: Auth = Depends(current_auth)):
+    # No new cookie needed: a rename keeps the id, and the store refuses turning off or demoting yourself
+    target = net.store.current().account_by_id(account_id)
+    if target is None:
+        return error(404, "no_account")
+    if _gives_access(target, req):
+        refusal = confirm_own_password(net, auth, req.current_password)
+        if refusal is not None:
+            return refusal
     try:
-        config, problem = net.store.set_password(req.role, req.new_password)
+        config = net.store.update_account(
+            account_id,
+            name=req.name,
+            role=req.role,
+            permissions=req.permissions.changes() if req.permissions else None,
+            disabled=req.disabled,
+            acting_id=auth.account_id,
+        )
+    except acct.AccountError as e:
+        return account_error(e)
     except ServerConfigError:
-        return _error(409, "config_unreadable")
-    if problem:
-        return _error(400, problem)
-    print(f"[Network] The owner changed the {req.role} password (from {net.client})")
-    if req.role == "owner":
-        _set_session_cookie(response, net, "owner")  # the old cookie stopped working with the old password
-    return settings_view(net)
+        return error(409, "config_unreadable")
+    what = _describe_change(target, config.account_by_id(account_id))
+    print(f"[Network] {auth.account_name} changed the account {target.name}: {what} (from {net.client})")
+    return accounts_view(net, auth, config)
 
 
-@router.post("/server/viewer-password/remove")
-def remove_viewer_password(req: ConfirmRequest, net: NetRequest = Depends(net_request)):
-    if check_password(net, req.current_password, signed_in_owner=True) != "owner":
-        return _error(403, "wrong_password")
+@router.post("/server/accounts/{account_id}/password")
+def set_account_password(account_id: str, req: SetPasswordRequest, response: Response,
+                         net: NetRequest = Depends(net_request), auth: Auth = Depends(current_auth)):
+    refusal = confirm_own_password(net, auth, req.current_password)
+    if refusal is not None:
+        return refusal
     try:
-        net.store.clear_password("viewer")
+        config = net.store.set_account_password(account_id, req.new_password)
+    except acct.AccountError as e:
+        return account_error(e)
     except ServerConfigError:
-        return _error(409, "config_unreadable")
-    print(f"[Network] The owner removed the viewer password (from {net.client})")
-    return settings_view(net)
+        return error(409, "config_unreadable")
+    name = config.account_by_id(account_id).name
+    print(f"[Network] {auth.account_name} set the password of {name} (from {net.client})")
+    if account_id == auth.account_id:
+        _keep_signed_in(response, net, auth, config)
+    return accounts_view(net, auth, config)
+
+
+@router.post("/server/accounts/{account_id}/sign-out")
+def sign_out_account(account_id: str, response: Response, net: NetRequest = Depends(net_request),
+                     auth: Auth = Depends(current_auth)):
+    try:
+        config = net.store.sign_out_account(account_id)
+    except acct.AccountError as e:
+        return account_error(e)
+    except ServerConfigError:
+        return error(409, "config_unreadable")
+    print(f"[Network] {auth.account_name} signed out {config.account_by_id(account_id).name} (from {net.client})")
+    if account_id == auth.account_id:
+        _keep_signed_in(response, net, auth, config)
+    return accounts_view(net, auth, config)
+
+
+@router.post("/server/accounts/{account_id}/delete")
+def delete_account(account_id: str, req: ConfirmRequest, net: NetRequest = Depends(net_request),
+                   auth: Auth = Depends(current_auth)):
+    target = net.store.current().account_by_id(account_id)
+    if target is None:
+        return error(404, "no_account")
+    refusal = confirm_own_password(net, auth, req.current_password)
+    if refusal is not None:
+        return refusal
+    try:
+        config = net.store.remove_account(account_id, acting_id=auth.account_id)
+    except acct.AccountError as e:
+        return account_error(e)
+    except ServerConfigError:
+        return error(409, "config_unreadable")
+    print(f"[Network] {auth.account_name} deleted the account {target.name} (from {net.client})")
+    return accounts_view(net, auth, config)
