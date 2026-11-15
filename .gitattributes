@@ -1,3 +1,0 @@
-# Shell scripts and service files run on Linux; keep them LF on every checkout
-*.sh text eol=lf
-deploy/* text eol=lf

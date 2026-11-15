@@ -13,7 +13,6 @@ import {
 import { useTranslation } from 'react-i18next';
 import { SubfolderTreeNode } from './SubfolderTreeNode';
 import { buildSubfolderTree } from '../../utils/folderTree';
-import { useSession } from '../../session/sessionContext';
 
 export const IndexedFolderTree = ({
   folders = [],
@@ -26,8 +25,6 @@ export const IndexedFolderTree = ({
   uiTheme = 'modern'
 }) => {
   const { t } = useTranslation('folders');
-  // A viewer browses the folders but cannot select, re-sync or remove them.
-  const { isOwner } = useSession();
   // By default, expand all root folders with subfolders if there are 4 or fewer root folders
   const [expandedRoots, setExpandedRoots] = useState(() => {
     const initial = {};
@@ -123,39 +120,37 @@ export const IndexedFolderTree = ({
                 {/* Left: Checkbox + Expand Button + Folder Info */}
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   {/* Root Checkbox */}
-                  {isOwner && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleSelection(folder.path, false, folder);
-                      }}
-                      className={`flex items-center justify-center w-5 h-5 rounded-lg border transition-all shrink-0 cursor-pointer ${
-                        isRootSelected || isAllSubsSelected
-                          ? 'bg-indigo-600 border-indigo-600 text-white'
-                          : isIndeterminate
-                          ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 text-indigo-600 dark:text-indigo-400'
-                          : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
-                      }`}
-                      title={isRootSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
-                    >
-                      {isIndeterminate ? (
-                        <div className="w-2.5 h-0.5 bg-current rounded-full" />
-                      ) : (
-                        <svg
-                          className="w-3.5 h-3.5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSelection(folder.path, false, folder);
+                    }}
+                    className={`flex items-center justify-center w-5 h-5 rounded-lg border transition-all shrink-0 cursor-pointer ${
+                      isRootSelected || isAllSubsSelected
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : isIndeterminate
+                        ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                        : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
+                    }`}
+                    title={isRootSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
+                  >
+                    {isIndeterminate ? (
+                      <div className="w-2.5 h-0.5 bg-current rounded-full" />
+                    ) : (
+                      <svg
+                        className="w-3.5 h-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
 
                   {/* Expand / Collapse Button (if subfolders exist) */}
                   {hasSubfolders ? (
@@ -302,35 +297,31 @@ export const IndexedFolderTree = ({
                   </button>
 
                   {/* Re-sync: Kept enabled so user can re-sync when drive is reconnected */}
-                  {isOwner && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onReindex(folder.path);
-                      }}
-                      disabled={isIndexing}
-                      className="p-1.5 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
-                      title={folder.exists ? t('tree.resyncRoot') : t('tree.resyncRootMissing')}
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReindex(folder.path);
+                    }}
+                    disabled={isIndexing}
+                    className="p-1.5 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
+                    title={folder.exists ? t('tree.resyncRoot') : t('tree.resyncRootMissing')}
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
 
-                  {isOwner && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(folder.path);
-                      }}
-                      disabled={isIndexing}
-                      className="p-1.5 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
-                      title={t('tree.deleteRoot')}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(folder.path);
+                    }}
+                    disabled={isIndexing}
+                    className="p-1.5 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
+                    title={t('tree.deleteRoot')}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

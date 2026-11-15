@@ -13,8 +13,6 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
-from auth_context import LOCAL_OWNER, SCOPE_KEY
-
 API_TOKEN_ENV = "VBLIS_API_TOKEN"
 API_TOKEN_HEADER = "X-VBLIS-Token"
 # <img src> can't send headers, so GET /image alone also accepts ?token=
@@ -30,14 +28,6 @@ UPLOAD_PATH = "/search/image"
 
 _UNAUTHORIZED = {"detail": "Missing or invalid API token"}
 _TOKEN_QUERY_RE = re.compile(r"([?&]token=)[^&\s\"]*")
-# Once the network listener runs, the access log also stops showing which files were asked for
-_PATH_QUERY_RE = re.compile(r"([?&](?:token|path|folder_path)=)[^&\s\"]*")
-_redact_paths = False
-
-
-def redact_paths_in_access_log(enabled: bool = True) -> None:
-    global _redact_paths
-    _redact_paths = enabled
 
 
 def resolve_api_token(environ=os.environ) -> str:
@@ -99,7 +89,6 @@ class TokenAuthMiddleware:
             if not self._is_valid(candidate):
                 await send({"type": "websocket.close", "code": 1008})
                 return
-            scope[SCOPE_KEY] = LOCAL_OWNER
             await self.app(scope, receive, send)
             return
 
@@ -117,8 +106,6 @@ class TokenAuthMiddleware:
                 await JSONResponse({"detail": "Upload too large (max 50 MB)"}, status_code=413)(scope, receive, send)
                 return
 
-        # The desktop app holds the token, so it acts as the owner on this machine
-        scope[SCOPE_KEY] = LOCAL_OWNER
         await self.app(scope, receive, send)
 
 
@@ -141,9 +128,8 @@ class RedactTokenFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
-            pattern = _PATH_QUERY_RE if _redact_paths else _TOKEN_QUERY_RE
             record.args = tuple(
-                pattern.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
+                _TOKEN_QUERY_RE.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
             )
         return True
 

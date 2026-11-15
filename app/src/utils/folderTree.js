@@ -1,5 +1,3 @@
-import { foldPath } from './pathCase';
-
 /**
  * Computes the relative path display label from parent to child,
  * converting path separators into clean breadcrumb dividers (" / ").
@@ -9,7 +7,7 @@ export function getRelativeSegment(childPath, parentPath) {
   const normalizedChild = childPath.replace(/[\\/]+/g, '/');
   const normalizedParent = parentPath.replace(/[\\/]+/g, '/');
 
-  if (foldPath(normalizedChild).startsWith(foldPath(normalizedParent))) {
+  if (normalizedChild.toLowerCase().startsWith(normalizedParent.toLowerCase())) {
     const rel = normalizedChild.slice(normalizedParent.length).replace(/^\/+/, '');
     if (rel) {
       return rel.replace(/\//g, ' / ');
@@ -59,7 +57,7 @@ export function buildSubfolderTree(subfolders, rootPath) {
         parentPath = parentDir;
         break;
       }
-      if (foldPath(parentDir) === foldPath(rootPath)) {
+      if (parentDir.toLowerCase() === rootPath.toLowerCase()) {
         break;
       }
       currentDir = parentDir;

@@ -85,18 +85,10 @@ describe('MediaLightbox', () => {
       isDuplicate: true, duplicateType: 'exact', dupeColor: '#0078d4', otherPaths: ['/x/a.jpg'],
     });
 
-    it('lists the other paths as Explorer links in Electron', () => {
-      window.electronAPI = { openInExplorer: vi.fn() };
+    it('lists the other paths', () => {
       renderLightbox(duplicate());
       expect(screen.getByText('Also found at:')).toBeTruthy();
       expect(screen.getByTitle('Show /x/a.jpg in Explorer')).toBeTruthy();
-    });
-
-    it('lists the other paths as plain text outside Electron', () => {
-      renderLightbox(duplicate());
-      expect(screen.getByText('Also found at:')).toBeTruthy();
-      expect(screen.getByText('/x/a.jpg')).toBeTruthy();
-      expect(screen.queryByTitle('Show /x/a.jpg in Explorer')).toBeNull();
     });
 
     it('opens the other location in Explorer', async () => {

@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { API_BASE } from '../config';
 import { apiFetch } from '../utils/api';
 import { formatNumber } from '../utils/formatters';
-import { useSession } from '../session/sessionContext';
 import i18n from '../i18n';
 import {
   buildFilterChips,
@@ -28,7 +27,6 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   // Only the filter chips are derived text, so only they need `t`: it changes when the language does,
   // and that is what updates the chips (and the memoized results grid they are passed to).
   const { t } = useTranslation('filters');
-  const { isOwner } = useSession();
   const [mediaType, setMediaType] = useState(null);
   const [folders, setFolders] = useState([]);
   const [datePreset, setDatePresetState] = useState(null);
@@ -194,7 +192,6 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   // Starts the media details scan. `autoFor` is the number of files an automatic start is for: it
   // changes the toast, and an automatic start says nothing when a scan was already queued.
   const requestScan = useCallback(async (autoFor = null) => {
-    if (!isOwner) return;
     setIsStartingScan(true);
     try {
       const res = await apiFetch(`${API_BASE}/index/media-info/scan`, { method: 'POST' });
@@ -216,7 +213,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     } finally {
       setIsStartingScan(false);
     }
-  }, [isOwner]);
+  }, []);
 
   const readDetailsNow = useCallback(() => requestScan(), [requestScan]);
 
