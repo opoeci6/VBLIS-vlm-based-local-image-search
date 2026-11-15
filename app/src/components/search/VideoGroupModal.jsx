@@ -5,6 +5,7 @@ import { VideoFrameCard } from './VideoFrameCard';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { useProgressiveList } from '../../hooks/useProgressiveList';
 import { cn } from '../../utils/cn';
+import { OriginalLinks } from '../media/OriginalLinks';
 import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
 
 const INITIAL_VISIBLE_FRAMES = 60;
@@ -108,6 +109,16 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
               {t('common:showInExplorer')}
             </button>
           )}
+          <OriginalLinks
+            path={selectedVideoGroup.path}
+            mediaType="video"
+            className={cn(
+              "flex flex-shrink-0 items-center gap-2 px-4 py-2.5 font-bold text-xs transition-all",
+              uiTheme === 'modern'
+                ? "bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl border border-gray-200 dark:border-neutral-700"
+                : "border border-white text-white"
+            )}
+          />
           <button
             onClick={() => setSelectedVideoGroup(null)}
             className={cn(

@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { buildSubfolderTree, getRelativeSegment } from './folderTree';
+import { setCaseSensitivePaths } from './pathCase';
+
+afterEach(() => setCaseSensitivePaths(false));
 
 describe('getRelativeSegment', () => {
   it('returns the basename when there is no parent', () => {
@@ -14,6 +17,13 @@ describe('getRelativeSegment', () => {
 
   it('matches the parent prefix case-insensitively and across separator styles', () => {
     expect(getRelativeSegment('C:\\Root\\Sub\\Deep', 'c:/root')).toBe('Sub / Deep');
+  });
+
+  it('tells /Photos and /photos apart when paths are case-sensitive', () => {
+    expect(getRelativeSegment('/Photos/a/b', '/photos')).toBe('a / b');
+    setCaseSensitivePaths(true);
+    expect(getRelativeSegment('/Photos/a/b', '/photos')).toBe('b');
+    expect(getRelativeSegment('/photos/a/b', '/photos')).toBe('a / b');
   });
 
   it('falls back to the basename when the child is not under the parent', () => {

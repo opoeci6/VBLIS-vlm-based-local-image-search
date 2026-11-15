@@ -7,9 +7,13 @@ import { ModelManagementSection } from './ModelManagementSection';
 import { SearchTuningSection } from './SearchTuningSection';
 import { IndexDangerZone } from './IndexDangerZone';
 import { ThumbnailCacheSection } from './ThumbnailCacheSection';
+import { ServerSection } from './ServerSection';
+import { useSession } from '../../session/sessionContext';
 
-export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiTheme, gpuSettings, status, isSwitchingGpu, handleToggleGpu, handleUpdatePerformanceSettings, models, pendingModel, handleUnloadModel, isUnloadingModel, handleModelSwitch, isSwitchingModel, setPendingModel, handleDownloadModel, handleCancelDownload, showConfirmDeleteModel, setShowConfirmDeleteModel, deleteIndexWithModel, setDeleteIndexWithModel, handleDeleteModel, isDeletingModel, minScore, setMinScore, minSimilarity, setMinSimilarity, maxResults, setMaxResults, resetSearchTuning, showConfirmClear, setShowConfirmClear, handleClearCache, isClearing, cacheStats, showConfirmClearThumbnails, setShowConfirmClearThumbnails, handleClearThumbnailCache, isClearingThumbnails, handleRebuildVideoThumbnails, isTriggeringRebuildThumbnails }) => {
+export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiTheme, gpuSettings, status, isSwitchingGpu, handleToggleGpu, handleUpdatePerformanceSettings, models, pendingModel, handleUnloadModel, isUnloadingModel, handleModelSwitch, isSwitchingModel, setPendingModel, handleDownloadModel, handleCancelDownload, showConfirmDeleteModel, setShowConfirmDeleteModel, deleteIndexWithModel, setDeleteIndexWithModel, handleDeleteModel, isDeletingModel, minScore, setMinScore, minSimilarity, setMinSimilarity, maxResults, setMaxResults, resetSearchTuning, showConfirmClear, setShowConfirmClear, handleClearCache, isClearing, cacheStats, showConfirmClearThumbnails, setShowConfirmClearThumbnails, handleClearThumbnailCache, isClearingThumbnails, handleRebuildVideoThumbnails, isTriggeringRebuildThumbnails, setToast }) => {
   const { t } = useTranslation('settings');
+  // A viewer only gets the sections that are about their own browser: theme, language and search tuning.
+  const { isOwner, mode } = useSession();
   if (!(showSettings)) return null;
 
   return (
@@ -36,34 +40,38 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
 
             <LanguageSection />
 
-            <PerformanceSection
-              gpuSettings={gpuSettings}
-              status={status}
-              uiTheme={uiTheme}
-              isSwitchingGpu={isSwitchingGpu}
-              handleToggleGpu={handleToggleGpu}
-              handleUpdatePerformanceSettings={handleUpdatePerformanceSettings}
-            />
+            {isOwner && (
+              <PerformanceSection
+                gpuSettings={gpuSettings}
+                status={status}
+                uiTheme={uiTheme}
+                isSwitchingGpu={isSwitchingGpu}
+                handleToggleGpu={handleToggleGpu}
+                handleUpdatePerformanceSettings={handleUpdatePerformanceSettings}
+              />
+            )}
 
-            <ModelManagementSection
-              models={models}
-              status={status}
-              pendingModel={pendingModel}
-              uiTheme={uiTheme}
-              handleUnloadModel={handleUnloadModel}
-              isUnloadingModel={isUnloadingModel}
-              handleModelSwitch={handleModelSwitch}
-              isSwitchingModel={isSwitchingModel}
-              setPendingModel={setPendingModel}
-              handleDownloadModel={handleDownloadModel}
-              handleCancelDownload={handleCancelDownload}
-              showConfirmDeleteModel={showConfirmDeleteModel}
-              setShowConfirmDeleteModel={setShowConfirmDeleteModel}
-              deleteIndexWithModel={deleteIndexWithModel}
-              setDeleteIndexWithModel={setDeleteIndexWithModel}
-              handleDeleteModel={handleDeleteModel}
-              isDeletingModel={isDeletingModel}
-            />
+            {isOwner && (
+              <ModelManagementSection
+                models={models}
+                status={status}
+                pendingModel={pendingModel}
+                uiTheme={uiTheme}
+                handleUnloadModel={handleUnloadModel}
+                isUnloadingModel={isUnloadingModel}
+                handleModelSwitch={handleModelSwitch}
+                isSwitchingModel={isSwitchingModel}
+                setPendingModel={setPendingModel}
+                handleDownloadModel={handleDownloadModel}
+                handleCancelDownload={handleCancelDownload}
+                showConfirmDeleteModel={showConfirmDeleteModel}
+                setShowConfirmDeleteModel={setShowConfirmDeleteModel}
+                deleteIndexWithModel={deleteIndexWithModel}
+                setDeleteIndexWithModel={setDeleteIndexWithModel}
+                handleDeleteModel={handleDeleteModel}
+                isDeletingModel={isDeletingModel}
+              />
+            )}
 
             <SearchTuningSection
               minScore={minScore}
@@ -75,24 +83,30 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
               resetSearchTuning={resetSearchTuning}
             />
 
-            <IndexDangerZone
-              showConfirmClear={showConfirmClear}
-              setShowConfirmClear={setShowConfirmClear}
-              handleClearCache={handleClearCache}
-              isClearing={isClearing}
-              models={models}
-            />
+            {isOwner && (
+              <IndexDangerZone
+                showConfirmClear={showConfirmClear}
+                setShowConfirmClear={setShowConfirmClear}
+                handleClearCache={handleClearCache}
+                isClearing={isClearing}
+                models={models}
+              />
+            )}
 
-            <ThumbnailCacheSection
-              cacheStats={cacheStats}
-              showConfirmClearThumbnails={showConfirmClearThumbnails}
-              setShowConfirmClearThumbnails={setShowConfirmClearThumbnails}
-              handleClearThumbnailCache={handleClearThumbnailCache}
-              isClearingThumbnails={isClearingThumbnails}
-              status={status}
-              handleRebuildVideoThumbnails={handleRebuildVideoThumbnails}
-              isTriggeringRebuildThumbnails={isTriggeringRebuildThumbnails}
-            />
+            {isOwner && (
+              <ThumbnailCacheSection
+                cacheStats={cacheStats}
+                showConfirmClearThumbnails={showConfirmClearThumbnails}
+                setShowConfirmClearThumbnails={setShowConfirmClearThumbnails}
+                handleClearThumbnailCache={handleClearThumbnailCache}
+                isClearingThumbnails={isClearingThumbnails}
+                status={status}
+                handleRebuildVideoThumbnails={handleRebuildVideoThumbnails}
+                isTriggeringRebuildThumbnails={isTriggeringRebuildThumbnails}
+              />
+            )}
+            {/* The network server's own settings: its owner changes them from a browser */}
+            {mode === 'network' && isOwner && <ServerSection uiTheme={uiTheme} setToast={setToast} />}
           </div>
         </div>
       </div>

@@ -19,6 +19,17 @@ def is_macos_junk_dir(name: str) -> bool:
     return name.lower() == "__macosx"
 
 
+_POSIX_SKIPPED_DIRS = frozenset({"@eaDir", "lost+found"})
+
+
+def is_skipped_dir(name: str) -> bool:
+    """A folder that discovery never enters. The macOS junk folder everywhere; on Linux also
+    hidden (dot) folders and two system folders, which hold caches, trash and NAS thumbnails."""
+    if is_macos_junk_dir(name):
+        return True
+    return os.name != "nt" and (name.startswith(".") or name in _POSIX_SKIPPED_DIRS)
+
+
 def is_macos_junk_file(name: str) -> bool:
     return name.startswith("._")
 

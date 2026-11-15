@@ -9,6 +9,8 @@ import { openInExplorer } from '../../utils/electron';
 export const FolderContentRow = memo(function FolderContentRow({ item, uiTheme, setSelectedImage, setToast }) {
   const { t } = useTranslation('folders');
   const isMissing = item.exists_on_disk === false;
+  // Revealing a file needs the Electron window; a browser cannot open a folder on the server.
+  const canShowInExplorer = Boolean(window.electronAPI?.openInExplorer);
   const mediaTypeLabels = { image: t('contentRow.mediaType.image'), video: t('contentRow.mediaType.video') };
 
   return (
@@ -94,25 +96,27 @@ export const FolderContentRow = memo(function FolderContentRow({ item, uiTheme, 
           )}
         </div>
 
-        <button
-          type="button"
-          disabled={isMissing}
-          onClick={async (e) => {
-            e.stopPropagation();
-            // null: no Electron bridge (a plain browser), so there is nothing to report.
-            const res = await openInExplorer(item.path);
-            if (res !== null && !res?.success) {
-              setToast({ type: 'error', message: res?.error || t('common:openFileFailed') });
-            }
-          }}
-          className={cn(
-            "p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
-            uiTheme !== 'modern' && "border border-white text-white"
-          )}
-          title={isMissing ? t('contentRow.fileMissing') : t('common:showInExplorer')}
-        >
-          <FolderOpen className="w-4 h-4" />
-        </button>
+        {canShowInExplorer && (
+          <button
+            type="button"
+            disabled={isMissing}
+            onClick={async (e) => {
+              e.stopPropagation();
+              // null: no Electron bridge (a plain browser), so there is nothing to report.
+              const res = await openInExplorer(item.path);
+              if (res !== null && !res?.success) {
+                setToast({ type: 'error', message: res?.error || t('common:openFileFailed') });
+              }
+            }}
+            className={cn(
+              "p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
+              uiTheme !== 'modern' && "border border-white text-white"
+            )}
+            title={isMissing ? t('contentRow.fileMissing') : t('common:showInExplorer')}
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );

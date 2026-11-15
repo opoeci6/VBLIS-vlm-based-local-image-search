@@ -21,6 +21,7 @@ hidden_imports = [
     'uvicorn.lifespan.on', 
     'opentelemetry.instrumentation',
     'cffi',
+    'tls_selfsigned',
     '_cffi_backend',
     'tzdata',
     'importlib_resources',

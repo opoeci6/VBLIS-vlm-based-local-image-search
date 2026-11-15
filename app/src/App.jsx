@@ -33,9 +33,13 @@ import { SearchResultsGrid } from './components/search/SearchResultsGrid';
 import { TerminalResultsModal } from './components/search/TerminalResultsModal';
 import { FolderContentsModal } from './components/folders/FolderContentsModal';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { FolderPickerModal } from './components/folders/FolderPickerModal';
+import { HttpWarningBanner } from './components/status/HttpWarningBanner';
 import { apiFetch } from './utils/api';
+import { useSession } from './session/sessionContext';
 
 function App() {
+  const { mode, isOwner } = useSession();
   const [isClearing, setIsClearing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   // Only the path is kept; the open group is derived from the live videoGroups below so it
@@ -44,6 +48,8 @@ function App() {
   const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+  // The picker for folders on the server, which is how the owner adds folders from a browser.
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const { theme, setTheme, uiTheme, setUiTheme } = useThemePreferences();
   const { toast, setToast } = useToast();
   const queue = useTaskQueue(API_BASE, setToast);
@@ -51,6 +57,7 @@ function App() {
   const setSelectedVideoGroup = useCallback((group) => {
     setSelectedVideoPath(group ? group.path : null);
   }, []);
+  const closeFolderPicker = useCallback(() => setShowFolderPicker(false), []);
   const handleSearchResultsClosed = useCallback(() => {
     setSelectedImage(null);
     setSelectedVideoPath(null);
@@ -221,7 +228,10 @@ function App() {
   const showNoMatches = results.length === 0 && !isSearching && hasSearched && Boolean(models.active_model) && !isSwitchingModel && (query.length > 0 || Boolean(imageSearchContext) || isBrowsing);
 
   const handleOpenFolder = async () => {
-    if (!window.electronAPI) return;
+    if (!window.electronAPI) {
+      if (mode === 'network' && isOwner) setShowFolderPicker(true);
+      return;
+    }
     const paths = await window.electronAPI.openDirectory();
     if (paths && paths.length > 0) {
       await queue.enqueueFolderIndexing(paths);
@@ -308,13 +318,21 @@ function App() {
         isClearingThumbnails={isClearingThumbnails}
         handleRebuildVideoThumbnails={handleRebuildVideoThumbnails}
         isTriggeringRebuildThumbnails={isTriggeringRebuildThumbnails}
+        setToast={setToast}
       />
+
+      {showFolderPicker && (
+        <FolderPickerModal uiTheme={uiTheme} onClose={closeFolderPicker} onConfirm={queue.enqueueFolderIndexing} />
+      )}
 
       {/* Folder Contents Modal */}
       <FolderContentsModal showFolderContents={showFolderContents} browsingFolder={browsingFolder} folderContents={folderContents} isFetchingFolderContents={isFetchingFolderContents} isCleaningGhostRecords={isCleaningGhostRecords} setIsCleaningGhostRecords={setIsCleaningGhostRecords} folderVisibleLimit={folderVisibleLimit} setFolderVisibleLimit={setFolderVisibleLimit} handleCloseFolderContents={handleCloseFolderContents} handleReindexFolder={handleReindexFolder} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
 
       {/* Header */}
-      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} />
+      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} onPickImage={handleImageDrop} />
+
+      {/* A browser on plain HTTP: its password and pictures are readable on the network */}
+      <HttpWarningBanner />
 
       {/* Search filters panel (floats under the header) */}
       <SearchFiltersPanel filters={searchFilters} indexedFolders={indexedFolders} />
@@ -384,14 +402,16 @@ function App() {
         <TerminalResultsModal showSearchResults={showSearchResults} results={results} uiTheme={uiTheme} handleCloseSearchResults={handleCloseSearchResults} imageSearchContext={imageSearchContext} query={query} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelTerminalRef={sentinelTerminalRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} filterChips={filterChips} onClearFilters={clearFilters} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} isBrowsing={isBrowsing} browseSort={browseSort} onBrowseSortChange={setBrowseSort} browseTotal={browseTotal} showBrowseHint={showBrowseHint} onDismissBrowseHint={dismissBrowseHint} />
       </main>
 
-      {/* Background Task Queue Drawer */}
-      <QueueDrawer
-        isOpen={queue.isDrawerOpen}
-        onClose={() => queue.setIsDrawerOpen(false)}
-        queue={queue}
-        uiTheme={uiTheme}
-        onOpenSettings={() => setShowSettings(true)}
-      />
+      {/* Background Task Queue Drawer (owner only: a viewer has no queue) */}
+      {isOwner && (
+        <QueueDrawer
+          isOpen={queue.isDrawerOpen}
+          onClose={() => queue.setIsDrawerOpen(false)}
+          queue={queue}
+          uiTheme={uiTheme}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+      )}
 
       {/* Model Switch Safeguard Warning Modal */}
       <ModelSwitchWarningModal
