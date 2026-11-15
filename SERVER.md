@@ -7,17 +7,20 @@ VBLIS can serve its interface to web browsers on other devices: a laptop, a tabl
 
 ## Who can do what
 
-The server has two passwords:
+Everyone signs in with their own **account**: a name and a password. Each account is an **owner** or a **viewer**, and the owner sets what each viewer may do:
 
 | | Owner | Viewer |
 |---|---|---|
 | Search, browse, filters, full-size view | yes | yes |
-| Search with a picture | yes | if the owner allows it (on by default) |
-| Open or download original files | yes | if the owner allows it (off by default; otherwise a resized copy without location data is shown) |
+| Search with a picture | yes | if allowed for that account (on for a new account) |
+| Place names and the Place filter | yes | if allowed for that account (on for a new account) |
+| Open or download original files | yes | if allowed for that account (off for a new account; otherwise a resized copy without location data is shown) |
 | Add, re-sync and remove folders | yes | no |
-| Models, queue, caches, server settings | yes | no |
+| Models, queue, caches, server settings, accounts | yes | no |
 
-The viewer password is optional; without one, only the owner can sign in. Owner and viewer passwords must be different, and at least 8 characters long.
+Names have up to 32 letters or digits (any language) and may use `.`, `_` and `-`; upper and lower case count as the same name. Passwords have at least 8 characters. There can be several owners; at least one has to stay. Every account can change its own password under **Settings**.
+
+Original files keep the location data the camera wrote. So a viewer with **Originals** on can still read where a photo was taken from a downloaded file, even with **Places** off.
 
 A browser can only index folders inside the **library folders** you list in the server settings, so nobody can reach other folders through the browser.
 
@@ -36,19 +39,19 @@ The script builds a private Python environment in `api/.venv` (nothing is instal
 Then, with `vblis` standing for `api/.venv/bin/python api/main.py --data-dir ~/.local/share/vblis`:
 
 ```bash
-vblis set-password owner
-vblis set-password viewer                      # optional
+vblis add-account alice --role owner           # asks for the password twice
+vblis add-account bob --role viewer            # optional; or add viewers later in the browser
 vblis add-library-folder /srv/photos           # one or more
 vblis serve                                    # or: systemctl --user enable --now vblis
 ```
 
-Open `http://<the server's address>:8080` in a browser, sign in as the owner, download a model in **Settings**, and add folders with **Add Folders**.
+Open `http://<the server's address>:8080` in a browser, sign in with the owner account, download a model in **Settings**, and add folders with **Add Folders**. **Settings → Manage accounts** adds more accounts and sets each viewer's permissions.
 
 To keep the service running after you log out: `sudo loginctl enable-linger $USER`.
 
 ## On Windows, without the desktop app
 
-From a source checkout with the web interface built (`cd app && npm ci && npm run build`): `api\.venv\Scripts\python.exe api\main.py --data-dir D:\VBLIS-server serve`, and the same `set-password` and other commands as above. `VBLIS_WEB_DIR` can point at another copy of the built interface.
+From a source checkout with the web interface built (`cd app && npm ci && npm run build`): `api\.venv\Scripts\python.exe api\main.py --data-dir D:\VBLIS-server serve`, and the same `add-account` and other commands as above. `VBLIS_WEB_DIR` can point at another copy of the built interface.
 
 Only one VBLIS backend can use a data folder at a time. Pointing the server at the desktop app's data (`%LOCALAPPDATA%\VBLIS`) works while the desktop app is closed. Windows asks once whether to let the program through the firewall; allow it on private networks.
 
@@ -58,11 +61,14 @@ The settings live in `data/server.json` inside the data folder. Change them with
 
 | Command | Meaning |
 |---|---|
-| `set-password owner` / `set-password viewer` | Set a password (asked twice; `--stdin` reads one line for scripts). Browsers signed in with the old password are signed out. |
-| `remove-viewer-password` | Viewers can no longer sign in. |
+| `add-account NAME --role owner\|viewer` | Add an account (the password is asked twice; `--stdin` reads one line for scripts). |
+| `set-password NAME` | A new password for that account; its browsers are signed out. |
+| `rename-account NAME NEW_NAME` / `set-role NAME owner\|viewer` | Rename (the account stays signed in) or change the role. |
+| `allow NAME originals\|image_search\|places on\|off` | What that viewer may do: open and download originals, search with a picture, see place names. |
+| `disable-account NAME` / `enable-account NAME` / `remove-account NAME` | Turn an account off (it can't sign in, its browsers are signed out), on again, or delete it. The last owner can't be turned off, demoted or deleted. |
+| `sign-out NAME` | That account has to sign in again in every browser. |
+| `list-accounts` | The accounts, their roles and permissions. |
 | `add-library-folder PATH` / `remove-library-folder PATH` | Folders a browser may index (and everything inside them). |
-| `allow-viewer originals on\|off` | Viewers may open and download original files. |
-| `allow-viewer image_search on\|off` | Viewers may search with a picture. |
 | `set port 8080` | The port (never 8000; the desktop app uses it). |
 | `set host 0.0.0.0` | The address to listen on: `0.0.0.0` (all IPv4), `::` (IPv4 and IPv6), or one address. |
 | `set tls off\|self_signed\|files` | HTTPS; see below. `set cert-file PATH` and `set key-file PATH` for `files`. |
@@ -70,9 +76,11 @@ The settings live in `data/server.json` inside the data folder. Change them with
 | `set trusted-proxies 127.0.0.1` | Reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` headers are believed. |
 | `set public-access true` | Allow clients from the internet; needs HTTPS. |
 | `sign-out-everywhere` | Every browser has to sign in again. |
-| `show-config` | Print the settings (never the passwords). |
+| `show-config` | Print the settings and the accounts (never the passwords). |
 
-The owner can also change the viewer's permissions and both passwords in the browser, under **Settings**.
+An owner can do the same in the browser, under **Settings → Manage accounts**. Everything that gives access asks for that owner's own password again: adding an account, renaming, changing a role or a password, deleting, turning an owner on or off, turning any account back on, and switching a viewer's permission on. A browser left signed in then can't be used to make a lasting way in or to widen anyone's access. Switching a permission off, turning a viewer off and signing an account out happen at once.
+
+A permission that isn't `true` or `false` in a hand-edited `server.json` counts as off.
 
 For Docker or systemd, these environment variables override the file: `VBLIS_SERVER_HOST`, `VBLIS_SERVER_PORT`, `VBLIS_SERVER_TLS`, `VBLIS_SERVER_CERT_FILE`, `VBLIS_SERVER_KEY_FILE`, `VBLIS_SERVER_LIBRARY_ROOTS` (separated by `:` on Linux, `;` on Windows), `VBLIS_SERVER_ALLOWED_HOSTS`, `VBLIS_SERVER_TRUSTED_PROXIES` (comma-separated) and `VBLIS_SERVER_PUBLIC_ACCESS`.
 
@@ -110,8 +118,9 @@ The server can't tell whether it is reachable from the internet (inside Docker o
 
 ## Good to know
 
-- Viewers see file and folder names (they are part of every search result), and place names from the GPS data of photos.
-- A browser remembers the sign-in for 30 days. Changing a password signs that role out everywhere.
+- Viewers see file and folder names (they are part of every search result), and, with **Places** on, place names from the GPS data of photos.
+- A browser remembers the sign-in for 30 days. Changing a password signs that account out everywhere.
+- Names typed in full-width letters (as a Chinese or Japanese input method may) count as the same name in normal letters.
 - Each browser keeps its own interface settings (theme, language, search sliders).
 - The server keeps working when no browser is open; indexing continues in the background.
 - Files and folders whose names aren't valid UTF-8 (possible on Linux) are skipped, by the folder picker and by indexing; the server log names the folder that holds them. Rename them to include them.
