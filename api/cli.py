@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import getpass
 import os
+import secrets
 import signal
 import sys
 
@@ -68,6 +69,10 @@ def parse(argv):
     args = build_parser().parse_args(argv)
     if args.data_dir:
         os.environ["VBLIS_DATA_DIR"] = os.path.abspath(args.data_dir)
+    if args.command == "serve" and not (os.environ.get("VBLIS_API_TOKEN") or "").strip():
+        # The headless server has no desktop listener, so the desktop token is never used; a random one
+        # keeps bootstrap from printing a note about setting it
+        os.environ["VBLIS_API_TOKEN"] = secrets.token_hex(32)
     args.light = args.command in _LIGHT_COMMANDS
     return args
 
@@ -150,7 +155,7 @@ def run_light(args) -> int:
         elif args.command == "add-library-folder":
             root = server_config.normalize_root(args.path)
             if root is None:
-                print("Give the full path of a folder.", file=sys.stderr)
+                print("Give the full path of a folder (its name must be valid UTF-8).", file=sys.stderr)
                 return 1
             if not os.path.isdir(root):
                 print(f"Note: {root} doesn't exist right now.")

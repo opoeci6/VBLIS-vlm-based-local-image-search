@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 
 import netaddr
 import passwords
+import path_keys
 import paths
 import sessions
 
@@ -157,8 +158,9 @@ def _as_list(value, separator):
 
 
 def normalize_root(path):
-    """The canonical form of a library root, or None when it isn't an absolute path."""
-    if not isinstance(path, str) or not path.strip() or "\0" in path:
+    """The canonical form of a library root, or None when it isn't an absolute path (or can't be written
+    as UTF-8, like a Linux name that isn't valid UTF-8: it couldn't be saved or indexed)."""
+    if not isinstance(path, str) or not path.strip() or "\0" in path or not path_keys.is_valid_name(path):
         return None
     path = path.strip()
     if not os.path.isabs(path):

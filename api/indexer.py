@@ -251,15 +251,22 @@ def _walk_file_entries(top):
     """os.walk(top) order (top-down, a directory's files before its subdirectories, symlinked directories not
     followed, unreadable directories skipped), yielding (directory, [os.DirEntry of its files]).
     The entries carry the stat that the directory listing already holds (free on Windows).
-    macOS metadata is left out: "__MACOSX" folders and "._<name>" AppleDouble files (see media_image)."""
+    macOS metadata is left out: "__MACOSX" folders and "._<name>" AppleDouble files (see media_image).
+    Windows (NTFS) lists a folder in name order; Linux file systems don't, so entries are sorted by name there
+    and every run walks the same order."""
     try:
         with os.scandir(top) as scan:
             entries = list(scan)
     except OSError:
         return
+    if not path_keys.FOLD_CASE:
+        entries.sort(key=lambda entry: entry.name)
     file_entries = []
     subdirectories = []
     for entry in entries:
+        if not path_keys.is_valid_name(entry.name):
+            print(f"[Indexer] Skipped a name that isn't valid UTF-8 in {top}")
+            continue
         try:
             is_dir = entry.is_dir()
         except OSError:

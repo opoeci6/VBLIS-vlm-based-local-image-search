@@ -228,13 +228,13 @@ class FolderRegistry:
                 if os.path.isdir(root_path):
                     try:
                         for r, dir_names, f_list in os.walk(root_path):
-                            dir_names[:] = [d for d in dir_names if not is_skipped_dir(d)]
+                            dir_names[:] = [d for d in dir_names if not is_skipped_dir(d) and path_keys.is_valid_name(d)]
                             r_norm = os.path.abspath(os.path.normpath(r))
                             r_lower_dir = path_keys.fold(r_norm)
                             imgs = 0
                             vids = 0
                             for fname in f_list:
-                                if is_macos_junk_file(fname):
+                                if is_macos_junk_file(fname) or not path_keys.is_valid_name(fname):
                                     continue
                                 ext = os.path.splitext(fname)[1].lower()
                                 if ext in IMAGE_EXTENSIONS:
@@ -366,10 +366,11 @@ class FolderRegistry:
         for root, dir_names, files in os.walk(normalized_folder):
             dir_names[:] = [
                 d for d in dir_names
-                if not is_skipped_dir(d) and not (skip_links and path_keys.is_link(os.path.join(root, d)))
+                if not is_skipped_dir(d) and path_keys.is_valid_name(d)
+                and not (skip_links and path_keys.is_link(os.path.join(root, d)))
             ]
             for file in files:
-                if is_macos_junk_file(file):
+                if is_macos_junk_file(file) or not path_keys.is_valid_name(file):
                     continue
                 extension = os.path.splitext(file)[1].lower()
                 if extension not in IMAGE_EXTENSIONS and extension not in VIDEO_EXTENSIONS:

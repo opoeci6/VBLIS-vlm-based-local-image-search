@@ -11,6 +11,17 @@ def fold(path: str) -> str:
     return path.lower() if FOLD_CASE else path
 
 
+def is_valid_name(name: str) -> bool:
+    """False for a file or folder name that can't be written as UTF-8: on Linux a name whose bytes aren't
+    valid UTF-8, on Windows one with unpaired UTF-16 surrogates (Python keeps both as lone surrogates).
+    Such a path can't be stored in the index, the media registry or JSON, so folder walks skip it."""
+    try:
+        name.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 _REPARSE_POINT = 0x400  # stat.FILE_ATTRIBUTE_REPARSE_POINT
 
 

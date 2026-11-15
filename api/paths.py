@@ -69,8 +69,9 @@ def lock_data_dir():
     global _data_lock_fd
     if _data_lock_fd is not None:
         return
-    DATA_ROOT.mkdir(parents=True, exist_ok=True)
-    fd = os.open(DATA_ROOT / _DATA_LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    # Inside the data subfolder, next to server.json: a source checkout already ignores it there
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    fd = os.open(DATA_DIR / _DATA_LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         _lock_fd(fd)
     except OSError as e:
