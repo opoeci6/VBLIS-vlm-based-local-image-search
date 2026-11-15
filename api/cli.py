@@ -2,7 +2,7 @@
 
     main.py                              the desktop backend (what the Windows app starts)
     main.py serve                        the network server alone (Linux, Docker, a headless PC)
-    main.py set-password owner|viewer    and the other commands below: change server.json
+    main.py add-account NAME --role ...  and the other commands below: change server.json
 
 Every command takes --data-dir. The settings commands run before the backend is imported, so they
 work while a server runs (it reads server.json again within a second) and never open the index."""
@@ -13,6 +13,8 @@ import os
 import secrets
 import signal
 import sys
+
+import accounts as acct
 
 SETTABLE = {
     "enabled": "enabled",
@@ -25,15 +27,13 @@ SETTABLE = {
     "allowed-hosts": "allowed_hosts",
     "trusted-proxies": "trusted_proxies",
 }
-_LIGHT_COMMANDS = {
-    "set-password", "remove-viewer-password", "add-library-folder", "remove-library-folder",
-    "set", "allow-viewer", "sign-out-everywhere", "show-config",
+_ACCOUNT_COMMANDS = {
+    "remove-account", "set-password", "rename-account", "set-role", "allow", "disable-account",
+    "enable-account", "sign-out",
 }
-_PASSWORD_MESSAGES = {
-    "empty": "The password can't be empty.",
-    "too_short": "The password needs at least 8 characters.",
-    "too_long": "The password can have at most 256 characters.",
-    "same_as_other": "The owner and viewer passwords must be different.",
+_LIGHT_COMMANDS = _ACCOUNT_COMMANDS | {
+    "add-account", "list-accounts", "add-library-folder", "remove-library-folder", "set",
+    "sign-out-everywhere", "show-config",
 }
 
 
@@ -45,10 +45,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-dir", help="the data folder (models, index, settings); default: VBLIS_DATA_DIR")
     commands = parser.add_subparsers(dest="command", metavar="command")
     commands.add_parser("serve", help="run the network server alone")
-    p = commands.add_parser("set-password", help="set the owner or viewer password")
-    p.add_argument("role", choices=["owner", "viewer"])
+    p = commands.add_parser("add-account", help="add an account that can sign in")
+    p.add_argument("name")
+    p.add_argument("--role", required=True, choices=list(acct.ROLES))
     p.add_argument("--stdin", action="store_true", help="read the password from standard input")
-    commands.add_parser("remove-viewer-password", help="turn viewer sign-in off")
+    p = commands.add_parser("remove-account", help="delete an account")
+    p.add_argument("name")
+    p = commands.add_parser("set-password", help="set an account's password")
+    p.add_argument("name")
+    p.add_argument("--stdin", action="store_true", help="read the password from standard input")
+    p = commands.add_parser("rename-account", help="give an account another name")
+    p.add_argument("name")
+    p.add_argument("new_name")
+    p = commands.add_parser("set-role", help="make an account an owner or a viewer")
+    p.add_argument("name")
+    p.add_argument("role", choices=list(acct.ROLES))
+    p = commands.add_parser("allow", help="what a viewer account may do")
+    p.add_argument("name")
+    p.add_argument("permission", choices=list(acct.PERMISSIONS))
+    p.add_argument("value", choices=["on", "off"])
+    p = commands.add_parser("disable-account", help="turn an account off without deleting it")
+    p.add_argument("name")
+    p = commands.add_parser("enable-account", help="turn an account on again")
+    p.add_argument("name")
+    p = commands.add_parser("sign-out", help="sign one account out of every browser")
+    p.add_argument("name")
+    commands.add_parser("list-accounts", help="print the accounts")
     p = commands.add_parser("add-library-folder", help="allow browsers to index folders inside this one")
     p.add_argument("path")
     p = commands.add_parser("remove-library-folder", help="stop allowing a library folder")
@@ -56,9 +78,6 @@ def build_parser() -> argparse.ArgumentParser:
     p = commands.add_parser("set", help="change a server setting")
     p.add_argument("name", choices=sorted(SETTABLE))
     p.add_argument("value", help="lists are comma-separated; true/false for switches")
-    p = commands.add_parser("allow-viewer", help="what a viewer may do")
-    p.add_argument("permission", choices=["originals", "image_search"])
-    p.add_argument("value", choices=["on", "off"])
     commands.add_parser("sign-out-everywhere", help="sign every browser out")
     commands.add_parser("show-config", help="print the server settings")
     return parser
@@ -105,6 +124,19 @@ def _set_field(store, name, value):
     return store.update(**{field: getattr(parsed, field)})
 
 
+def account_lines(config) -> list:
+    """One line per account: name, role, on or off, and a viewer's permissions. Never a hash or a salt."""
+    lines = []
+    for account in sorted(config.accounts, key=lambda a: a.key):
+        line = f"{account.name}  {account.role}  {'off' if account.disabled else 'on'}"
+        if not account.is_owner:
+            line += "  " + " ".join(f"{name}={'yes' if account.may(name) else 'no'}" for name in acct.PERMISSIONS)
+        if not account.password:
+            line += "  (no password)"
+        lines.append(line)
+    return lines
+
+
 def show_config(store) -> None:
     import server_config
 
@@ -120,10 +152,11 @@ def show_config(store) -> None:
     print(f"  Access from the internet: {'on (HTTPS only)' if config.public_access else 'off'}")
     print("  Extra host names: " + (", ".join(config.allowed_hosts) or "none"))
     print("  Trusted proxies: " + (", ".join(config.trusted_proxies) or "none"))
-    print(f"  Owner password: {'set' if config.owner_password else 'NOT SET'}")
-    print(f"  Viewer password: {'set' if config.viewer_password else 'not set (viewers can not sign in)'}")
-    for name in server_config.VIEWER_PERMISSIONS:
-        print(f"  Viewer may use {name}: {'yes' if config.viewer_may(name) else 'no'}")
+    counts = config.account_counts()
+    print(f"  Accounts: {counts['owners']} owner, {counts['viewers']} viewer"
+          + ("" if config.has_owner else " (NO owner account can sign in)"))
+    for line in account_lines(config):
+        print(f"    {line}")
     if config.env_fields:
         print("  From the environment (VBLIS_SERVER_*): " + ", ".join(sorted(config.env_fields)))
     for problem in config.problems:
@@ -135,6 +168,11 @@ def show_config(store) -> None:
 def run_light(args) -> int:
     import server_config
 
+    # An account name the console's code page can't show (a Chinese name on an English Windows, with the
+    # output redirected) must not crash a command whose change is already written
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     store = server_config.ServerConfigStore()
     try:
         if args.command != "show-config":
@@ -143,15 +181,14 @@ def run_light(args) -> int:
                 print("Note: these settings in server.json aren't valid and are written back as their defaults:")
                 for problem in invalid:
                     print(f"  {problem}")
-        if args.command == "set-password":
-            _, problem = store.set_password(args.role, _read_password(args.stdin))
-            if problem:
-                print(_PASSWORD_MESSAGES.get(problem, problem), file=sys.stderr)
-                return 1
-            print(f"The {args.role} password is set. Browsers signed in as {args.role} have to sign in again.")
-        elif args.command == "remove-viewer-password":
-            store.clear_password("viewer")
-            print("Viewers can no longer sign in.")
+        if args.command == "add-account":
+            _, account = store.add_account(args.name, args.role, _read_password(args.stdin))
+            print(f"Account {account.name} added ({account.role}).")
+        elif args.command in _ACCOUNT_COMMANDS:
+            return _run_account_command(store, args)
+        elif args.command == "list-accounts":
+            lines = account_lines(store.stored())
+            print("\n".join(lines) if lines else "There are no accounts. Add one with: add-account NAME --role owner")
         elif args.command == "add-library-folder":
             root = server_config.normalize_root(args.path)
             if root is None:
@@ -171,17 +208,51 @@ def run_light(args) -> int:
         elif args.command == "set":
             _set_field(store, args.name, args.value)
             print(f"{args.name} = {args.value}")
-        elif args.command == "allow-viewer":
-            store.set_viewer_permission(args.permission, args.value == "on")
-            print(f"Viewers {'may' if args.value == 'on' else 'may not'} use {args.permission}.")
         elif args.command == "sign-out-everywhere":
             store.rotate_secret()
             print("Every browser has to sign in again.")
         elif args.command == "show-config":
             show_config(store)
-    except server_config.ServerConfigError as e:
+    except (server_config.ServerConfigError, acct.AccountError) as e:
         print(str(e), file=sys.stderr)
         return 1
+    return 0
+
+
+def _run_account_command(store, args) -> int:
+    """The commands that change one existing account, found by name (without regard to case)."""
+    account = store.stored().account_by_name(args.name)
+    if account is None:
+        print(f"No account named {args.name}.", file=sys.stderr)
+        return 1
+    command = args.command
+    if command == "remove-account":
+        store.remove_account(account.id)
+        print(f"Account {account.name} removed.")
+    elif command == "set-password":
+        store.set_account_password(account.id, _read_password(args.stdin))
+        print(f"The password of {account.name} is set. {account.name} has to sign in again in every browser.")
+    elif command == "rename-account":
+        config = store.update_account(account.id, name=args.new_name)
+        print(f"Account {account.name} is now called {config.account_by_id(account.id).name}.")
+    elif command == "set-role":
+        store.update_account(account.id, role=args.role)
+        print(f"Account {account.name} is now {args.role}.")
+    elif command == "allow":
+        on = args.value == "on"
+        store.update_account(account.id, permissions={args.permission: on})
+        print(f"{account.name} {'may' if on else 'may not'} use {args.permission}.")
+        if account.is_owner:
+            print(f"Note: {account.name} is an owner and owners may do everything; this is kept for when it is a viewer.")
+    elif command == "disable-account":
+        store.update_account(account.id, disabled=True)
+        print(f"Account {account.name} is turned off.")
+    elif command == "enable-account":
+        store.update_account(account.id, disabled=False)
+        print(f"Account {account.name} is turned on.")
+    elif command == "sign-out":
+        store.sign_out_account(account.id)
+        print(f"{account.name} has to sign in again in every browser.")
     return 0
 
 
@@ -219,7 +290,7 @@ async def serve_headless(app, listener) -> int:
         if problems:
             for _code, message in problems:
                 print(f"[Network] Not started: {message}", file=sys.stderr)
-            print("Run 'show-config' to see the settings, 'set-password owner' to set a password.", file=sys.stderr)
+            print("Run 'show-config' to see the settings, 'add-account NAME --role owner' to add an owner.", file=sys.stderr)
             return 1
         stopping = asyncio.ensure_future(stop.wait())
         running = asyncio.ensure_future(listener.wait())
