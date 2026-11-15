@@ -17,6 +17,7 @@ charset-normalizer==3.4.5
 chromadb==1.5.5
 click==8.3.1
 colorama==0.4.6
+cryptography==50.0.2
 durationpy==0.10
 fastapi==0.135.1
 filelock==3.25.2

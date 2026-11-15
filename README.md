@@ -25,6 +25,7 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 - **HEIC/HEIF and AVIF Support**: Full support for modern image formats commonly used on high-end cameras, iPhones and the web.
 - **Two Interface Styles**: A modern style and a terminal style, each in dark and light mode.
 - **English and Simplified Chinese**: The interface follows the Windows language, or the language you choose in the settings.
+- **Server Mode**: Run VBLIS on a Linux or Windows machine and use it from browsers on other devices, with an owner and a viewer password. See [SERVER.md](SERVER.md).
 
 ## System Requirements
 

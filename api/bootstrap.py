@@ -26,8 +26,15 @@ if "failed" in _migration.values():
     # next launch retries the move instead of shadowing the old copy forever
     failed = ", ".join(name for name, outcome in _migration.items() if outcome == "failed")
     sys.exit(f"[DataMigration] Could not move {failed} into {paths.DATA_ROOT}; not starting.")
+# One backend per data folder: a command-line server and the desktop app must not share an index
+try:
+    paths.lock_data_dir()
+except paths.DataLockedError as e:
+    sys.exit(f"[Startup] {e}; not starting.")
 # The token comes only from the launching process, never from .env (which overrides the environment)
 API_TOKEN = security.resolve_api_token()
+# Same for the network listener's VBLIS_SERVER_* settings: server_config reads them on import
+import server_config  # noqa: E402,F401
 load_dotenv(paths.ENV_FILE, override=True)
 os.environ["HF_HOME"] = str(paths.MODELS_DIR)
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "30"

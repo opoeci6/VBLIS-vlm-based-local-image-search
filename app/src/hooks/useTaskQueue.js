@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
 import { taskTitle } from '../utils/taskTitle';
+import { useSession } from '../session/sessionContext';
 import i18n from '../i18n';
 
 // The toast for folders that were just queued. The backend's own message is English, so it is
@@ -15,6 +16,8 @@ const enqueueMessage = (data, folderCount) => {
 };
 
 export const useTaskQueue = (API_BASE, setToast) => {
+  // A viewer has no queue: the routes answer 403, so they are never called.
+  const { isOwner } = useSession();
   const [activeTask, setActiveTask] = useState(null);
   const [pendingTasks, setPendingTasks] = useState([]);
   const [history, setHistory] = useState([]);
@@ -29,6 +32,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
   const prevActiveTaskId = useRef(null);
 
   const fetchQueue = useCallback(async () => {
+    if (!isOwner) return;
     try {
       const res = await apiFetch(`${API_BASE}/queue`);
       if (!res.ok) return;
@@ -76,13 +80,14 @@ export const useTaskQueue = (API_BASE, setToast) => {
     } catch {
       // Backend polling error ignored silently
     }
-  }, [API_BASE, setToast]);
+  }, [API_BASE, setToast, isOwner]);
 
   useEffect(() => {
+    if (!isOwner) return undefined;
     fetchQueue();
     const interval = setInterval(fetchQueue, 1200);
     return () => clearInterval(interval);
-  }, [fetchQueue]);
+  }, [fetchQueue, isOwner]);
 
   const enqueueFolderIndexing = useCallback(async (folderPaths, priority = 'bottom') => {
     if (!folderPaths || folderPaths.length === 0) return null;

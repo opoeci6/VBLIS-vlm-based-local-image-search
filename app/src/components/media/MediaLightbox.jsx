@@ -8,6 +8,7 @@ import { formatBytes, formatTakenDate, formatVideoTimestamp } from '../../utils/
 import { getMediaPreviewUrl } from '../../utils/media';
 import { formatPlaceLine } from '../../utils/placeNames';
 import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
+import { OriginalLinks } from './OriginalLinks';
 
 export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiTheme }) => {
   // `i18n` is destructured too: it re-renders on a language switch, and the place line is named in that language.
@@ -16,6 +17,8 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
 
   if (!(selectedImage)) return null;
 
+  // Other locations are links that reveal the file in Explorer. A browser has no Explorer: plain text there.
+  const canShowInExplorer = Boolean(window.electronAPI?.openInExplorer);
   // An item from the library view (no query) has no score: show when it was taken instead.
   const takenDate = formatTakenDate(selectedImage.taken_at);
   // Search and library results carry `place` when the file has GPS data; folder explorer items never do.
@@ -41,7 +44,7 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
       className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-black/90 backdrop-blur-md p-6 py-8 overflow-y-auto animate-in fade-in duration-200 custom-scrollbar"
       {...backdropDismiss}
     >
-      <div className="fixed top-12 right-6 flex gap-4 z-[90]">
+      <div className="fixed top-12 right-6 flex flex-wrap justify-end gap-4 z-[90]">
         {window.electronAPI && (
           <button
             onClick={async (e) => {
@@ -57,6 +60,12 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
             {t('common:showInExplorer')}
           </button>
         )}
+        <OriginalLinks
+          path={selectedImage.path}
+          mediaType={selectedImage.media_type}
+          onClick={(e) => e.stopPropagation()}
+          className="px-4 py-2 bg-white/20 dark:bg-neutral-800/80 hover:bg-white/30 dark:hover:bg-neutral-700 text-white rounded-xl flex items-center gap-2 transition-all font-bold backdrop-blur-md border border-white/20 dark:border-neutral-700"
+        />
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -178,28 +187,32 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
                 )}
               >
                 <span className="opacity-75">{t('lightbox.alsoFoundAt')}</span>
-                <button
-                  type="button"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    if (window.electronAPI?.openInExplorer) {
-                      const res = await openInExplorer(p);
-                      if (!res?.success) {
-                        setToast({ type: 'error', message: res?.error || t('common:openFileFailed') });
+                {canShowInExplorer ? (
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (window.electronAPI?.openInExplorer) {
+                        const res = await openInExplorer(p);
+                        if (!res?.success) {
+                          setToast({ type: 'error', message: res?.error || t('common:openFileFailed') });
+                        }
                       }
-                    }
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1 cursor-pointer transition-all break-all text-left group",
-                    uiTheme === 'modern'
-                      ? "text-indigo-300 hover:text-indigo-200 underline underline-offset-2 hover:opacity-100 opacity-90"
-                      : "text-white hover:underline underline-offset-2"
-                  )}
-                  title={t('lightbox.showPathInExplorer', { path: p })}
-                >
-                  <FolderOpen className="w-3 h-3 flex-shrink-0 inline group-hover:scale-110 transition-transform" />
-                  <span>{p}</span>
-                </button>
+                    }}
+                    className={cn(
+                      "inline-flex items-center gap-1 cursor-pointer transition-all break-all text-left group",
+                      uiTheme === 'modern'
+                        ? "text-indigo-300 hover:text-indigo-200 underline underline-offset-2 hover:opacity-100 opacity-90"
+                        : "text-white hover:underline underline-offset-2"
+                    )}
+                    title={t('lightbox.showPathInExplorer', { path: p })}
+                  >
+                    <FolderOpen className="w-3 h-3 flex-shrink-0 inline group-hover:scale-110 transition-transform" />
+                    <span>{p}</span>
+                  </button>
+                ) : (
+                  <span className="break-all">{p}</span>
+                )}
               </div>
             ))}
           </div>

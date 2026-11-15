@@ -3,9 +3,12 @@ import { FolderOpen, Loader2, Trash2, RefreshCw, CheckSquare, Square, ChevronDow
 import { useTranslation } from 'react-i18next';
 import { IndexedFolderTree } from './IndexedFolderTree';
 import { cn } from '../../utils/cn';
+import { useSession } from '../../session/sessionContext';
 
 export const IndexedFoldersPanel = ({ isFoldersExpanded, setIsFoldersExpanded, suppressCollapse, indexedFolders, isFetchingFolders, selectedFolders, allSelectableFolderPaths, toggleSelectAll, toggleFolderSelection, isBatchProcessing, handleBatchReindex, handleBatchDelete, handleOpenFolder, handleBrowseFolderContents, handleReindexFolder, handleDeleteFolderIndex, status, uiTheme }) => {
   const { t } = useTranslation('folders');
+  // Adding, re-syncing and removing folders is the owner's; a viewer only browses them.
+  const { isOwner } = useSession();
   const foldersRef = useRef(null);
 
   useEffect(() => {
@@ -55,14 +58,16 @@ export const IndexedFoldersPanel = ({ isFoldersExpanded, setIsFoldersExpanded, s
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={handleOpenFolder}
-              className="flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-xs font-bold shadow-md shadow-indigo-500/20 cursor-pointer"
-            >
-              <FolderOpen className="w-4 h-4" />
-              {t('panel.addFolders')}
-            </button>
+            {isOwner && (
+              <button
+                type="button"
+                onClick={handleOpenFolder}
+                className="flex items-center justify-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 text-xs font-bold shadow-md shadow-indigo-500/20 cursor-pointer"
+              >
+                <FolderOpen className="w-4 h-4" />
+                {t('panel.addFolders')}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setIsFoldersExpanded(prev => !prev)}
@@ -84,7 +89,7 @@ export const IndexedFoldersPanel = ({ isFoldersExpanded, setIsFoldersExpanded, s
                 : "bg-white dark:bg-black border border-black dark:border-white shadow-2xl"
             )}
           >
-            {indexedFolders.length > 0 && (
+            {isOwner && indexedFolders.length > 0 && (
               <div className="px-6 py-3 bg-gray-50/70 dark:bg-neutral-800/20 border-b border-gray-100 dark:border-neutral-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"

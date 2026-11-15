@@ -4,9 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { FolderContentRow } from './FolderContentRow';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { cn } from '../../utils/cn';
+import { useSession } from '../../session/sessionContext';
 
 export const FolderContentsModal = memo(function FolderContentsModal({ showFolderContents, browsingFolder, folderContents, isFetchingFolderContents, isCleaningGhostRecords, setIsCleaningGhostRecords, folderVisibleLimit, setFolderVisibleLimit, handleCloseFolderContents, handleReindexFolder, setSelectedImage, setToast, uiTheme }) {
   const { t } = useTranslation('folders');
+  // Cleaning up missing files re-syncs the folder, which only the owner can do.
+  const { isOwner } = useSession();
   const backdropDismiss = useBackdropDismiss(handleCloseFolderContents);
 
   if (!(showFolderContents && browsingFolder)) return null;
@@ -65,23 +68,25 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
                   <AlertTriangle className="w-3 h-3 text-rose-500" />
                   {t('modal.missingFromDisk', { count: folderContents.missing_on_disk_count })}
                 </span>
-                <button
-                  type="button"
-                  disabled={isCleaningGhostRecords}
-                  onClick={async () => {
-                    setIsCleaningGhostRecords(true);
-                    try {
-                      await handleReindexFolder(browsingFolder.path);
-                    } finally {
-                      setIsCleaningGhostRecords(false);
-                    }
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                  title={t('modal.cleanTooltip')}
-                >
-                  <RefreshCw className={cn("w-3 h-3", isCleaningGhostRecords && "animate-spin")} />
-                  {isCleaningGhostRecords ? t('modal.cleaning') : t('modal.cleanButton')}
-                </button>
+                {isOwner && (
+                  <button
+                    type="button"
+                    disabled={isCleaningGhostRecords}
+                    onClick={async () => {
+                      setIsCleaningGhostRecords(true);
+                      try {
+                        await handleReindexFolder(browsingFolder.path);
+                      } finally {
+                        setIsCleaningGhostRecords(false);
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                    title={t('modal.cleanTooltip')}
+                  >
+                    <RefreshCw className={cn("w-3 h-3", isCleaningGhostRecords && "animate-spin")} />
+                    {isCleaningGhostRecords ? t('modal.cleaning') : t('modal.cleanButton')}
+                  </button>
+                )}
               </div>
             )}
             <span className="text-xs text-neutral-500 ml-auto">

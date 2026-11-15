@@ -1,9 +1,15 @@
-import { Search, Loader2, X } from 'lucide-react';
+import { useRef } from 'react';
+import { Search, Loader2, X, ImagePlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SearchFiltersButton } from '../search/filters/SearchFiltersButton';
+import { useSession } from '../../session/sessionContext';
 
-export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount = 0, filtersOpen = false, onToggleFilters, hasSearchResults = false, onClearSearch }) => {
+export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount = 0, filtersOpen = false, onToggleFilters, hasSearchResults = false, onClearSearch, onPickImage }) => {
   const { t } = useTranslation('search');
+  const { mode, may } = useSession();
+  const pictureInputRef = useRef(null);
+  // A browser has no drag and drop of paths to rely on, so it gets a button. The desktop app keeps its drop.
+  const canPickImage = mode === 'network' && may('image_search') && Boolean(onPickImage);
   return (
   <form onSubmit={handleSearch} className="flex-1 max-w-2xl w-full relative group flex gap-2">
     <div className="relative flex-1">
@@ -37,6 +43,32 @@ export const SearchBar = ({ handleSearch, isSearching, searchInputRef, query, se
       )}
     </div>
     <SearchFiltersButton activeCount={activeFilterCount} isOpen={filtersOpen} onToggle={onToggleFilters} />
+    {canPickImage && (
+      <>
+        <input
+          ref={pictureInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          data-testid="picture-input"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            // Reset so that choosing the same file again fires change again.
+            event.target.value = '';
+            if (file) onPickImage(file);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => pictureInputRef.current?.click()}
+          title={t('searchBar.pickImage')}
+          aria-label={t('searchBar.pickImage')}
+          className="inline-flex items-center px-4 py-3 border rounded-2xl transition-all active:scale-95 shadow-sm cursor-pointer bg-white dark:bg-neutral-900/50 border-gray-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800"
+        >
+          <ImagePlus className="w-4 h-4" aria-hidden="true" />
+        </button>
+      </>
+    )}
     <button
       type="submit"
       className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl transition-all hover:scale-105 active:scale-95 font-medium text-sm shadow-lg shadow-indigo-500/20"
