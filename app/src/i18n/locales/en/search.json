@@ -85,7 +85,6 @@
   "searchBar": {
     "placeholder": "Search images (e.g. 'golden retriever')...",
     "clear": "Clear search text",
-    "submit": "Search",
-    "pickImage": "Search with a picture"
+    "submit": "Search"
   }
 }

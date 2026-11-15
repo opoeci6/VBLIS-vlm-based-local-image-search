@@ -2,11 +2,9 @@ import { Settings, Image as ImageIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { QueueStatusBadge } from '../queue/QueueStatusBadge';
 import { SearchBar } from './SearchBar';
-import { useSession } from '../../session/sessionContext';
 
-export const AppHeader = ({ models, setShowSettings, queue, uiTheme, handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount, filtersOpen, onToggleFilters, hasSearchResults = false, onClearSearch, onPickImage }) => {
+export const AppHeader = ({ models, setShowSettings, queue, uiTheme, handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount, filtersOpen, onToggleFilters, hasSearchResults = false, onClearSearch }) => {
   const { t } = useTranslation('search');
-  const { isOwner } = useSession();
   return (
     <header data-ascii-protected="true" className="w-full max-w-7xl px-6 py-8 flex gap-6 items-center flex-col md:flex-row justify-between relative mt-4">
       <div className="flex items-center gap-3">
@@ -43,10 +41,10 @@ export const AppHeader = ({ models, setShowSettings, queue, uiTheme, handleSearc
         </div>
       </div>
 
-      <SearchBar handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={filtersOpen} onToggleFilters={onToggleFilters} hasSearchResults={hasSearchResults} onClearSearch={onClearSearch} onPickImage={onPickImage} />
+      <SearchBar handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={filtersOpen} onToggleFilters={onToggleFilters} hasSearchResults={hasSearchResults} onClearSearch={onClearSearch} />
 
       <div className="flex items-center gap-2">
-        {isOwner && <QueueStatusBadge queue={queue} uiTheme={uiTheme} />}
+        <QueueStatusBadge queue={queue} uiTheme={uiTheme} />
         <button
           onClick={() => setShowSettings(true)}
           className="p-3 bg-white dark:bg-neutral-900/80 hover:bg-gray-50 dark:hover:bg-neutral-800 border border-gray-200 dark:border-neutral-800 rounded-xl transition-all hover:rotate-45 active:scale-95 text-neutral-500 hover:text-neutral-900 dark:hover:text-white shadow-sm dark:shadow-none"

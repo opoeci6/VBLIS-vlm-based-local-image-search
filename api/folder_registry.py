@@ -2,9 +2,8 @@ import os
 import json
 import pathlib
 import threading
-import path_keys
 from security import is_within
-from media_image import IMAGE_EXTENSIONS, is_macos_junk_file, is_skipped_dir
+from media_image import IMAGE_EXTENSIONS, is_macos_junk_dir, is_macos_junk_file
 from media_video import VIDEO_EXTENSIONS
 
 
@@ -58,11 +57,11 @@ class FolderRegistry:
 
     def add(self, collection_name, folder_path: str):
         norm_new = os.path.abspath(os.path.normpath(folder_path))
-        norm_new_lower = path_keys.fold(norm_new)
+        norm_new_lower = norm_new.lower()
         existing = self.selected(collection_name)
 
         for ex in list(existing):
-            ex_lower = path_keys.fold(os.path.abspath(os.path.normpath(ex)))
+            ex_lower = os.path.abspath(os.path.normpath(ex)).lower()
             if norm_new_lower == ex_lower or norm_new_lower.startswith(ex_lower + os.sep):
                 return
             if ex_lower.startswith(norm_new_lower + os.sep):
@@ -72,12 +71,12 @@ class FolderRegistry:
         self.save()
 
     def remove(self, collection_name, folder_path: str):
-        norm_target = path_keys.fold(os.path.abspath(os.path.normpath(folder_path)))
+        norm_target = os.path.abspath(os.path.normpath(folder_path)).lower()
         existing = self.selected(collection_name)
         to_remove = {
             ex for ex in existing
-            if path_keys.fold(os.path.abspath(os.path.normpath(ex))) == norm_target
-            or path_keys.fold(os.path.abspath(os.path.normpath(ex))).startswith(norm_target + os.sep)
+            if os.path.abspath(os.path.normpath(ex)).lower() == norm_target
+            or os.path.abspath(os.path.normpath(ex)).lower().startswith(norm_target + os.sep)
         }
         for r in to_remove:
             existing.discard(r)
@@ -88,14 +87,11 @@ class FolderRegistry:
         self.selected_folders_by_collection.pop(collection_name, None)
         self.save()
 
-    def all_selected(self) -> list:
-        """Every indexed folder, of every collection."""
-        return [r for folders in list(self.selected_folders_by_collection.values()) for r in list(folders)]
-
     def is_path_allowed(self, path: str, active_collection) -> bool:
         """True when path lies in a folder indexed under any collection (used to restrict file-serving endpoints)."""
         def check():
-            return is_within(path, self.all_selected())
+            roots = [r for folders in list(self.selected_folders_by_collection.values()) for r in list(folders)]
+            return is_within(path, roots)
 
         if check():
             return True
@@ -130,7 +126,7 @@ class FolderRegistry:
             added = False
             kept = []
             for parent in sorted(unlisted_parents, key=lambda x: len(x)):
-                if not any(path_keys.fold(parent).startswith(path_keys.fold(top) + os.sep) for top in kept):
+                if not any(parent.lower().startswith(top.lower() + os.sep) for top in kept):
                     kept.append(parent)
                     selected_folders.add(parent)
                     added = True
@@ -154,7 +150,7 @@ class FolderRegistry:
                 if meta and "path" in meta:
                     p = os.path.abspath(os.path.normpath(meta["path"]))
                     m_type = meta.get("media_type", "image")
-                    key = (path_keys.fold(p), m_type)
+                    key = (p.lower(), m_type)
                     if key not in seen_db_keys:
                         seen_db_keys.add(key)
                         db_items.append({"path": p, "media_type": m_type})
@@ -171,8 +167,8 @@ class FolderRegistry:
 
             for sf in list(selected_folders):
                 sf_norm = os.path.abspath(os.path.normpath(sf))
-                sf_lower = path_keys.fold(sf_norm)
-                has_items = any(path_keys.fold(p) == sf_lower or path_keys.fold(p).startswith(sf_lower + os.sep) for p in db_paths)
+                sf_lower = sf_norm.lower()
+                has_items = any(p.lower() == sf_lower or p.lower().startswith(sf_lower + os.sep) for p in db_paths)
                 if has_items:
                     active_folders.add(sf_norm)
                 elif not os.path.isdir(sf_norm):
@@ -183,9 +179,9 @@ class FolderRegistry:
             # 2. For any db_paths not covered by active selected folders, find their topmost common roots
             covered_paths = set()
             for sf in active_folders:
-                sf_lower = path_keys.fold(sf)
+                sf_lower = sf.lower()
                 for p in db_paths:
-                    if path_keys.fold(p) == sf_lower or path_keys.fold(p).startswith(sf_lower + os.sep):
+                    if p.lower() == sf_lower or p.lower().startswith(sf_lower + os.sep):
                         covered_paths.add(p)
 
             uncovered_paths = [p for p in db_paths if p not in covered_paths]
@@ -194,8 +190,8 @@ class FolderRegistry:
                 sorted_parents = sorted(uncovered_parents, key=lambda x: len(x))
                 topmost_parents = set()
                 for parent in sorted_parents:
-                    parent_lower = path_keys.fold(parent)
-                    if not any(parent_lower.startswith(path_keys.fold(top) + os.sep) for top in topmost_parents):
+                    parent_lower = parent.lower()
+                    if not any(parent_lower.startswith(top.lower() + os.sep) for top in topmost_parents):
                         topmost_parents.add(parent)
 
                 for parent in topmost_parents:
@@ -206,8 +202,8 @@ class FolderRegistry:
             final_root_folders = set()
             sorted_active = sorted(active_folders, key=lambda x: len(x))
             for f in sorted_active:
-                f_lower = path_keys.fold(f)
-                if not any(f_lower.startswith(path_keys.fold(top) + os.sep) for top in final_root_folders):
+                f_lower = f.lower()
+                if not any(f_lower.startswith(top.lower() + os.sep) for top in final_root_folders):
                     final_root_folders.add(f)
 
             # This runs on every poll, so only rewrite indexed_folders.json when the selection changed
@@ -217,10 +213,10 @@ class FolderRegistry:
             # 4. Build hierarchical tree with subfolders and file counts for each root folder
             output = []
             for root_path in sorted(final_root_folders, key=lambda x: x.lower()):
-                root_lower = path_keys.fold(root_path)
+                root_lower = root_path.lower()
                 root_items = [
                     it for it in db_items
-                    if path_keys.fold(it["path"]) == root_lower or path_keys.fold(it["path"]).startswith(root_lower + os.sep)
+                    if it["path"].lower() == root_lower or it["path"].lower().startswith(root_lower + os.sep)
                 ]
 
                 # Scan disk file counts for this root folder tree
@@ -228,13 +224,13 @@ class FolderRegistry:
                 if os.path.isdir(root_path):
                     try:
                         for r, dir_names, f_list in os.walk(root_path):
-                            dir_names[:] = [d for d in dir_names if not is_skipped_dir(d) and path_keys.is_valid_name(d)]
+                            dir_names[:] = [d for d in dir_names if not is_macos_junk_dir(d)]
                             r_norm = os.path.abspath(os.path.normpath(r))
-                            r_lower_dir = path_keys.fold(r_norm)
+                            r_lower_dir = r_norm.lower()
                             imgs = 0
                             vids = 0
                             for fname in f_list:
-                                if is_macos_junk_file(fname) or not path_keys.is_valid_name(fname):
+                                if is_macos_junk_file(fname):
                                     continue
                                 ext = os.path.splitext(fname)[1].lower()
                                 if ext in IMAGE_EXTENSIONS:
@@ -254,7 +250,7 @@ class FolderRegistry:
                     file_dir = os.path.dirname(it["path"])
                     is_img = it["media_type"] != "video"
 
-                    if path_keys.fold(file_dir) == root_lower:
+                    if file_dir.lower() == root_lower:
                         if is_img:
                             direct_images += 1
                         else:
@@ -272,7 +268,7 @@ class FolderRegistry:
                     rel = os.path.relpath(sub_dir, root_path)
                     depth = len(rel.split(os.sep))
                     sub_norm = os.path.abspath(os.path.normpath(sub_dir))
-                    sub_lower = path_keys.fold(sub_norm)
+                    sub_lower = sub_norm.lower()
 
                     direct_disk_imgs = disk_counts_by_dir.get(sub_lower, {}).get("images", counts["images"])
                     direct_disk_vids = disk_counts_by_dir.get(sub_lower, {}).get("videos", counts["videos"])
@@ -327,15 +323,13 @@ class FolderRegistry:
             print(f"Error getting indexed folders: {e}")
             return []
 
-    def folder_contents(self, collection, folder_path: str, limit: int = 50000, skip_links: bool = False):
-        """List supported media in a folder with indexing status and ghost record detection.
-        skip_links (for network clients): don't descend into linked folders or junctions, which can
-        lead outside the indexed folder."""
+    def folder_contents(self, collection, folder_path: str, limit: int = 50000):
+        """List supported media in a folder with indexing status and ghost record detection."""
         if not os.path.isdir(folder_path):
             raise ValueError("Folder does not exist or is not accessible.")
 
         normalized_folder = os.path.abspath(os.path.normpath(folder_path))
-        norm_folder_lower = path_keys.fold(normalized_folder)
+        norm_folder_lower = normalized_folder.lower()
 
         # 1. Fetch all indexed paths for this folder from ChromaDB
         indexed_map = {} # path_lower -> {"path": meta_path, "media_type": meta_type}
@@ -347,7 +341,7 @@ class FolderRegistry:
                         if meta and "path" in meta:
                             raw_p = meta["path"]
                             p_norm = os.path.abspath(os.path.normpath(raw_p))
-                            p_lower = path_keys.fold(p_norm)
+                            p_lower = p_norm.lower()
                             if p_lower == norm_folder_lower or p_lower.startswith(norm_folder_lower + os.sep):
                                 if p_lower not in indexed_map:
                                     indexed_map[p_lower] = {
@@ -364,13 +358,9 @@ class FolderRegistry:
 
         # 2. Scan physical files on disk
         for root, dir_names, files in os.walk(normalized_folder):
-            dir_names[:] = [
-                d for d in dir_names
-                if not is_skipped_dir(d) and path_keys.is_valid_name(d)
-                and not (skip_links and path_keys.is_link(os.path.join(root, d)))
-            ]
+            dir_names[:] = [d for d in dir_names if not is_macos_junk_dir(d)]
             for file in files:
-                if is_macos_junk_file(file) or not path_keys.is_valid_name(file):
+                if is_macos_junk_file(file):
                     continue
                 extension = os.path.splitext(file)[1].lower()
                 if extension not in IMAGE_EXTENSIONS and extension not in VIDEO_EXTENSIONS:
@@ -378,7 +368,7 @@ class FolderRegistry:
 
                 file_path = os.path.join(root, file)
                 p_norm = os.path.abspath(os.path.normpath(file_path))
-                p_lower = path_keys.fold(p_norm)
+                p_lower = p_norm.lower()
                 seen_disk_paths.add(p_lower)
 
                 media_type = "image" if extension in IMAGE_EXTENSIONS else "video"

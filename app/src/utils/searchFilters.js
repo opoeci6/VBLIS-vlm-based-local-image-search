@@ -2,7 +2,6 @@
 // builders. Kept free of React so they are easy to test.
 import i18n from '../i18n';
 import { placeName } from './placeNames';
-import { foldPath } from './pathCase';
 
 export const ORIENTATIONS = ['landscape', 'portrait', 'square'];
 
@@ -44,10 +43,9 @@ export const getDuplicateLabels = (t = i18n.t) => ({
 // Folders
 // ---------------------------------------------------------------------------------------------
 
-// Windows paths are case-insensitive and may mix separators, so compare them in one canonical form
-// (a Linux server's paths keep their case; see pathCase).
+// Windows paths are case-insensitive and may mix separators, so compare them in one canonical form.
 export function normalizeFolderPath(path) {
-  return foldPath(String(path ?? '').replace(/[\\/]+/g, '/').replace(/\/+$/, ''));
+  return String(path ?? '').replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase();
 }
 
 // True when `path` is `ancestor` itself or lies below it ("C:\Photos2" is not inside "C:\Photos").

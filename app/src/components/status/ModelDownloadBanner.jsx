@@ -2,11 +2,9 @@ import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
 import { formatBytes, formatDuration } from '../../utils/formatters';
-import { useSession } from '../../session/sessionContext';
 
 export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload }) => {
   const { t } = useTranslation('status');
-  const { isOwner } = useSession();
   if (!(status.is_downloading)) return null;
 
   return (
@@ -24,20 +22,18 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
             </span>
           </span>
           <div className="flex items-center gap-3">
-            {isOwner && (
-              <button
-                onClick={handleCancelDownload}
-                className={cn(
-                  "text-[10px] px-2 py-0.5 rounded border transition-all font-bold uppercase",
-                  status.cancel_download
-                    ? "bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-500 animate-pulse cursor-default font-extrabold"
-                    : "bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 border-gray-200 dark:border-neutral-700 shadow-sm dark:shadow-none"
-                )}
-                disabled={status.cancel_download}
-              >
-                {status.cancel_download ? t('download.cancelling') : t('common:cancel')}
-              </button>
-            )}
+            <button
+              onClick={handleCancelDownload}
+              className={cn(
+                "text-[10px] px-2 py-0.5 rounded border transition-all font-bold uppercase",
+                status.cancel_download
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-500 animate-pulse cursor-default font-extrabold"
+                  : "bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 border-gray-200 dark:border-neutral-700 shadow-sm dark:shadow-none"
+              )}
+              disabled={status.cancel_download}
+            >
+              {status.cancel_download ? t('download.cancelling') : t('common:cancel')}
+            </button>
             <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
               {status.is_loading_model
                 ? '99%'

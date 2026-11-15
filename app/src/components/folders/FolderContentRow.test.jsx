@@ -75,7 +75,6 @@ describe('FolderContentRow', () => {
     });
 
     it('disables Show in Explorer', () => {
-      window.electronAPI = { openInExplorer: vi.fn() };
       renderRow(missing());
       const button = screen.getByTitle('File is missing on disk');
       expect(button.disabled).toBe(true);
@@ -83,9 +82,11 @@ describe('FolderContentRow', () => {
   });
 
   describe('Show in Explorer', () => {
-    it('is not offered outside Electron', () => {
-      renderRow(makeItem());
-      expect(screen.queryByTitle('Show in Explorer')).toBeNull();
+    it('does nothing outside Electron', () => {
+      const { props } = renderRow(makeItem());
+      fireEvent.click(screen.getByTitle('Show in Explorer'));
+      expect(props.setToast).not.toHaveBeenCalled();
+      expect(props.setSelectedImage).not.toHaveBeenCalled();
     });
 
     it('opens the file without selecting the row', async () => {

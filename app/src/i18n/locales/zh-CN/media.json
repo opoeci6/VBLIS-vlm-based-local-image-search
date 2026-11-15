@@ -13,10 +13,5 @@
     "alsoFoundAt": "同时位于：",
     "copyPath": "复制路径",
     "showPathInExplorer": "在资源管理器中显示 {{path}}"
-  },
-  "originals": {
-    "open": "打开原件",
-    "playVideo": "播放视频",
-    "download": "下载"
   }
 }

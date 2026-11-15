@@ -1,7 +1,6 @@
 /* global process */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
-import { setCaseSensitivePaths } from './pathCase';
 import {
   buildFilterChips,
   getDuplicateLabels,
@@ -35,8 +34,6 @@ const emptyState = {
 };
 
 describe('folder paths', () => {
-  afterEach(() => setCaseSensitivePaths(false));
-
   it('treats separators and case alike and ignores a trailing separator', () => {
     expect(normalizeFolderPath('C:\\Photos\\Trips\\')).toBe('c:/photos/trips');
     expect(normalizeFolderPath('c:/PHOTOS//trips')).toBe('c:/photos/trips');
@@ -53,16 +50,6 @@ describe('folder paths', () => {
     expect(findSelectedAncestor(['C:\\Photos'], 'c:/photos/2024')).toBe('C:\\Photos');
     expect(findSelectedAncestor(['C:\\Photos'], 'C:\\Photos')).toBeNull();
     expect(findSelectedAncestor(['C:\\Photos'], 'C:\\Photos2')).toBeNull();
-  });
-
-  it('tells /Photos and /photos apart when paths are case-sensitive', () => {
-    expect(isInsideFolder('/Photos/2024', '/photos')).toBe(true);
-    setCaseSensitivePaths(true);
-    expect(normalizeFolderPath('/Photos//Trips/')).toBe('/Photos/Trips');
-    expect(isInsideFolder('/Photos/2024', '/photos')).toBe(false);
-    expect(isInsideFolder('/Photos/2024', '/Photos')).toBe(true);
-    expect(findSelectedAncestor(['/photos'], '/Photos/2024')).toBeNull();
-    expect(findSelectedAncestor(['/Photos'], '/Photos/2024')).toBe('/Photos');
   });
 
   it('gets a folder base name, falling back to the path', () => {

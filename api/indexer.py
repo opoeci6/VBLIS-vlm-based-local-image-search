@@ -13,12 +13,11 @@ from concurrent.futures import ThreadPoolExecutor
 from model_manager import ModelManager
 import pathlib
 import paths
-import path_keys
 import media_sync
 import security
 from media_image import (
     IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, embed_version_is_current, embedding_is_outdated,
-    inspect_file, is_macos_junk_file, is_skipped_dir, open_image_upright, read_rotated
+    inspect_file, is_macos_junk_dir, is_macos_junk_file, open_image_upright, read_rotated
 )
 from media_video import (
     VIDEO_EXTENSIONS, VIDEO_SAMPLING_VERSION, VIDEO_ANALYSIS_INTERVAL_SECONDS,
@@ -117,7 +116,7 @@ def _video_source_key(path):
     """What a video's frame ids carry in place of its path: the sha256 of its normalized, lower-cased path
     (a pure function of the path, so a sha learned once stays valid)."""
     normalized_path = os.path.abspath(os.path.normpath(path))
-    return hashlib.sha256(path_keys.fold(normalized_path).encode("utf-8")).hexdigest()
+    return hashlib.sha256(normalized_path.lower().encode("utf-8")).hexdigest()
 
 def _video_sha(record_id):
     """The source key inside a video frame id (video:<sha>:<ms>); None when the id is not of that shape."""
@@ -251,28 +250,21 @@ def _walk_file_entries(top):
     """os.walk(top) order (top-down, a directory's files before its subdirectories, symlinked directories not
     followed, unreadable directories skipped), yielding (directory, [os.DirEntry of its files]).
     The entries carry the stat that the directory listing already holds (free on Windows).
-    macOS metadata is left out: "__MACOSX" folders and "._<name>" AppleDouble files (see media_image).
-    Windows (NTFS) lists a folder in name order; Linux file systems don't, so entries are sorted by name there
-    and every run walks the same order."""
+    macOS metadata is left out: "__MACOSX" folders and "._<name>" AppleDouble files (see media_image)."""
     try:
         with os.scandir(top) as scan:
             entries = list(scan)
     except OSError:
         return
-    if not path_keys.FOLD_CASE:
-        entries.sort(key=lambda entry: entry.name)
     file_entries = []
     subdirectories = []
     for entry in entries:
-        if not path_keys.is_valid_name(entry.name):
-            print(f"[Indexer] Skipped a name that isn't valid UTF-8 in {top}")
-            continue
         try:
             is_dir = entry.is_dir()
         except OSError:
             is_dir = False
         if is_dir:
-            if not is_skipped_dir(entry.name):
+            if not is_macos_junk_dir(entry.name):
                 subdirectories.append(entry)
         elif not is_macos_junk_file(entry.name):
             file_entries.append(entry)
@@ -622,10 +614,10 @@ class Indexer:
         if task_context and not result.stopped and result.probed == 0:
             task_context.update_progress(0, 0, "Media details are up to date")
 
-    def get_folder_contents(self, folder_path: str, limit: int = 50000, skip_links: bool = False):
+    def get_folder_contents(self, folder_path: str, limit: int = 50000):
         """List supported media in a folder with indexing status and ghost record detection."""
         collection = self.collection if self._ensure_collection() else None
-        return self.folders.folder_contents(collection, folder_path, limit, skip_links=skip_links)
+        return self.folders.folder_contents(collection, folder_path, limit)
 
     def _get_existing_video_entries(self, collection_results=None):
         """Group indexed video-frame records by their source video path."""
@@ -923,7 +915,7 @@ class Indexer:
             
         try:
             norm_folder = os.path.abspath(os.path.normpath(folder_path))
-            norm_folder_lower = path_keys.fold(norm_folder)
+            norm_folder_lower = norm_folder.lower()
             self._remove_selected_folder(folder_path)
             
             results = self.collection.get(include=["metadatas"])
@@ -932,7 +924,7 @@ class Indexer:
             for i, meta in enumerate(results["metadatas"]):
                 if meta and "path" in meta:
                     file_path = os.path.abspath(os.path.normpath(meta["path"]))
-                    file_path_lower = path_keys.fold(file_path)
+                    file_path_lower = file_path.lower()
                     if file_path_lower == norm_folder_lower or file_path_lower.startswith(norm_folder_lower + os.sep):
                         ids_to_delete.append(results["ids"][i])
             

@@ -15,10 +15,5 @@
     "alsoFoundAt": "Also found at:",
     "copyPath": "Copy path",
     "showPathInExplorer": "Show {{path}} in Explorer"
-  },
-  "originals": {
-    "open": "Open original",
-    "playVideo": "Play video",
-    "download": "Download"
   }
 }
