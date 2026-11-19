@@ -36,7 +36,13 @@ cd vblis
 scripts/install-linux.sh                # CPU; add --torch cuda for an NVIDIA GPU (x86-64)
 ```
 
-The script builds a private Python environment in `api/.venv` (nothing is installed system-wide), keeps your data in `~/.local/share/vblis` (`--data-dir` changes that), and writes a systemd user service. It needs the built web interface in `app/dist`: it builds it when Node.js 22 is installed, otherwise build it on any machine with `cd app && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && npm run build` and copy `app/dist` over.
+The script builds a private Python environment in `api/.venv` (nothing is installed system-wide), keeps your data in `~/.local/share/vblis` (`--data-dir` changes that), and writes a systemd user service. It needs the built web interface in `app/dist`: it builds it when Node.js 22 is installed. Without Node.js, download `VBLIS-web-<version>.zip` from the release page and give it to the script with `--web-zip`:
+
+```bash
+scripts/install-linux.sh --web-zip VBLIS-web-<version>.zip
+```
+
+The script checks the zip and replaces `app/dist` with it. You can also build the interface on any machine with `cd app && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && npm run build` and copy `app/dist` over.
 
 Then, with `vblis` standing for `api/.venv/bin/python api/main.py --data-dir ~/.local/share/vblis`:
 
@@ -50,6 +56,55 @@ vblis serve                                    # or: systemctl --user enable --n
 Open `http://<the server's address>:8080` in a browser, sign in with the owner account, download a model in **Settings**, and add folders with **Add Folders**. **Settings → Manage accounts** adds more accounts and sets each viewer's permissions.
 
 To keep the service running after you log out: `sudo loginctl enable-linger $USER`.
+
+## Docker
+
+The `deploy` folder has a `Dockerfile` and a `compose.yml`. The image holds the program only. Your models, the index and the settings live in a folder you mount at `/data`, so you can rebuild the image without losing them.
+
+First run, in the `deploy` folder:
+
+```bash
+mkdir vblis-data
+sudo chown 1000:1000 vblis-data                       # the container runs as user 1000
+export VBLIS_PHOTOS=/srv/photos                       # your pictures (the default is deploy/photos)
+docker compose build
+docker compose run --rm vblis add-account alice --role owner     # asks for the password twice
+docker compose up -d
+```
+
+If you would rather run the container as yourself, skip the `chown` and set `VBLIS_UID=$(id -u)` and `VBLIS_GID=$(id -g)` instead. Keep them set for every later `docker compose` command.
+
+Open `http://<the server's address>:8080`, sign in, and download a model in **Settings**. The models are downloaded from the browser into `/data/models` (the `vblis-data/models` folder). Nothing is downloaded while the image is built.
+
+The photo folder is mounted read-only at `/photos`, and it is the library folder: browsers can index it and everything inside it. To list other folders, mount them and set `VBLIS_SERVER_LIBRARY_ROOTS` in `compose.yml` (separated by `:`).
+
+Other commands work the same way, for example `docker compose run --rm vblis show-config` or `docker compose run --rm vblis add-account bob --role viewer`.
+
+### Settings
+
+Settings are kept in `vblis-data/data/server.json`, as on any other install. A `.env` file in `vblis-data` can set other values, such as `ACTIVE_MODEL`.
+
+The `VBLIS_SERVER_*` variables listed under Settings below work in `compose.yml` under `environment`. A field set this way wins over the file, and the interface shows it as locked: change the variable and run `docker compose up -d` again.
+
+### Networking
+
+`compose.yml` uses host networking (`network_mode: host`). The server then sees each client's real address and the machine's real host name and network addresses, as it would outside Docker. The port is the one in the settings (8080 by default). Host networking works on Linux only.
+
+With bridge networking (the commented lines in `compose.yml`), the host name inside the container is the container id, and the server sees Docker's gateway address instead of each client. List the names and addresses browsers use in `VBLIS_SERVER_ALLOWED_HOSTS` (for example `nas.lan,192.168.1.20`). Because every client then looks local, do not open the port to the internet in this mode.
+
+### Behind a reverse proxy
+
+Run the proxy on the same machine, let VBLIS listen on the loopback address only, and trust the proxy: set `VBLIS_SERVER_HOST=127.0.0.1`, `VBLIS_SERVER_TRUSTED_PROXIES=127.0.0.1` and `VBLIS_SERVER_ALLOWED_HOSTS=photos.example.com`. This needs host networking. Add `VBLIS_SERVER_PUBLIC_ACCESS=true` only if clients come from the internet, and only with HTTPS at the proxy. See [HTTPS](#https) and [Access from outside your home](#access-from-outside-your-home) below.
+
+### Updating and stopping
+
+To update, pull the new version of the repository and run `docker compose build && docker compose up -d` in the `deploy` folder. Your data stays in `vblis-data`.
+
+Stopping usually takes a second or two; while indexing it can take longer, because the server finishes the current step and stops its queue first. Compose waits up to 30 seconds before it forces the container to stop. Signed-in browsers stay signed in across a restart.
+
+### What was tested
+
+The image was tested on ARM64 (Ubuntu 26.04 with Docker 29): the image is about 1.9 GB, the server uses about 280 MB of memory before a model is loaded and about 470 MB with the CLIP base model. It should work on x86-64 but that is untested. A GPU (CUDA) is not tested: `docker compose build --build-arg TORCH=cuda` is x86-64 only and also needs the NVIDIA container toolkit.
 
 ## On Windows, without the desktop app
 
