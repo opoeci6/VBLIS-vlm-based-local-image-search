@@ -518,9 +518,11 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
 
   const stepAccount = step ? accounts.find((item) => item.id === step.id) : null;
 
+  // The window opens from inside a Settings section, whose `space-y-*` would give this overlay a top margin
+  // (a fixed element keeps its margin): on a phone it then started 16 px down and lost its bottom 16 px. `!m-0`.
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 !m-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
       {...backdropDismiss}
     >
       <div

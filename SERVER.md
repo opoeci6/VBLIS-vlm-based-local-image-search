@@ -3,7 +3,7 @@
 VBLIS can serve its interface to web browsers on other devices: a laptop, a tablet, a phone. The server does the indexing and searching; the browser only shows results. Everything still stays on your own machines.
 
 > [!NOTE]
-> This guide covers the server you start from a command line (Linux, or Windows without the desktop app). A "Share on my network" switch in the Windows app comes in a later version.
+> On Windows, the easiest way is the **Share on my network** switch in the desktop app: see [Share from the Windows app](#share-from-the-windows-app). The rest of this guide covers the server you start from a command line: on Linux, in Docker, or on Windows without the desktop app.
 
 ## Who can do what
 
@@ -25,6 +25,17 @@ In **Manage accounts**, a change that gives someone access (adding an account, a
 Original files keep the location data the camera wrote. So a viewer with **Originals** on can still read where a photo was taken from a downloaded file, even with **Places** off.
 
 A browser can only index folders inside the **library folders** you list in the server settings, so nobody can reach other folders through the browser.
+
+## Share from the Windows app
+
+1. Open **Settings → Network sharing** in the VBLIS app.
+2. Add at least one account with **Manage accounts**. A viewer account is enough, because the app itself acts as the owner. On the desktop this window never asks for your password.
+3. Turn on **Share on my network**. Windows asks once whether to let VBLIS through the firewall: allow it on private networks.
+4. On another device on the same network, open one of the addresses listed under **Addresses to open** and sign in.
+
+The same section sets the port (8080 by default), HTTPS (off, self-signed or your own certificate files; see [HTTPS](#https)) and the library folders, and has **Sign out every browser**. While sharing runs, the title bar shows a **Sharing** badge; it turns amber when sharing should be on but isn't running. Click it to open the settings.
+
+Sharing lasts while the app is open and starts again the next time you open it. The app and the browsers share one library: indexing started in either shows up in both. The app listens on every network of the PC (`0.0.0.0`); the `set host` command (see [Settings](#settings)) changes that while the app is closed. Settings set by `VBLIS_SERVER_*` environment variables are shown locked.
 
 ## Install on Linux
 
@@ -172,6 +183,10 @@ By default the server refuses clients from outside private networks (home and of
 - **The internet directly:** `set public-access true` with HTTPS (directly or through a trusted proxy). Prefer a reverse proxy for this; VBLIS limits sign-in attempts but has no other protection against floods of requests.
 
 The server can't tell whether it is reachable from the internet (inside Docker or behind a router it only sees private addresses); it decides by the address of each client. A proxy on the same machine makes every client look local unless it is listed in `trusted-proxies`; VBLIS refuses requests that carry proxy headers from a proxy it doesn't trust.
+
+## On a phone
+
+The interface fits a phone's screen. The search buttons sit in a row under the search box, **Filters** opens from the bottom of the screen, and windows such as Settings and the full-size view fill the screen. In the full-size view, swipe left or right to move between pictures (the arrow keys do the same on a computer). The phone's Back button closes the open window or view, one at a time.
 
 ## Good to know
 

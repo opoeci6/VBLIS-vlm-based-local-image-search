@@ -109,6 +109,12 @@ describe('AccountsModal', () => {
       expect(within(rowOf('bob')).getAllByRole('switch')).toHaveLength(4);
     });
 
+    it('cancels the margin of the spaced Settings section it opens from', async () => {
+      // Without it, `space-y-*` pushed the full-screen phone window 16 px down and cut off its bottom.
+      await renderModal();
+      expect(screen.getByRole('dialog', { name: 'Accounts' }).parentElement.className).toMatch(/(^|\s)!m-0(\s|$)/);
+    });
+
     it('has a header row with the column names', async () => {
       await renderModal();
       const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
