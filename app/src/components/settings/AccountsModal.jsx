@@ -26,9 +26,21 @@ function LocationHint() {
 
 const GRANT_TITLE_KEYS = { originals: 'originals', image_search: 'imageSearch', places: 'places' };
 
+// The changes the network server asks the owner's password for even while it remembers a correct one:
+// anything on your own account, a new owner (promoting a viewer, turning an owner back on), and setting an
+// owner's password. `kind` is a step kind: rename, changeRole, setPassword, delete, turnOn, turnOff, grant.
+const alwaysAsksPassword = (kind, account, isYou) => (
+  isYou
+  || (kind === 'changeRole' && account.role === 'viewer')
+  || (kind === 'turnOn' && account.role === 'owner')
+  || (kind === 'setPassword' && account.role === 'owner')
+);
+
 // The step that asks for the acting owner's password (and the step's own fields) before a change.
-// `permission` is the API name of the permission a 'grant' step switches on.
-function ConfirmStep({ kind, permission, account, isYou, limits, onSubmit, onCancel, onBusyChange }) {
+// `permission` is the API name of the permission a 'grant' step switches on. `needsPassword` is false on the
+// desktop and while the network server remembers the password: the step then only confirms. `again` says the
+// server asked for the password after all.
+function ConfirmStep({ kind, permission, account, isYou, limits, needsPassword, again, onSubmit, onCancel, onBusyChange }) {
   const { t } = useTranslation('session');
   const [newName, setNewName] = useState(account.name);
   const [newPassword, setNewPassword] = useState('');
@@ -80,14 +92,15 @@ function ConfirmStep({ kind, permission, account, isYou, limits, onSubmit, onCan
       if (newPassword.length < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
       if (newPassword.length > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
     }
-    if (!current) return setError(t('accounts.confirm.passwordRequired'));
+    if (needsPassword && !current) return setError(t('accounts.confirm.passwordRequired'));
     setError(null);
     setIsBusy(true);
     onBusyChange(true);
-    const result = await onSubmit({ name: trimmedName, newPassword, currentPassword: current });
+    const result = await onSubmit({ name: trimmedName, newPassword, currentPassword: needsPassword ? current : undefined });
     setIsBusy(false);
     onBusyChange(false);
-    if (!result.ok) setError(result.message);
+    // A step that now asks for the password explains itself with its own line, not with the refusal.
+    if (!result.ok && !result.reopened) setError(result.message);
   };
 
   return (
@@ -113,16 +126,19 @@ function ConfirmStep({ kind, permission, account, isYou, limits, onSubmit, onCan
             <Field id="confirm-repeat-password" label={t('accounts.confirm.setPassword.repeat')} type="password" autoComplete="new-password" disabled={isBusy} value={repeat} onChange={setRepeat} />
           </>
         )}
-        <Field
-          id="confirm-current-password"
-          label={t('accounts.confirm.password')}
-          type="password"
-          autoComplete="current-password"
-          autoFocus={kind !== 'rename'}
-          disabled={isBusy}
-          value={current}
-          onChange={setCurrent}
-        />
+        {needsPassword && again && <p className="text-xs text-amber-700 dark:text-amber-300" role="status">{t('accounts.confirm.again')}</p>}
+        {needsPassword && (
+          <Field
+            id="confirm-current-password"
+            label={t('accounts.confirm.password')}
+            type="password"
+            autoComplete="current-password"
+            autoFocus={kind !== 'rename' || again}
+            disabled={isBusy}
+            value={current}
+            onChange={setCurrent}
+          />
+        )}
         {error && <p className={errorClass} role="alert">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onCancel} disabled={isBusy} className={secondaryButton}>{t('common:cancel')}</button>
@@ -137,7 +153,9 @@ function ConfirmStep({ kind, permission, account, isYou, limits, onSubmit, onCan
 }
 
 // The card that creates an account. `onAdd(fields)` resolves to { ok } or { ok: false, message }.
-function AddAccountCard({ limits, onAdd, onClose, uiTheme }) {
+// `passwordFor` says when the card has the owner's password field: 'never' (the desktop), 'always', or 'owners'
+// (the network server remembers the password: only a new owner needs it, or a viewer once the server asked).
+function AddAccountCard({ limits, passwordFor, onAdd, onClose, uiTheme }) {
   const { t } = useTranslation('session');
   const [name, setName] = useState('');
   const [role, setRole] = useState('viewer');
@@ -147,6 +165,8 @@ function AddAccountCard({ limits, onAdd, onClose, uiTheme }) {
   const [current, setCurrent] = useState('');
   const [error, setError] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [again, setAgain] = useState(false);
+  const showPassword = passwordFor === 'always' || (passwordFor === 'owners' && (role === 'owner' || again));
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -157,12 +177,17 @@ function AddAccountCard({ limits, onAdd, onClose, uiTheme }) {
     if (password !== repeat) return setError(t('passwordRules.mismatch'));
     if (password.length < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
     if (password.length > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
-    if (!current) return setError(t('accounts.confirm.passwordRequired'));
+    if (showPassword && !current) return setError(t('accounts.confirm.passwordRequired'));
     setError(null);
     setIsBusy(true);
-    const result = await onAdd({ name: trimmed, role, password, permissions, currentPassword: current });
+    const result = await onAdd({ name: trimmed, role, password, permissions, currentPassword: showPassword ? current : undefined });
     setIsBusy(false);
-    if (!result.ok) setError(result.message);
+    if (result.ok) return;
+    if (result.code === 'confirm_password' && !showPassword) {
+      setAgain(true);
+      return;
+    }
+    setError(result.message);
   };
 
   const setPermission = (key) => (value) => setPermissions((prev) => ({ ...prev, [key]: value }));
@@ -196,7 +221,10 @@ function AddAccountCard({ limits, onAdd, onClose, uiTheme }) {
           {showsLocationHint('viewer', permissions) && <LocationHint />}
         </div>
       )}
-      <Field id="add-account-current" label={t('accounts.confirm.password')} type="password" autoComplete="current-password" disabled={isBusy} value={current} onChange={setCurrent} />
+      {showPassword && again && <p className="text-xs text-amber-700 dark:text-amber-300" role="status">{t('accounts.confirm.again')}</p>}
+      {showPassword && (
+        <Field id="add-account-current" label={t('accounts.confirm.password')} type="password" autoComplete="current-password" disabled={isBusy} value={current} onChange={setCurrent} />
+      )}
       {error && <p className={errorClass} role="alert">{error}</p>}
       <div className="flex gap-2">
         <button type="submit" disabled={isBusy} className={primaryButton}>
@@ -327,16 +355,23 @@ function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, ui
 }
 
 // The owner's list of accounts: who may sign in, what each viewer may do, and the changes to them.
+// `mode` is 'desktop' (the Windows app: no password anywhere, nobody is "you") or 'network' (a browser: the
+// owner's password confirms a change, except while the server remembers it); it defaults to the session's.
 // It renders in place (not in a portal) so the terminal theme's classes on an ancestor still apply.
-export function AccountsModal({ onClose, uiTheme = 'modern', setToast }) {
+export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: modeProp }) {
   const { t } = useTranslation('session');
-  const { refresh } = useSession();
-  const { accounts, you, limits, isLoading, loadFailed, reload, add, update, setPassword, signOut, remove } = useAccounts();
+  const { refresh, mode: sessionMode } = useSession();
+  const mode = modeProp ?? sessionMode;
+  const isDesktop = mode === 'desktop';
+  const {
+    accounts, you, limits, isLoading, loadFailed, reload, add, update, setPassword, signOut, remove, isConfirmRemembered
+  } = useAccounts({ mode });
   const backdropDismiss = useBackdropDismiss(onClose);
   const [menuFor, setMenuFor] = useState(null);
   const [step, setStep] = useState(null);
   const [isStepBusy, setIsStepBusy] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [addPasswordFor, setAddPasswordFor] = useState('always');
   // What each row is doing now, { [id]: 'originals' | 'on' | ... }, and the last refusal of an inline action.
   const [pending, setPending] = useState({});
   const [rowErrors, setRowErrors] = useState({});
@@ -372,35 +407,70 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast }) {
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [menuFor]);
 
-  // An action of one row that needs no confirmation. Resolves to the call's result.
-  const runInline = async (id, key, action) => {
+  const openAdd = () => {
+    if (isDesktop) setAddPasswordFor('never');
+    else setAddPasswordFor(isConfirmRemembered() ? 'owners' : 'always');
+    setIsAdding(true);
+  };
+
+  // An action of one row that needs no confirmation. Resolves to the call's result. A refusal that asks for
+  // the password (the server forgot it) goes to `onNeedPassword` instead of showing in the row.
+  const runInline = async (id, key, action, onNeedPassword) => {
     setRowErrors((prev) => ({ ...prev, [id]: null }));
     setPending((prev) => ({ ...prev, [id]: key }));
     const result = await action();
     setPending((prev) => ({ ...prev, [id]: null }));
-    if (!result.ok) setRowErrors((prev) => ({ ...prev, [id]: result.message }));
+    if (!result.ok) {
+      if (onNeedPassword && result.code === 'confirm_password') onNeedPassword();
+      else setRowErrors((prev) => ({ ...prev, [id]: result.message }));
+    }
     return result;
   };
 
+  // Does this change need the owner's password typed in? Not on the desktop, and on the network not while
+  // the server remembers it, unless the server always asks for this change.
+  const needsPasswordFor = (kind, account) => (
+    !isDesktop && (!isConfirmRemembered() || alwaysAsksPassword(kind, account, account.id === you))
+  );
+
+  const openStep = (next, account) => setStep({ ...next, needsPassword: needsPasswordFor(next.kind, account) });
+
   // Taking access away happens at once. Giving it (a permission switched on, an account turned back on)
-  // asks for the owner's password first, as does turning an owner on or off: a browser left signed in
-  // can't be used to widen anyone's access.
+  // happens at once on the desktop and while the network server remembers the owner's password; otherwise
+  // it asks for it first, as does turning an owner on or off: a browser left signed in can't be used to
+  // widen anyone's access.
   const handlePermission = (account, api, value) => {
     if (!value) return runInline(account.id, api, () => update(account.id, { permissions: { [api]: false } }));
-    setStep({ kind: 'grant', id: account.id, permission: api });
-    return undefined;
+    if (needsPasswordFor('grant', account)) {
+      openStep({ kind: 'grant', id: account.id, permission: api }, account);
+      return undefined;
+    }
+    return runInline(
+      account.id,
+      api,
+      () => update(account.id, { permissions: { [api]: true } }),
+      () => setStep({ kind: 'grant', id: account.id, permission: api, needsPassword: true, again: true })
+    );
   };
 
   const handleTurn = (account, value) => {
     if (account.role === 'viewer' && !value) return runInline(account.id, 'on', () => update(account.id, { disabled: true }));
-    setStep({ kind: value ? 'turnOn' : 'turnOff', id: account.id });
+    if (value && !needsPasswordFor('turnOn', account)) {
+      return runInline(
+        account.id,
+        'on',
+        () => update(account.id, { disabled: false }),
+        () => setStep({ kind: 'turnOn', id: account.id, needsPassword: true, again: true })
+      );
+    }
+    openStep({ kind: value ? 'turnOn' : 'turnOff', id: account.id }, account);
     return undefined;
   };
 
   const handleMenuAction = async (account, action) => {
     setMenuFor(null);
     if (action !== 'signOut') {
-      setStep({ kind: action, id: account.id });
+      openStep({ kind: action, id: account.id }, account);
       return;
     }
     const result = await runInline(account.id, 'menu', () => signOut(account.id));
@@ -422,7 +492,14 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast }) {
     else if (kind === 'delete') result = await remove(account.id, currentPassword);
     else if (kind === 'grant') result = await update(account.id, { permissions: { [step.permission]: true } }, currentPassword);
     else result = await update(account.id, { disabled: kind === 'turnOff' }, currentPassword);
-    if (!result.ok) return result;
+    if (!result.ok) {
+      // The server asked for the password after all: show the field in the same step.
+      if (result.code === 'confirm_password' && !step.needsPassword) {
+        setStep({ ...step, needsPassword: true, again: true });
+        return { ...result, reopened: true };
+      }
+      return result;
+    }
     if (kind === 'rename' && account.id === you) await refresh?.();
     if (kind === 'setPassword') setToast?.({ message: t('accounts.done.passwordSet', { name: account.name }), type: 'success' });
     closeStep();
@@ -465,7 +542,7 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast }) {
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               type="button"
-              onClick={() => setIsAdding(true)}
+              onClick={openAdd}
               disabled={atLimit}
               title={atLimit ? t('accounts.atLimit', { max: limits.max_accounts }) : undefined}
               className={primaryButton}
@@ -487,7 +564,7 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast }) {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {isAdding && (
-            <AddAccountCard limits={limits} onAdd={handleAdd} onClose={() => setIsAdding(false)} uiTheme={uiTheme} />
+            <AddAccountCard limits={limits} passwordFor={addPasswordFor} onAdd={handleAdd} onClose={() => setIsAdding(false)} uiTheme={uiTheme} />
           )}
 
           {isLoading ? (
@@ -543,6 +620,8 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast }) {
           account={stepAccount}
           isYou={stepAccount.id === you}
           limits={limits}
+          needsPassword={step.needsPassword}
+          again={Boolean(step.again)}
           onSubmit={submitStep}
           onCancel={closeStep}
           onBusyChange={setIsStepBusy}

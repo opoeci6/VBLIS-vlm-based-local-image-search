@@ -798,3 +798,450 @@ describe('AccountsModal', () => {
     });
   });
 });
+
+// The same window for the Windows app (no password, nobody is "you") and for a browser while the server
+// remembers the owner's password.
+describe('AccountsModal by mode', () => {
+  let routes;
+  let fetchMock;
+  let setToast;
+
+  const requests = (route) => fetchMock.mock.calls
+    .filter(([url, init]) => `${init?.method || 'GET'} ${new URL(String(url)).pathname}` === route)
+    .map(([, init]) => ({ init, body: init?.body ? JSON.parse(init.body) : undefined }));
+
+  const ORIGINALS = 'Open and download original files';
+  const PLACES = 'See places and filter by place';
+  const ON = 'Account turned on';
+  const PASSWORD = 'Your current password';
+  const AGAIN = 'Enter your password again to confirm.';
+
+  const renderModal = async ({ mode, session = { ...SESSION, signOut: vi.fn(), refresh: vi.fn() } } = {}) => {
+    render(
+      <SessionContext.Provider value={session}>
+        <AccountsModal mode={mode} onClose={vi.fn()} setToast={setToast} />
+      </SessionContext.Provider>
+    );
+    await screen.findByRole('table', { name: 'Accounts' });
+  };
+
+  const switchOf = (label, name) => screen.getByRole('switch', { name: `${label} for ${name}` });
+  const openMenu = (name) => fireEvent.click(screen.getByRole('button', { name: `More actions for ${name}` }));
+  const pick = (name, item) => {
+    openMenu(name);
+    fireEvent.click(screen.getByRole('menuitem', { name: item }));
+  };
+  const stepDialog = (title) => screen.findByRole('dialog', { name: title });
+  const submitStep = (name) => fireEvent.click(within(screen.getByRole('dialog', { name: /^(?!Accounts$)/ })).getByRole('button', { name }));
+  const rowOf = (name) => screen.getByText(name, { selector: 'span.truncate' }).closest('[role="row"]');
+
+  beforeEach(() => {
+    setToast = vi.fn();
+    routes = {};
+    fetchMock = vi.fn(async (url, init) => {
+      const key = `${init?.method || 'GET'} ${new URL(String(url)).pathname}`;
+      const handler = routes[key];
+      if (!handler) throw new Error(`unexpected ${key}`);
+      return handler(init);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  describe('on the desktop', () => {
+    const DESKTOP = { ...LIST, you: null, confirm_remembered_s: 0, limits: { ...LIST.limits, confirm_remember_s: 0 } };
+
+    beforeEach(() => {
+      routes['GET /sharing/accounts'] = () => reply(DESKTOP);
+    });
+
+    it('reads /sharing/accounts, shows nobody as "you" and has no password field in the add card', async () => {
+      await renderModal({ mode: 'desktop' });
+      expect(requests('GET /sharing/accounts')).toHaveLength(1);
+      expect(requests('GET /server/accounts')).toHaveLength(0);
+      expect(screen.queryByText('you')).toBeNull();
+
+      routes['POST /sharing/accounts'] = () => reply(DESKTOP);
+      fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
+      const card = screen.getByRole('form', { name: 'New account' });
+      expect(within(card).queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.change(within(card).getByLabelText('Name'), { target: { value: 'dave' } });
+      fireEvent.change(within(card).getByLabelText('Password'), { target: { value: 'pass-word-1' } });
+      fireEvent.change(within(card).getByLabelText('Repeat the password'), { target: { value: 'pass-word-1' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Owner' }));
+      expect(within(card).queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.click(within(card).getByRole('button', { name: 'Add account' }));
+      await waitFor(() => expect(requests('POST /sharing/accounts')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts')[0].body).toEqual({ name: 'dave', role: 'owner', password: 'pass-word-1' });
+    });
+
+    it('switches a permission on at once, with no step and no password', async () => {
+      routes['POST /sharing/accounts/v1'] = () => reply(DESKTOP);
+      await renderModal({ mode: 'desktop' });
+      fireEvent.click(switchOf(ORIGINALS, 'bob'));
+      await waitFor(() => expect(requests('POST /sharing/accounts/v1')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/v1')[0].body).toEqual({ permissions: { originals: true } });
+      expect(screen.queryByRole('dialog', { name: /^(?!Accounts$)/ })).toBeNull();
+    });
+
+    it('turns an account on at once, a viewer and an owner alike', async () => {
+      const off = { ...DESKTOP, accounts: DESKTOP.accounts.map((a) => (a.id === 'o2' ? { ...a, disabled: true } : a)) };
+      routes['GET /sharing/accounts'] = () => reply(off);
+      routes['POST /sharing/accounts/v2'] = () => reply(off);
+      routes['POST /sharing/accounts/o2'] = () => reply(off);
+      await renderModal({ mode: 'desktop' });
+      fireEvent.click(switchOf(ON, 'carol'));
+      await waitFor(() => expect(requests('POST /sharing/accounts/v2')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/v2')[0].body).toEqual({ disabled: false });
+      fireEvent.click(switchOf(ON, 'olivia'));
+      await waitFor(() => expect(requests('POST /sharing/accounts/o2')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/o2')[0].body).toEqual({ disabled: false });
+      expect(screen.queryByRole('dialog', { name: /^(?!Accounts$)/ })).toBeNull();
+    });
+
+    it('rename confirms without a password field and sends only the name', async () => {
+      routes['POST /sharing/accounts/v1'] = () => reply(DESKTOP);
+      await renderModal({ mode: 'desktop' });
+      pick('bob', 'Rename');
+      await stepDialog('Rename bob');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'robert' } });
+      submitStep('Rename');
+      await waitFor(() => expect(requests('POST /sharing/accounts/v1')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/v1')[0].body).toEqual({ name: 'robert' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Rename bob' })).toBeNull());
+    });
+
+    it('change role, delete and turning an owner off confirm without a password field', async () => {
+      routes['POST /sharing/accounts/v1'] = () => reply(DESKTOP);
+      routes['POST /sharing/accounts/o2'] = () => reply(DESKTOP);
+      routes['POST /sharing/accounts/v1/delete'] = () => reply({ ...DESKTOP, accounts: DESKTOP.accounts.filter((a) => a.id !== 'v1') });
+      await renderModal({ mode: 'desktop' });
+
+      pick('bob', 'Change role');
+      await stepDialog('Make bob an owner?');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      submitStep('Make owner');
+      await waitFor(() => expect(requests('POST /sharing/accounts/v1')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/v1')[0].body).toEqual({ role: 'owner' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Make bob an owner?' })).toBeNull());
+
+      fireEvent.click(switchOf(ON, 'olivia'));
+      await stepDialog('Turn off olivia?');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      submitStep('Turn off');
+      await waitFor(() => expect(requests('POST /sharing/accounts/o2')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/o2')[0].body).toEqual({ disabled: true });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Turn off olivia?' })).toBeNull());
+
+      pick('bob', 'Delete');
+      await stepDialog('Delete bob?');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      submitStep('Delete account');
+      await waitFor(() => expect(requests('POST /sharing/accounts/v1/delete')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/v1/delete')[0].init).toEqual({ method: 'POST' });
+      await waitFor(() => expect(screen.queryByText('bob', { selector: 'span.truncate' })).toBeNull());
+    });
+
+    it('set password asks for the new password twice and no current one', async () => {
+      routes['POST /sharing/accounts/v1/password'] = () => reply(DESKTOP);
+      await renderModal({ mode: 'desktop' });
+      pick('bob', 'Set password');
+      await stepDialog('Set a password for bob');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password-1' } });
+      fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'new-password-1' } });
+      submitStep('Set password');
+      await waitFor(() => expect(setToast).toHaveBeenCalledWith({ message: 'The password of bob was set.', type: 'success' }));
+      expect(requests('POST /sharing/accounts/v1/password')[0].body).toEqual({ new_password: 'new-password-1' });
+    });
+
+    it('still checks the new password in the set-password step', async () => {
+      await renderModal({ mode: 'desktop' });
+      pick('bob', 'Set password');
+      await stepDialog('Set a password for bob');
+      fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password-1' } });
+      fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'other-password' } });
+      submitStep('Set password');
+      expect((await screen.findByRole('alert')).textContent).toBe('The two new passwords do not match.');
+      expect(requests('POST /sharing/accounts/v1/password')).toHaveLength(0);
+    });
+
+    it('lets every owner row, the last one too, be deleted, turned off and demoted', async () => {
+      const onlyOwner = { ...DESKTOP, accounts: [DESKTOP.accounts[0]] };
+      routes['GET /sharing/accounts'] = () => reply(onlyOwner);
+      routes['POST /sharing/accounts/a1'] = () => reply(onlyOwner);
+      routes['POST /sharing/accounts/a1/delete'] = () => reply({ ...onlyOwner, accounts: [] });
+      await renderModal({ mode: 'desktop' });
+      expect(switchOf(ON, 'alice').disabled).toBe(false);
+      openMenu('alice');
+      for (const name of ['Rename', 'Change role', 'Set password', 'Sign out everywhere', 'Delete']) {
+        const item = screen.getByRole('menuitem', { name });
+        expect(item.disabled).toBe(false);
+        expect(item.getAttribute('title')).toBeNull();
+      }
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Change role' }));
+      await stepDialog('Make alice a viewer?');
+      submitStep('Make viewer');
+      await waitFor(() => expect(requests('POST /sharing/accounts/a1')).toHaveLength(1));
+      expect(requests('POST /sharing/accounts/a1')[0].body).toEqual({ role: 'viewer' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Make alice a viewer?' })).toBeNull());
+
+      fireEvent.click(switchOf(ON, 'alice'));
+      await stepDialog('Turn off alice?');
+      submitStep('Turn off');
+      await waitFor(() => expect(requests('POST /sharing/accounts/a1')).toHaveLength(2));
+      expect(requests('POST /sharing/accounts/a1')[1].body).toEqual({ disabled: true });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Turn off alice?' })).toBeNull());
+
+      pick('alice', 'Delete');
+      await stepDialog('Delete alice?');
+      submitStep('Delete account');
+      await waitFor(() => expect(requests('POST /sharing/accounts/a1/delete')).toHaveLength(1));
+    });
+
+    it('defaults to the session mode when no mode is given', async () => {
+      await renderModal({ session: { ...SESSION, mode: 'desktop', signOut: vi.fn(), refresh: vi.fn() } });
+      expect(requests('GET /sharing/accounts')).toHaveLength(1);
+    });
+  });
+
+  describe('in a browser while the server remembers the password', () => {
+    const REMEMBERED = { ...LIST, confirm_remembered_s: 300, limits: { ...LIST.limits, confirm_remember_s: 300 } };
+
+    beforeEach(() => {
+      routes['GET /server/accounts'] = () => reply(REMEMBERED);
+    });
+
+    it('switches a permission on and turns a viewer on at once, with no password', async () => {
+      routes['PATCH /server/accounts/v1'] = () => reply(REMEMBERED);
+      routes['PATCH /server/accounts/v2'] = () => reply(REMEMBERED);
+      await renderModal({ mode: 'network' });
+      fireEvent.click(switchOf(ORIGINALS, 'bob'));
+      await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(1));
+      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ permissions: { originals: true } });
+      fireEvent.click(switchOf(ON, 'carol'));
+      await waitFor(() => expect(requests('PATCH /server/accounts/v2')).toHaveLength(1));
+      expect(requests('PATCH /server/accounts/v2')[0].body).toEqual({ disabled: false });
+      expect(screen.queryByRole('dialog', { name: /^(?!Accounts$)/ })).toBeNull();
+    });
+
+    it('confirms a rename of another account without the field and sends no password', async () => {
+      routes['PATCH /server/accounts/o2'] = () => reply(REMEMBERED);
+      await renderModal({ mode: 'network' });
+      pick('olivia', 'Rename');
+      await stepDialog('Rename olivia');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'olive' } });
+      submitStep('Rename');
+      await waitFor(() => expect(requests('PATCH /server/accounts/o2')).toHaveLength(1));
+      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ name: 'olive' });
+    });
+
+    it('does not ask again for another owner turned off or demoted, nor for a viewer password or a delete', async () => {
+      routes['PATCH /server/accounts/o2'] = () => reply(REMEMBERED);
+      routes['POST /server/accounts/v1/password'] = () => reply(REMEMBERED);
+      routes['POST /server/accounts/v1/delete'] = () => reply(REMEMBERED);
+      await renderModal({ mode: 'network' });
+
+      fireEvent.click(switchOf(ON, 'olivia'));
+      await stepDialog('Turn off olivia?');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      submitStep('Turn off');
+      await waitFor(() => expect(requests('PATCH /server/accounts/o2')).toHaveLength(1));
+      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ disabled: true });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Turn off olivia?' })).toBeNull());
+
+      pick('olivia', 'Change role');
+      await stepDialog('Make olivia a viewer?');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      pick('bob', 'Set password');
+      await stepDialog('Set a password for bob');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password-1' } });
+      fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'new-password-1' } });
+      submitStep('Set password');
+      await waitFor(() => expect(requests('POST /server/accounts/v1/password')).toHaveLength(1));
+      expect(requests('POST /server/accounts/v1/password')[0].body).toEqual({ new_password: 'new-password-1' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Set a password for bob' })).toBeNull());
+
+      pick('bob', 'Delete');
+      await stepDialog('Delete bob?');
+      expect(screen.queryByLabelText(PASSWORD)).toBeNull();
+      submitStep('Delete account');
+      await waitFor(() => expect(requests('POST /server/accounts/v1/delete')).toHaveLength(1));
+      expect(requests('POST /server/accounts/v1/delete')[0].body).toEqual({});
+    });
+
+    it('still asks for the password to promote a viewer', async () => {
+      routes['PATCH /server/accounts/v1'] = () => reply(REMEMBERED);
+      await renderModal({ mode: 'network' });
+      pick('bob', 'Change role');
+      await stepDialog('Make bob an owner?');
+      expect(screen.getByLabelText(PASSWORD)).toBeTruthy();
+      expect(screen.queryByText(AGAIN)).toBeNull();
+      fireEvent.change(screen.getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
+      submitStep('Make owner');
+      await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(1));
+      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ role: 'owner', current_password: 'mine-1234' });
+    });
+
+    it('still asks for the password to set an owner password, and to change your own account', async () => {
+      await renderModal({ mode: 'network' });
+      pick('olivia', 'Set password');
+      await stepDialog('Set a password for olivia');
+      expect(screen.getByLabelText(PASSWORD)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      pick('alice', 'Rename');
+      await stepDialog('Rename alice');
+      expect(screen.getByLabelText(PASSWORD)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      pick('alice', 'Set password');
+      await stepDialog('Set a password for alice');
+      expect(screen.getByLabelText(PASSWORD)).toBeTruthy();
+    });
+
+    it('still asks for the password to turn a turned-off owner back on', async () => {
+      const off = { ...REMEMBERED, accounts: REMEMBERED.accounts.map((a) => (a.id === 'o2' ? { ...a, disabled: true } : a)) };
+      routes['GET /server/accounts'] = () => reply(off);
+      await renderModal({ mode: 'network' });
+      fireEvent.click(switchOf(ON, 'olivia'));
+      await stepDialog('Turn on olivia?');
+      expect(screen.getByLabelText(PASSWORD)).toBeTruthy();
+      expect(requests('PATCH /server/accounts/o2')).toHaveLength(0);
+    });
+
+    it('adds a viewer without the field, but an owner with it', async () => {
+      routes['POST /server/accounts'] = () => reply(REMEMBERED);
+      await renderModal({ mode: 'network' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
+      const card = screen.getByRole('form', { name: 'New account' });
+      expect(within(card).queryByLabelText(PASSWORD)).toBeNull();
+      fireEvent.click(within(card).getByRole('button', { name: 'Owner' }));
+      expect(within(card).getByLabelText(PASSWORD)).toBeTruthy();
+      fireEvent.click(within(card).getByRole('button', { name: 'Viewer' }));
+      expect(within(card).queryByLabelText(PASSWORD)).toBeNull();
+
+      fireEvent.change(within(card).getByLabelText('Name'), { target: { value: 'dave' } });
+      fireEvent.change(within(card).getByLabelText('Password'), { target: { value: 'pass-word-1' } });
+      fireEvent.change(within(card).getByLabelText('Repeat the password'), { target: { value: 'pass-word-1' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Add account' }));
+      await waitFor(() => expect(requests('POST /server/accounts')).toHaveLength(1));
+      expect(requests('POST /server/accounts')[0].body).toEqual({
+        name: 'dave',
+        role: 'viewer',
+        password: 'pass-word-1',
+        permissions: { originals: false, image_search: true, places: true },
+      });
+    });
+
+    it('re-opens a grant with the field and a line when the server asks for the password after all', async () => {
+      routes['PATCH /server/accounts/v1'] = refusal('confirm_password', 'Enter your password', 403);
+      await renderModal({ mode: 'network' });
+      fireEvent.click(switchOf(ORIGINALS, 'bob'));
+      const dialog = await stepDialog('Let bob open and download original files?');
+      expect(within(dialog).getByText(AGAIN)).toBeTruthy();
+      expect(within(dialog).getByLabelText(PASSWORD)).toBeTruthy();
+      expect(within(rowOf('bob')).queryByRole('alert')).toBeNull();
+      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ permissions: { originals: true } });
+
+      routes['PATCH /server/accounts/v1'] = () => reply(LIST);
+      fireEvent.change(within(dialog).getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
+      submitStep('Allow');
+      await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(2));
+      expect(requests('PATCH /server/accounts/v1')[1].body).toEqual({ permissions: { originals: true }, current_password: 'mine-1234' });
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Let bob open and download original files?' })).toBeNull());
+    });
+
+    it('forgets the memory after that, so the next grant shows the step at once', async () => {
+      routes['PATCH /server/accounts/v1'] = refusal('confirm_password', 'Enter your password', 403);
+      await renderModal({ mode: 'network' });
+      fireEvent.click(switchOf(ORIGINALS, 'bob'));
+      await stepDialog('Let bob open and download original files?');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: /^(?!Accounts$)/ })).toBeNull());
+
+      // carol has places off, so switching it on is a grant.
+      fireEvent.click(switchOf(PLACES, 'carol'));
+      const dialog = await stepDialog('Let carol see places and filter by place?');
+      expect(within(dialog).getByLabelText(PASSWORD)).toBeTruthy();
+      expect(within(dialog).queryByText(AGAIN)).toBeNull();
+      expect(requests('PATCH /server/accounts/v2')).toHaveLength(0);
+    });
+
+    it('re-opens a rename step with the field and keeps the name that was typed', async () => {
+      routes['PATCH /server/accounts/v1'] = refusal('confirm_password', 'Enter your password', 403);
+      await renderModal({ mode: 'network' });
+      pick('bob', 'Rename');
+      const dialog = await stepDialog('Rename bob');
+      fireEvent.change(screen.getByLabelText('New name'), { target: { value: 'robert' } });
+      submitStep('Rename');
+      expect(await within(dialog).findByText(AGAIN)).toBeTruthy();
+      expect(within(dialog).queryByRole('alert')).toBeNull();
+      expect(screen.getByLabelText('New name').value).toBe('robert');
+
+      routes['PATCH /server/accounts/v1'] = () => reply(LIST);
+      fireEvent.change(within(dialog).getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
+      submitStep('Rename');
+      await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(2));
+      expect(requests('PATCH /server/accounts/v1')[1].body).toEqual({ name: 'robert', current_password: 'mine-1234' });
+    });
+
+    it('re-opens the add card with the field when the server asks for the password', async () => {
+      routes['POST /server/accounts'] = refusal('confirm_password', 'Enter your password', 403);
+      await renderModal({ mode: 'network' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
+      const card = screen.getByRole('form', { name: 'New account' });
+      fireEvent.change(within(card).getByLabelText('Name'), { target: { value: 'dave' } });
+      fireEvent.change(within(card).getByLabelText('Password'), { target: { value: 'pass-word-1' } });
+      fireEvent.change(within(card).getByLabelText('Repeat the password'), { target: { value: 'pass-word-1' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Add account' }));
+      expect(await within(card).findByText(AGAIN)).toBeTruthy();
+      expect(within(card).getByLabelText(PASSWORD)).toBeTruthy();
+      expect(within(card).queryByRole('alert')).toBeNull();
+
+      routes['POST /server/accounts'] = () => reply(LIST);
+      fireEvent.change(within(card).getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Add account' }));
+      await waitFor(() => expect(requests('POST /server/accounts')).toHaveLength(2));
+      expect(requests('POST /server/accounts')[1].body.current_password).toBe('mine-1234');
+    });
+
+    it('a memory that has run out behaves as before', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      try {
+        await renderModal({ mode: 'network' });
+        vi.setSystemTime(new Date('2026-01-01T00:06:00Z'));
+        fireEvent.click(switchOf(ORIGINALS, 'bob'));
+        const dialog = await stepDialog('Let bob open and download original files?');
+        expect(within(dialog).getByLabelText(PASSWORD)).toBeTruthy();
+        expect(within(dialog).queryByText(AGAIN)).toBeNull();
+        expect(requests('PATCH /server/accounts/v1')).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('in a browser while nothing is remembered', () => {
+    it('keeps the password field in every step and in the add card', async () => {
+      routes['GET /server/accounts'] = () => reply(LIST);
+      await renderModal({ mode: 'network' });
+      pick('bob', 'Rename');
+      await stepDialog('Rename bob');
+      expect(screen.getByLabelText(PASSWORD)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
+      expect(within(screen.getByRole('form', { name: 'New account' })).getByLabelText(PASSWORD)).toBeTruthy();
+    });
+  });
+});

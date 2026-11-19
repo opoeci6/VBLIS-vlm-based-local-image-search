@@ -58,6 +58,7 @@ function App() {
     setSelectedVideoPath(group ? group.path : null);
   }, []);
   const closeFolderPicker = useCallback(() => setShowFolderPicker(false), []);
+  const openSettings = useCallback(() => setShowSettings(true), []);
   const handleSearchResultsClosed = useCallback(() => {
     setSelectedImage(null);
     setSelectedVideoPath(null);
@@ -269,7 +270,15 @@ function App() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <TitleBar theme={theme} setTheme={setTheme} uiTheme={uiTheme} setUiTheme={setUiTheme} />
+      <TitleBar
+        theme={theme}
+        setTheme={setTheme}
+        uiTheme={uiTheme}
+        setUiTheme={setUiTheme}
+        sharingRunning={Boolean(status.sharing?.running)}
+        sharingProblem={status.sharing?.problem ?? null}
+        onOpenSharing={openSettings}
+      />
 
       {/* Drag Overlay */}
       {isDragging && <DragOverlay activeTask={queue.activeTask} pendingCount={queue.pendingCount} />}

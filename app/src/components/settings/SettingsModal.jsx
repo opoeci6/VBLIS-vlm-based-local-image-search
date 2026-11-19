@@ -8,6 +8,7 @@ import { SearchTuningSection } from './SearchTuningSection';
 import { IndexDangerZone } from './IndexDangerZone';
 import { ThumbnailCacheSection } from './ThumbnailCacheSection';
 import { ServerSection } from './ServerSection';
+import { SharingSection } from './SharingSection';
 import { AccountSection } from './AccountSection';
 import { useSession } from '../../session/sessionContext';
 
@@ -108,6 +109,8 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
             )}
             {/* Who is signed in from a browser: any role changes its own password here */}
             {mode === 'network' && <AccountSection uiTheme={uiTheme} setToast={setToast} />}
+            {/* Sharing from the Windows app: the desktop's only owner turns it on and manages its accounts here */}
+            {mode === 'desktop' && <SharingSection uiTheme={uiTheme} setToast={setToast} />}
             {/* The network server's own settings: its owner changes them from a browser */}
             {mode === 'network' && isOwner && <ServerSection uiTheme={uiTheme} setToast={setToast} />}
           </div>

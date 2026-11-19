@@ -1,12 +1,16 @@
 import React from 'react';
-import { Minus, Square, X, Moon, Sun, Shirt, Check, Sparkles, Terminal, LogOut } from 'lucide-react';
+import { Minus, Square, X, Moon, Sun, Shirt, Check, Sparkles, Terminal, LogOut, Radio, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from './session/sessionContext';
 
-const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
+// `sharingRunning` and `sharingProblem` (the problem code, or null) come from the status poll of the Windows app:
+// while it shares, a pill says so; while it should share but cannot, an amber one does. Clicking opens the
+// sharing settings through `onOpenSharing`.
+const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme, sharingRunning = false, sharingProblem = null, onOpenSharing }) => {
   const { t } = useTranslation('settings');
   const { mode, role, account, signOut } = useSession();
   const roleLabel = role === 'owner' ? t('session:role.owner') : t('session:role.viewer');
+  const showSharingPill = mode === 'desktop' && (sharingRunning || Boolean(sharingProblem));
   const signedInLabel = account ? t('session:signedInAs', { name: account.name, role: roleLabel }) : roleLabel;
   // The window buttons and the drag region belong to the Electron window; a browser tab has its own.
   const hasWindowControls = Boolean(window.electronAPI);
@@ -51,6 +55,21 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme }) => {
         <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 tracking-tight">VBLIS</span>
       </div>
       <div className="flex h-full items-center" style={hasWindowControls ? { WebkitAppRegion: 'no-drag' } : undefined}>
+        {showSharingPill && (
+          <button
+            type="button"
+            onClick={onOpenSharing}
+            title={sharingProblem ? t('titleBar.notSharingTooltip') : t('titleBar.sharingTooltip')}
+            className={`mr-1 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold transition-colors ${
+              sharingProblem
+                ? 'border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/25'
+                : 'border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/25'
+            }`}
+          >
+            {sharingProblem ? <TriangleAlert className="w-3 h-3" aria-hidden="true" /> : <Radio className="w-3 h-3" aria-hidden="true" />}
+            {sharingProblem ? t('titleBar.notSharing') : t('titleBar.sharing')}
+          </button>
+        )}
         <div ref={themeMenuRef} className="relative h-full">
           <button
             onClick={() => setShowThemeMenu(current => !current)}

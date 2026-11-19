@@ -486,7 +486,9 @@ describe('App in a browser', () => {
       openSettings(container);
       await screen.findByText('Settings');
       expect(screen.queryByText('Your account')).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Manage accounts' })).toBeNull();
+      // The desktop has its own Sharing section (with its own Manage accounts button), not the network's Server one.
+      expect(screen.queryByRole('heading', { name: 'Server' })).toBeNull();
+      expect(await screen.findByRole('heading', { name: 'Network sharing' })).toBeTruthy();
       expect(calls).not.toContain('GET /server/settings');
       expect(screen.queryByText(/isn't encrypted/)).toBeNull();
     });

@@ -80,6 +80,7 @@ function FailureMessage({ failure }) {
     if (code === 'no_owner_account') {
       return <Trans t={t} i18nKey="signIn.errors.noOwnerAccount" components={{ code: <code className="font-mono font-semibold" /> }} />;
     }
+    if (code === 'no_accounts') return t('signIn.errors.noAccounts');
     return retryAfter ? t('signIn.errors.busy', { count: retryAfter }) : t('signIn.errors.busyNoWait');
   }
   return t('signIn.errors.generic', { status });

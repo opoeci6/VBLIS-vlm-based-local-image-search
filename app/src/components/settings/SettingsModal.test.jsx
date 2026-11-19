@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SessionContext } from '../../session/sessionContext';
 import { SettingsModal } from './SettingsModal';
@@ -56,7 +56,12 @@ const makeProps = (overrides = {}) => ({
 });
 
 describe('SettingsModal', () => {
-  afterEach(cleanup);
+  // The desktop's Sharing section reads the backend when it opens; here that read never answers.
+  beforeEach(() => vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))));
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it('renders nothing when closed', () => {
     const { container } = render(<SettingsModal {...makeProps({ showSettings: false })} />);
@@ -89,6 +94,14 @@ describe('SettingsModal', () => {
     for (let i = 1; i < nodes.length; i++) {
       expect(nodes[i - 1].compareDocumentPosition(nodes[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
+  });
+
+  it('puts the Sharing section of the desktop app after the owner sections', () => {
+    render(<SettingsModal {...makeProps()} />);
+    const sharing = screen.getByRole('heading', { name: 'Network sharing' });
+    const thumbnails = screen.getByText('Thumbnail Cache Management');
+    expect(thumbnails.compareDocumentPosition(sharing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('Loading sharing settings...')).toBeTruthy();
   });
 
   it('passes props through to the sections', () => {
@@ -148,6 +161,14 @@ describe('SettingsModal', () => {
     it('shows no account section in the desktop app', () => {
       render(<SettingsModal {...makeProps()} />);
       expect(screen.queryByRole('heading', { name: 'Your account' })).toBeNull();
+    });
+
+    it('shows no sharing section to a network owner or viewer', () => {
+      renderAs(networkSession('owner'));
+      expect(screen.queryByRole('heading', { name: 'Network sharing' })).toBeNull();
+      cleanup();
+      renderAs(networkSession('viewer'));
+      expect(screen.queryByRole('heading', { name: 'Network sharing' })).toBeNull();
     });
   });
 });
