@@ -22,6 +22,7 @@ import netaddr
 import ratelimit
 import sessions
 from auth_context import NET_SCOPE_KEY, NETWORK, SCOPE_KEY, VIEWER, Auth, NetRequest
+from confirm_memory import RecentConfirmations
 
 API_PREFIX = "/api"
 MAX_JSON_BODY = 1024 * 1024
@@ -97,7 +98,8 @@ def scan_web_dir(web_dir) -> dict:
 
 
 class NetworkGate:
-    def __init__(self, app, route_table, store, web_dir=None, port=8080, hostname=None, limiter=None, log=print):
+    def __init__(self, app, route_table, store, web_dir=None, port=8080, hostname=None, limiter=None, log=print,
+                 require_owner=True, confirmations=None):
         self.app = app
         self.route_table = dict(route_table)
         self.store = store
@@ -105,6 +107,8 @@ class NetworkGate:
         self.static = scan_web_dir(web_dir)
         self.limiter = limiter or ratelimit.AttemptLimiter()
         self.log = log
+        self.require_owner = require_owner
+        self.confirmations = confirmations if confirmations is not None else RecentConfirmations()
         self._default_names = netaddr.default_host_names(socket.gethostname() if hostname is None else hostname)
         self._parsed_proxies = ((), ())
         self._uploads = 0
@@ -268,7 +272,9 @@ class NetworkGate:
             if account is not None:
                 grants = account.grants if account.role == VIEWER else frozenset()
                 auth = Auth(account.role, NETWORK, frozenset(grants), client, account.id, account.name)
-        child[NET_SCOPE_KEY] = NetRequest(client, scheme, cookie_name, self.store, self.limiter)
+        child[NET_SCOPE_KEY] = NetRequest(client, scheme, cookie_name, self.store, self.limiter,
+                                          self.require_owner, session if auth is not None else None,
+                                          self.confirmations)
         if auth is not None:
             child[SCOPE_KEY] = auth
 

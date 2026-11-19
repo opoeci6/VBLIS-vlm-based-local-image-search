@@ -19,7 +19,7 @@ export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
           )}
         >
           <Sparkles className={cn("w-5 h-5 flex-shrink-0", uiTheme === 'modern' ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-400")} />
-          <div>
+          <div className="min-w-0">
             <div className="text-xs font-bold">{t('theme.modern.name')}</div>
             <div className="text-[10px] text-neutral-400 dark:text-neutral-500">{t('theme.modern.desc')}</div>
           </div>
@@ -35,7 +35,7 @@ export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
           )}
         >
           <Terminal className={cn("w-5 h-5 flex-shrink-0", uiTheme === 'terminal' ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-400")} />
-          <div>
+          <div className="min-w-0">
             <div className="text-xs font-bold">{t('theme.terminal.name')}</div>
             <div className="text-[10px] text-neutral-400 dark:text-neutral-500">{t('theme.terminal.desc')}</div>
           </div>

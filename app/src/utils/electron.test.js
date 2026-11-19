@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
-import { copyText, getPathForFile, isDirectory, openInExplorer, translateElectronError } from './electron';
+import { copyText, getPathForFile, isDirectory, openInExplorer, pickFile, translateElectronError } from './electron';
 
 describe('electron helpers', () => {
   afterEach(() => {
@@ -140,5 +140,27 @@ describe('openInExplorer', () => {
     await i18n.changeLanguage('zh-CN');
     window.electronAPI = { openInExplorer: vi.fn().mockResolvedValue({ success: false, error: 'File no longer exists.' }) };
     await expect(openInExplorer('x')).resolves.toEqual({ success: false, error: '文件已不存在。' });
+  });
+});
+
+describe('pickFile', () => {
+  afterEach(() => {
+    delete window.electronAPI;
+  });
+
+  it('resolves to null without the Electron bridge', async () => {
+    await expect(pickFile('certificate')).resolves.toBeNull();
+  });
+
+  it('asks the dialog for the kind and returns the path', async () => {
+    const openFile = vi.fn().mockResolvedValue('C:/certs/site.pem');
+    window.electronAPI = { openFile };
+    await expect(pickFile('key')).resolves.toBe('C:/certs/site.pem');
+    expect(openFile).toHaveBeenCalledWith('key');
+  });
+
+  it('resolves to null when the dialog is cancelled', async () => {
+    window.electronAPI = { openFile: vi.fn().mockResolvedValue(null) };
+    await expect(pickFile('certificate')).resolves.toBeNull();
   });
 });

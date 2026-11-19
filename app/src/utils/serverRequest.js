@@ -22,14 +22,17 @@ const failureMessage = (res, body) => {
 //   { ok: false, status, code, message }        a refusal, with a sentence ready to show
 //   { ok: false, status: 0, code: null, message }  the server could not be reached
 // A request without `body` sends no body and no Content-Type.
-export const requestJson = async (method, path, body) => {
+// With `keepErrorBody`, a refusal also carries the answer's JSON as `data` (null when it has none), for the
+// callers that need more than the code, such as the extra fields of POST /sharing.
+export const requestJson = async (method, path, body, { keepErrorBody = false } = {}) => {
   try {
     const res = await apiFetch(`${API_BASE}${path}`, body === undefined
       ? { method }
       : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json().catch(() => null);
     if (res.ok) return { ok: true, data };
-    return { ok: false, status: res.status, code: data?.code ?? null, message: failureMessage(res, data) };
+    const failure = { ok: false, status: res.status, code: data?.code ?? null, message: failureMessage(res, data) };
+    return keepErrorBody ? { ...failure, data } : failure;
   } catch {
     return { ok: false, status: 0, code: null, message: i18n.t('session:server.errors.network') };
   }

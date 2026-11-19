@@ -129,7 +129,7 @@ export const QueuedTaskList = ({
               onDragLeave={(e) => handleDragLeave(e, task)}
               onDrop={(e) => handleDrop(e, task)}
               onDragEnd={handleDragEnd}
-              className={`group p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-all duration-150 cursor-grab active:cursor-grabbing select-none ${
+              className={`group p-3.5 rounded-2xl border flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 transition-all duration-150 cursor-grab active:cursor-grabbing select-none ${
                 isDragging
                   ? 'opacity-40 scale-[0.98] border-dashed border-indigo-400 dark:border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/20 shadow-none'
                   : isOver
@@ -142,7 +142,7 @@ export const QueuedTaskList = ({
               {/* Left: Drag Handle, Position & Title */}
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div
-                  className="p-1 -ml-1 text-neutral-300 dark:text-neutral-600 group-hover:text-neutral-500 dark:group-hover:text-neutral-400 transition-colors shrink-0"
+                  className="p-1 -ml-1 [@media(hover:none)]:hidden text-neutral-300 dark:text-neutral-600 group-hover:text-neutral-500 dark:group-hover:text-neutral-400 transition-colors shrink-0"
                   title={t('queuedList.dragToReorder')}
                 >
                   <GripVertical className="w-4 h-4" />
@@ -172,13 +172,14 @@ export const QueuedTaskList = ({
                 </div>
               </div>
 
-              {/* Right: Reorder Buttons & Cancel Action */}
-              <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+              {/* Right: Reorder Buttons & Cancel Action (a row below the title on a phone) */}
+              <div className="flex items-center gap-1 max-sm:justify-end sm:shrink-0" onClick={(e) => e.stopPropagation()}>
                 {tasks.length > 2 && !isFirst && (
                   <button
                     onClick={() => onMove(task.id, 'top')}
-                    className="p-1.5 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer"
+                    className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors cursor-pointer"
                     title={t('queuedList.moveToTop')}
+                    aria-label={t('queuedList.moveToTop')}
                   >
                     <ChevronsUp className="w-4 h-4" />
                   </button>
@@ -187,8 +188,9 @@ export const QueuedTaskList = ({
                 <button
                   onClick={() => onMove(task.id, 'up')}
                   disabled={isFirst}
-                  className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                  className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
                   title={t('queuedList.moveUp')}
+                  aria-label={t('queuedList.moveUp')}
                 >
                   <ChevronUp className="w-4 h-4" />
                 </button>
@@ -196,16 +198,18 @@ export const QueuedTaskList = ({
                 <button
                   onClick={() => onMove(task.id, 'down')}
                   disabled={isLast}
-                  className="p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
+                  className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg transition-colors disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer"
                   title={t('queuedList.moveDown')}
+                  aria-label={t('queuedList.moveDown')}
                 >
                   <ChevronDown className="w-4 h-4" />
                 </button>
 
                 <button
                   onClick={() => onCancel(task.id)}
-                  className="p-1.5 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors ml-1 cursor-pointer"
+                  className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors ml-1 cursor-pointer"
                   title={t('queuedList.remove')}
+                  aria-label={t('queuedList.remove')}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

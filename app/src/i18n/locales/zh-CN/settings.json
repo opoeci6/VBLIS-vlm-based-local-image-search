@@ -27,7 +27,11 @@
     "switchToLight": "切换到浅色模式",
     "switchToDark": "切换到深色模式",
     "minimize": "最小化",
-    "maximize": "最大化"
+    "maximize": "最大化",
+    "sharing": "共享中",
+    "notSharing": "未在共享",
+    "sharingTooltip": "正在网络上共享。点击打开共享设置。",
+    "notSharingTooltip": "共享应当开启，但未在运行。点击打开共享设置。"
   },
   "asciiLogo": {
     "label": "VBLIS 旋转 3D ASCII 标志"
@@ -158,6 +162,76 @@
       "rebuild": "重建缩略图",
       "clearTooltip": "仅清除视频缩略图",
       "clear": "清除"
+    }
+  },
+  "sharing": {
+    "title": "网络共享",
+    "switchLabel": "在我的网络上共享",
+    "loading": "正在加载共享设置……",
+    "loadFailed": "无法加载共享设置。",
+    "status": {
+      "on": "共享已开启。网络中的其他设备可以打开下方的地址。",
+      "off": "共享已关闭。",
+      "stuck": "共享应当开启，但未在运行。"
+    },
+    "done": {
+      "started": "共享已开启。",
+      "stopped": "共享已关闭。",
+      "saved": "已保存。"
+    },
+    "addresses": {
+      "title": "可打开的地址",
+      "hint": "在同一网络中的其他设备上，用浏览器打开其中一个地址。",
+      "copy": "复制 {{url}}",
+      "copied": "已复制。"
+    },
+    "https": {
+      "title": "HTTPS",
+      "off": "关闭",
+      "selfSigned": "自签名",
+      "files": "自有文件",
+      "selfSignedHint": "浏览器会对自签名证书发出警告，可对照下方的指纹进行核实。",
+      "certificate": "证书文件",
+      "key": "密钥文件",
+      "chooseCertificate": "选择证书……",
+      "chooseKey": "选择密钥……",
+      "useFiles": "使用这些文件",
+      "fingerprint": "证书指纹",
+      "copyFingerprint": "复制指纹",
+      "fingerprintMayChange": "下次启动共享时，指纹可能会改变。"
+    },
+    "port": {
+      "title": "端口",
+      "hint": "其他设备连接时使用的端口。",
+      "save": "保存端口",
+      "invalid": "请输入 1 至 65535 之间的端口。"
+    },
+    "folders": {
+      "title": "媒体库文件夹",
+      "none": "暂无文件夹。",
+      "hint": "从浏览器添加的文件夹必须位于其中某个文件夹内。",
+      "add": "添加文件夹",
+      "path": "文件夹路径",
+      "removeFor": "移除 {{path}}",
+      "remove": "移除"
+    },
+    "accounts": {
+      "warning": "尚无账户可以登录：请在共享前先添加账户。"
+    },
+    "fromEnvironment": "以下设置由环境变量指定，无法在此更改：{{names}}",
+    "signOutAll": {
+      "button": "让所有浏览器退出登录",
+      "confirm": "所有已登录共享地址的浏览器都需要重新登录。",
+      "submit": "让所有浏览器退出登录",
+      "done": "所有浏览器已退出登录。",
+      "failed": "无法让浏览器退出登录。"
+    },
+    "notes": {
+      "title": "须知",
+      "lifetime": "只有在 VBLIS 打开期间才会共享。",
+      "firewall": "Windows 可能会询问是否允许 VBLIS 通过防火墙，请在专用网络中允许。",
+      "plainHttp": "未启用 HTTPS 时，密码和图片将以明文传输。在不可信的网络中请使用 HTTPS。",
+      "noWebUi": "此版本未安装网页界面。"
     }
   }
 }

@@ -12,7 +12,10 @@
     "visualDetected_other": "在另外 {{count}} 个位置发现视觉重复（相似度 98.5% 以上）",
     "alsoFoundAt": "同时位于：",
     "copyPath": "复制路径",
-    "showPathInExplorer": "在资源管理器中显示 {{path}}"
+    "showPathInExplorer": "在资源管理器中显示 {{path}}",
+    "previous": "上一张",
+    "next": "下一张",
+    "position": "{{current}} / {{total}}"
   },
   "originals": {
     "open": "打开原件",

@@ -31,7 +31,7 @@ export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTh
       {/* Video Matches */}
       {videoGroups.length > 0 && (
         <section className={imageResults.length > 0 ? 'mb-10' : ''}>
-          <div className="mb-4 flex items-center gap-2.5 text-neutral-800 dark:text-neutral-200 border-b border-gray-100 dark:border-neutral-800 pb-3">
+          <div className="mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-neutral-800 dark:text-neutral-200 border-b border-gray-100 dark:border-neutral-800 pb-3">
             <FolderOpen className="w-5 h-5 text-indigo-500" />
             <h3 className="text-lg font-bold">{isBrowsing ? t('results.videos') : t('results.videoResults')}</h3>
             <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-full text-xs font-bold border border-indigo-100 dark:border-indigo-500/20">
@@ -41,7 +41,7 @@ export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTh
               {isBrowsing ? (browseSort === 'oldest' ? t('browse.sort.oldest') : t('browse.sort.newest')) : t('grid.sortedByBestMatch')}
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {videoGroups.map((group, idx) => (
               <VideoResultFolder
                 key={group.path}
@@ -59,7 +59,7 @@ export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTh
       {imageResults.length > 0 && (
         <section>
           {videoGroups.length > 0 && (
-            <div className="mb-4 flex items-center gap-2.5 text-neutral-800 dark:text-neutral-200 border-b border-gray-100 dark:border-neutral-800 pb-3">
+            <div className="mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-neutral-800 dark:text-neutral-200 border-b border-gray-100 dark:border-neutral-800 pb-3">
               <ImageIcon className="w-5 h-5 text-indigo-500" />
               <h3 className="text-lg font-bold">{isBrowsing ? t('results.images') : t('results.imageResults')}</h3>
               <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-full text-xs font-bold border border-indigo-100 dark:border-indigo-500/20">
@@ -67,7 +67,7 @@ export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTh
               </span>
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-6">
             {visibleImageResults.map((res, idx) => (
               <SearchResultCard
                 key={res.id || res.path}
@@ -84,7 +84,7 @@ export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTh
               <button
                 type="button"
                 onClick={() => setVisibleResultsCount(prev => Math.min(prev + 80, imageResults.length))}
-                className="px-6 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-2xl border border-indigo-200 dark:border-indigo-500/30 transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center gap-2"
+                className="min-h-10 px-6 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-2xl border border-indigo-200 dark:border-indigo-500/30 transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center gap-2"
               >
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>{t('grid.loadingMore', { shown: visibleResultsCount, total: imageResults.length })}</span>

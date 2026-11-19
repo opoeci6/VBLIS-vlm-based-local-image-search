@@ -30,12 +30,12 @@ const PlaceNode = ({ node, depth, selected, expanded, onToggle, onToggleExpanded
             aria-label={isExpanded ? t('tree.collapse', { name }) : t('tree.expand', { name })}
             aria-expanded={isExpanded}
             onClick={() => onToggleExpanded(node.id)}
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 cursor-pointer"
+            className="flex h-10 w-10 sm:h-7 sm:w-7 flex-shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 cursor-pointer"
           >
             {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
         ) : (
-          <span className="h-7 w-7 flex-shrink-0" aria-hidden="true" />
+          <span className="h-10 w-10 sm:h-7 sm:w-7 flex-shrink-0" aria-hidden="true" />
         )}
         <FilterToggle
           pressed={isSelected || included}

@@ -6,15 +6,15 @@ export const IndexingErrorsAlert = ({ showErrorAlert, setShowErrorAlert, status 
   if (!(showErrorAlert && status.failed_files && status.failed_files.length > 0)) return null;
 
   return (
-    <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
+    <div className="w-full max-w-7xl px-4 sm:px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
       <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl p-4 flex flex-col gap-3 relative overflow-hidden ring-1 ring-amber-500/10">
         <button
           onClick={() => setShowErrorAlert(false)}
-          className="absolute top-4 right-4 p-2 text-amber-500/60 hover:text-amber-700 dark:text-amber-400/60 dark:hover:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/10 rounded-xl transition-all"
+          className="absolute top-2 right-2 sm:top-4 sm:right-4 p-3 sm:p-2 text-amber-500/60 hover:text-amber-700 dark:text-amber-400/60 dark:hover:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/10 rounded-xl transition-all"
         >
           <X className="w-4 h-4" />
         </button>
-        <div className="flex items-center gap-3 text-amber-700 dark:text-amber-400">
+        <div className="flex items-center gap-3 pr-10 text-amber-700 dark:text-amber-400">
           <div className="icon-tile w-10 h-10 bg-amber-100 dark:bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0 border border-amber-200 dark:border-amber-500/20 text-amber-600 dark:text-amber-500">
             <AlertTriangle className="w-5 h-5" />
           </div>

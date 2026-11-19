@@ -25,7 +25,7 @@ export const SettingsSelect = ({ value, onChange, options, disabled, placeholder
         disabled={disabled}
         onClick={() => setIsOpen(prev => !prev)}
         className={cn(
-          "w-full flex items-center justify-between text-xs px-3 py-2 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+          "w-full flex items-center justify-between text-base sm:text-xs px-3 py-2 max-sm:min-h-10 rounded-xl bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
           isOpen && "border-indigo-500 ring-2 ring-indigo-500/20"
         )}
       >
@@ -46,7 +46,7 @@ export const SettingsSelect = ({ value, onChange, options, disabled, placeholder
                   setIsOpen(false);
                 }}
                 className={cn(
-                  "w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer",
+                  "w-full flex items-center justify-between text-base sm:text-xs px-2.5 py-2.5 sm:py-1.5 rounded-lg text-left transition-all cursor-pointer",
                   isSelected
                     ? "bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-bold"
                     : "text-neutral-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800"

@@ -25,7 +25,7 @@ export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
   return (
     <button
       onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-      className={`relative flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all duration-200 text-xs font-medium select-none cursor-pointer ${
+      className={`relative flex min-h-[40px] items-center gap-2 px-3 py-1.5 sm:min-h-0 rounded-xl transition-all duration-200 text-xs font-medium select-none cursor-pointer ${
         isModern
           ? isRunning
             ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 shadow-sm'
@@ -49,7 +49,7 @@ export const QueueStatusBadge = ({ queue, uiTheme = 'modern' }) => {
       )}
 
       {activeTask ? (
-        <div className="flex items-center gap-1.5 max-w-[170px] truncate">
+        <div className="flex items-center gap-1.5 max-w-[96px] sm:max-w-[170px] truncate">
           <span className="truncate">{taskTitle(activeTask)}</span>
           <span className="font-mono text-[11px] font-bold opacity-90">
             {activeTask.progress}%

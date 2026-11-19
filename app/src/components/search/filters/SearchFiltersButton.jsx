@@ -2,7 +2,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../../utils/cn';
 
-export const SearchFiltersButton = ({ activeCount = 0, isOpen = false, onToggle }) => {
+export const SearchFiltersButton = ({ activeCount = 0, isOpen = false, onToggle, className }) => {
   const { t } = useTranslation('filters');
   const label = activeCount > 0
     ? t('button.labelActive', { count: activeCount })
@@ -18,10 +18,11 @@ export const SearchFiltersButton = ({ activeCount = 0, isOpen = false, onToggle 
       aria-label={label}
       title={t('button.label')}
       className={cn(
-        'inline-flex items-center gap-2 px-4 py-3 border rounded-2xl transition-all active:scale-95 font-medium text-sm shadow-sm cursor-pointer',
+        'inline-flex items-center gap-2 px-4 py-3 border rounded-2xl transition-all active:scale-95 font-medium text-sm shadow-sm cursor-pointer whitespace-nowrap',
         activeCount > 0 || isOpen
           ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300'
-          : 'bg-white dark:bg-neutral-900/50 border-gray-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800'
+          : 'bg-white dark:bg-neutral-900/50 border-gray-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800',
+        className
       )}
     >
       <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />

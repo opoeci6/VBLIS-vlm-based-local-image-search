@@ -13,6 +13,7 @@ import accounts as acct
 import passwords
 import path_keys
 import sessions
+from account_admin import MESSAGES, NAME_INPUT_MAX, account_error, error  # noqa: F401 - also imported from here
 from auth_context import NETWORK, Auth, NetRequest, current_auth, net_request, optional_auth
 from server_config import ServerConfigError
 
@@ -20,20 +21,6 @@ router = APIRouter()
 
 # scrypt needs 32 MiB and a moment of CPU per attempt; this keeps a burst of attempts from piling up
 _hashing = threading.BoundedSemaphore(2)
-# Longer than any valid name, so a mistyped long name is a wrong name, not a malformed request
-NAME_INPUT_MAX = 128
-
-MESSAGES = {
-    **acct.MESSAGES,
-    "wrong_name_or_password": "Wrong name or password.",
-    "account_off": "This account is turned off.",
-    "no_owner_account": "The server has no owner account yet.",
-    "wrong_password": "The current password is wrong.",
-    "confirm_password": "Enter your password to confirm this change.",
-    "account_changed": "Your account was changed a moment ago. Reload the page and try again.",
-    "config_unreadable": "server.json can't be read, so nothing was changed.",
-}
-_CONFLICTS = {"name_taken", "too_many", "last_owner", "own_account"}
 
 
 class LoginRequest(BaseModel):
@@ -44,15 +31,6 @@ class LoginRequest(BaseModel):
 class OwnPasswordRequest(BaseModel):
     current_password: str = Field(..., max_length=passwords.MAX_LENGTH)
     new_password: str = Field(..., max_length=passwords.MAX_LENGTH)
-
-
-def error(status: int, code: str, headers=None):
-    return JSONResponse({"detail": MESSAGES.get(code, code), "code": code}, status_code=status, headers=headers)
-
-
-def account_error(exc: acct.AccountError):
-    status = 404 if exc.code == "no_account" else 409 if exc.code in _CONFLICTS else 400
-    return error(status, exc.code)
 
 
 def auth_for(account, client) -> Auth:
@@ -137,8 +115,11 @@ def confirm_own_password(net: NetRequest, auth: Auth, password, refund=True) -> 
 @router.post("/auth/login")
 def login(req: LoginRequest, response: Response, net: NetRequest = Depends(net_request)):
     config = net.store.ensure_secret()
-    if config.load_error or not config.has_owner:
+    if config.load_error or (net.require_owner and not config.has_owner):
         return error(503, "no_owner_account")
+    if not config.has_sign_in:
+        # Shared from the desktop app, which needs no owner account, but nobody can sign in yet
+        return error(503, "no_accounts")
     account = check_password(net, req.password, lambda current: current.account_by_name(req.name))
     if account is None:
         known = net.store.current().account_by_name(req.name)
@@ -156,6 +137,10 @@ def login(req: LoginRequest, response: Response, net: NetRequest = Depends(net_r
 
 @router.post("/auth/logout")
 def logout(response: Response, net: NetRequest = Depends(net_request)):
+    # The cookie stays valid until it expires (nothing is stored on the server), but a password
+    # confirmation remembered for this sign-in must not outlive it
+    if net.session is not None and net.confirmations is not None:
+        net.confirmations.forget(net.session.account_id, net.session.nonce)
     _clear_session_cookie(response, net)
     return {"signed_in": False}
 
@@ -181,6 +166,8 @@ def change_own_password(req: OwnPasswordRequest, response: Response, net: NetReq
     except ServerConfigError:
         return error(409, "config_unreadable")
     print(f"[Network] {auth.account_name} changed their password (from {net.client})")
+    if net.confirmations is not None:
+        net.confirmations.forget(auth.account_id)
     account = config.account_by_id(auth.account_id)
     if account is not None and account.can_sign_in:
         set_session_cookie(response, net, account)
@@ -191,6 +178,8 @@ def change_own_password(req: OwnPasswordRequest, response: Response, net: NetReq
 def sign_out_everywhere(response: Response, net: NetRequest = Depends(net_request),
                         auth: Auth = Depends(current_auth)):
     config = net.store.rotate_secret()
+    if net.confirmations is not None:
+        net.confirmations.clear()
     print(f"[Network] {auth.account_name} signed out every browser (from {net.client})")
     account = config.account_by_id(auth.account_id)
     if account is not None and account.can_sign_in:

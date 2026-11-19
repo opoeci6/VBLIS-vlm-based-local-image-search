@@ -125,6 +125,10 @@ def get_status(auth: Auth = Depends(current_auth)):
         or (active_task is not None and (active_task.get("is_paused") or active_task.get("status") == "paused"))
     )
     status["is_paused"] = is_paused
+    if not auth.is_network:
+        # The desktop app's title bar shows whether it shares; read from the listener, never server.json
+        listener = getattr(app_state, "network_listener", None)
+        status["sharing"] = listener.summary() if listener is not None else {"running": False, "problem": None}
     if not auth.is_owner:
         return {key: value for key, value in status.items() if key in VIEWER_STATUS_KEYS}
     return status

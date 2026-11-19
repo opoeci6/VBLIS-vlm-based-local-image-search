@@ -79,6 +79,10 @@
       {
         "from": "../api/dist/api",
         "to": "api"
+      },
+      {
+        "from": "dist",
+        "to": "web"
       }
     ],
     "win": {

@@ -73,7 +73,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
       {/* Progress Track */}
       <div className="space-y-1.5 mb-3">
         <div className="flex justify-between items-center text-xs font-mono">
-          <span className="text-[11px] text-neutral-600 dark:text-neutral-400 font-medium truncate max-w-[200px]" title={task.current_item}>
+          <span className="text-[11px] text-neutral-600 dark:text-neutral-400 font-medium truncate max-w-[200px] max-sm:max-w-[60%]" title={task.current_item}>
             {task.current_item ? t('activeTask.current', { item: task.current_item }) : t('activeTask.processing')}
           </span>
           <span className="font-bold text-neutral-900 dark:text-white ml-2">
@@ -109,7 +109,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
         {isPaused ? (
           <button
             onClick={() => onResume(task.id)}
-            className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+            className="flex-1 px-3 py-1.5 max-sm:min-h-10 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>{t('common:resume')}</span>
@@ -117,7 +117,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
         ) : (
           <button
             onClick={() => onPause(task.id)}
-            className="flex-1 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-gray-200 dark:border-neutral-700"
+            className="flex-1 px-3 py-1.5 max-sm:min-h-10 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-gray-200 dark:border-neutral-700"
           >
             <Pause className="w-3.5 h-3.5" />
             <span>{t('common:pause')}</span>
@@ -126,7 +126,7 @@ export const ActiveTaskCard = ({ task, onPause, onResume, onCancel, uiTheme = 'm
 
         <button
           onClick={() => onCancel(task.id)}
-          className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-rose-200 dark:border-rose-500/30"
+          className="px-3 py-1.5 max-sm:min-h-10 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors border border-rose-200 dark:border-rose-500/30"
           title={t('activeTask.cancelTitle')}
         >
           <Square className="w-3.5 h-3.5" />

@@ -74,4 +74,11 @@ describe('ModelDownloadBanner', () => {
     const button = screen.getByRole('button', { name: 'Cancelling...' });
     expect(button.disabled).toBe(true);
   });
+
+  it('uses the small phone padding and wraps its rows', () => {
+    const { container } = render(<ModelDownloadBanner status={makeStatus()} pendingModel="org/model-x" handleCancelDownload={vi.fn()} />);
+    expect(container.firstChild.className).toContain('px-4');
+    expect(container.firstChild.className).toContain('sm:px-6');
+    expect(container.querySelectorAll('.flex-wrap').length).toBeGreaterThanOrEqual(2);
+  });
 });

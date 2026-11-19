@@ -290,9 +290,12 @@ def add(accounts, name, role, password_hash, permissions=None) -> tuple:
     return accounts + (account,), account
 
 
-def update(accounts, account_id, name=None, role=None, permissions=None, disabled=None, acting_id=None) -> tuple:
+def update(accounts, account_id, name=None, role=None, permissions=None, disabled=None, acting_id=None,
+           keep_owner=True) -> tuple:
     """Rename, change the role, the permissions, or turn the account on or off. `acting_id` is the
-    account making the change from a browser: it can't turn itself off or demote itself."""
+    account making the change from a browser: it can't turn itself off or demote itself. keep_owner=False
+    is for the desktop app, which is the owner itself and so can't lock anyone out: the last owner
+    account may then be turned off or demoted."""
     target = find(accounts, account_id)
     if target is None:
         raise AccountError("no_account")
@@ -318,7 +321,8 @@ def update(accounts, account_id, name=None, role=None, permissions=None, disable
             raise AccountError("own_account")
     updated = replace(target, **changes)
     after = tuple(updated if account.id == account_id else account for account in accounts)
-    _keeps_an_owner(accounts, after)
+    if keep_owner:
+        _keeps_an_owner(accounts, after)
     return after
 
 
@@ -340,11 +344,17 @@ def sign_out(accounts, account_id) -> tuple:
                  for account in accounts)
 
 
-def remove(accounts, account_id, acting_id=None) -> tuple:
+def remove(accounts, account_id, acting_id=None, keep_owner=True) -> tuple:
+    """Delete an account. keep_owner=False: see update()."""
     if find(accounts, account_id) is None:
         raise AccountError("no_account")
     if acting_id is not None and acting_id == account_id:
         raise AccountError("own_account")
     after = tuple(account for account in accounts if account.id != account_id)
-    _keeps_an_owner(accounts, after)
+    if keep_owner:
+        _keeps_an_owner(accounts, after)
     return after
+
+
+def can_sign_in_count(accounts) -> int:
+    return sum(1 for account in accounts if account.can_sign_in)

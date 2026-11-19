@@ -22,7 +22,8 @@
       "busyNoWait": "服务器正忙，请稍后重试。",
       "noOwnerAccount": "服务器尚未添加所有者账户。请在服务器上执行：<code>add-account NAME --role owner</code>",
       "network": "无法连接到服务器。请检查网络连接后重试。",
-      "generic": "登录失败（HTTP {{status}}）。"
+      "generic": "登录失败（HTTP {{status}}）。",
+      "noAccounts": "目前没有可以登录的账户。请在共享的电脑上的 VBLIS 应用中添加账户。"
     }
   },
   "role": {
@@ -31,6 +32,9 @@
   },
   "signedInAs": "登录身份：{{name}} · {{role}}",
   "signOut": "退出登录",
+  "headerMenu": {
+    "label": "账户与外观"
+  },
   "viewer": {
     "noModelTitle": "所有者尚未设置模型",
     "noModelDesc": "所有者在服务器上设置模型后即可搜索。"
@@ -109,12 +113,25 @@
         "own_account": "不能删除、停用或降级自己的账户。",
         "too_many": "最多只能有 50 个账户。",
         "no_account": "此账户已不存在。",
-        "config_unreadable": "无法读取服务器的设置文件，未做任何更改。"
+        "config_unreadable": "无法读取服务器的设置文件，未做任何更改。",
+        "no_accounts": "尚无账户可以登录。请先添加账户。",
+        "from_environment": "此设置由环境变量指定，无法在此更改。",
+        "invalid_setting": "此设置无效。",
+        "start_failed": "共享无法启动。",
+        "stopped_not_saved": "共享已停止，但无法保存此设置，因此下次启动应用时会再次开启共享。",
+        "port_in_use": "该端口已被其他程序占用。请换一个端口。",
+        "tls_file_missing": "使用自有证书文件的 HTTPS 需要证书文件和密钥文件，且两者都必须存在。",
+        "tls_invalid": "证书文件或密钥文件无效。",
+        "tls_failed": "无法创建自签名证书。",
+        "tls_unavailable": "此版本无法使用自签名 HTTPS。",
+        "config_unwritable": "无法写入设置文件。",
+        "public_needs_https": "允许从互联网访问需要 HTTPS，可由 VBLIS 自身提供，也可由其前方受信任的代理提供。"
       },
       "tooManyAttempts_other": "尝试次数过多，请在 {{count}} 秒后重试。",
       "tooManyAttemptsNoWait": "尝试次数过多，请稍后重试。",
       "generic": "服务器拒绝了此更改（HTTP {{status}}）。",
-      "network": "无法连接到服务器。"
+      "network": "无法连接到服务器。",
+      "invalidSetting": "此设置无效：{{reason}}"
     }
   },
   "accounts": {
@@ -214,7 +231,8 @@
         "places": "允许 {{name}} 查看图片位置信息并按地点筛选？",
         "desc": "这会扩大 {{name}} 的访问权限，因此需要输入当前账户的密码。之后再关闭则不需要。",
         "submit": "允许"
-      }
+      },
+      "again": "请再次输入当前账户的密码以确认。"
     },
     "done": {
       "added": "已添加账户 {{name}}。",

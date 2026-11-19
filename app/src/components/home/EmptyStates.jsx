@@ -13,7 +13,7 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
   const { isOwner } = useSession();
   if (filtersActive) {
     return (
-      <div className="flex flex-col items-center justify-center mt-32 gap-3">
+      <div className="flex flex-col items-center justify-center mt-16 sm:mt-32 gap-3 text-center">
         <Search className="w-16 h-16 mb-1 text-neutral-400 dark:text-neutral-600 opacity-50" />
         <p className="text-xl text-neutral-800 dark:text-neutral-300 font-bold">
           {browsing ? t('noMatches.filtered.browsingTitle') : t('noMatches.filtered.searchTitle')}
@@ -22,7 +22,7 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
           {browsing ? t('noMatches.filtered.browsingHint') : t('noMatches.filtered.searchHint')}
         </p>
         {isOwner && missingDetails > 0 && (
-          <div className="flex flex-col items-center gap-2" data-testid="no-matches-details-hint">
+          <div className="flex flex-col items-center gap-2 text-center" data-testid="no-matches-details-hint">
             <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">
               {t('noMatches.missingDetails', { count: missingDetails, formatted: formatNumber(missingDetails) })}
             </p>
@@ -35,7 +35,7 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
               <button
                 type="button"
                 onClick={onReadDetails}
-                className="px-4 py-2 border border-indigo-600 text-indigo-700 dark:text-indigo-300 rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+                className="min-h-[40px] px-4 py-2 border border-indigo-600 text-indigo-700 dark:text-indigo-300 rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
               >
                 {t('common:readDetailsNow')}
               </button>
@@ -45,7 +45,7 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
         <button
           type="button"
           onClick={onClearFilters}
-          className="mt-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+          className="mt-1 min-h-[40px] px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
         >
           {t('noMatches.clearFilters')}
         </button>
@@ -54,14 +54,14 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
   }
   if (browsing) {
     return (
-      <div className="flex flex-col items-center justify-center mt-32 opacity-50">
+      <div className="flex flex-col items-center justify-center mt-16 sm:mt-32 opacity-50 text-center">
         <Search className="w-16 h-16 mb-4 text-neutral-400 dark:text-neutral-600" />
         <p className="text-xl text-neutral-800 dark:text-neutral-300 font-bold">{t('noMatches.browseEmpty')}</p>
       </div>
     );
   }
   return (
-    <div className="flex flex-col items-center justify-center mt-32 opacity-50">
+    <div className="flex flex-col items-center justify-center mt-16 sm:mt-32 opacity-50 text-center">
       <Search className="w-16 h-16 mb-4 text-neutral-400 dark:text-neutral-600" />
       <p className="text-xl mb-1 text-neutral-800 dark:text-neutral-300 font-bold">{t('noMatches.title')}</p>
       <p className="text-sm text-neutral-500 dark:text-neutral-500 font-medium">{t('noMatches.hint')}</p>
@@ -72,13 +72,13 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
 export const BackendLoading = ({ isSwitchingModel }) => {
   const { t } = useTranslation('home');
   return (
-    <div className="flex flex-col items-center justify-center mt-32 gap-6 animate-in fade-in duration-1000">
+    <div className="flex flex-col items-center justify-center mt-16 sm:mt-32 gap-6 animate-in fade-in duration-1000">
       <div className="w-24 h-24 rounded-full bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center relative">
         <div className="absolute inset-0 rounded-full border border-indigo-200 dark:border-indigo-500/20 animate-spin opacity-30" style={{ animationDuration: '3s' }} />
         <Loader2 className="w-10 h-10 text-indigo-500 dark:text-indigo-400 opacity-80 animate-spin" style={{ animationDuration: '2s' }} />
       </div>
       <div className="text-center space-y-2">
-        <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">{isSwitchingModel ? t('loading.switchingTitle') : t('loading.initializingTitle')}</h2>
+        <h2 className="text-xl sm:text-2xl font-light text-neutral-800 dark:text-neutral-300">{isSwitchingModel ? t('loading.switchingTitle') : t('loading.initializingTitle')}</h2>
         <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">{isSwitchingModel ? t('loading.switchingDesc') : t('loading.initializingDesc')}</p>
       </div>
     </div>
@@ -99,7 +99,7 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
           <ImageIcon className="w-10 h-10 text-amber-500 dark:text-amber-400 opacity-80" />
         </div>
         <div className="text-center space-y-3 flex flex-col items-center">
-          <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('session:viewer.noModelTitle')}</h2>
+          <h2 className="text-xl sm:text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('session:viewer.noModelTitle')}</h2>
           <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">{t('session:viewer.noModelDesc')}</p>
         </div>
       </div>
@@ -114,20 +114,20 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
           <ImageIcon className="w-10 h-10 text-amber-500 dark:text-amber-400 opacity-80" />
         </div>
         <div className="text-center space-y-3 flex flex-col items-center">
-          <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('setup.noModelTitle')}</h2>
+          <h2 className="text-xl sm:text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('setup.noModelTitle')}</h2>
           <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
             {t('setup.noModelDesc')}
           </p>
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
             <button
               onClick={() => handleModelSwitch(downloadedModels[0].id)}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg transition-all text-xs font-semibold hover:scale-105 active:scale-95 cursor-pointer"
+              className="min-h-[44px] px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg transition-all text-xs font-semibold hover:scale-105 active:scale-95 cursor-pointer"
             >
               {t('setup.activate', { name: downloadedModels[0].id.split('/').pop() })}
             </button>
             <button
               onClick={() => setShowSettings(true)}
-              className="px-5 py-2.5 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-xs font-semibold hover:scale-105 active:scale-95 cursor-pointer"
+              className="min-h-[44px] px-5 py-2.5 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-xs font-semibold hover:scale-105 active:scale-95 cursor-pointer"
             >
               {t('common:openSettings')}
             </button>
@@ -144,18 +144,18 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
         <ImageIcon className="w-10 h-10 text-rose-400 opacity-80" />
       </div>
       <div className="text-center space-y-3 flex flex-col items-center">
-        <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('setup.requiredTitle')}</h2>
+        <h2 className="text-xl sm:text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('setup.requiredTitle')}</h2>
         <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">{t('setup.requiredDesc')}</p>
-        <div className="flex items-center gap-3 mt-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
           <button
             onClick={() => handleDownloadModel(pendingModel)}
-            className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg transition-all font-medium text-sm hover:scale-105 active:scale-95 cursor-pointer"
+            className="min-h-[44px] px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg transition-all font-medium text-sm hover:scale-105 active:scale-95 cursor-pointer"
           >
             {t('setup.download', { name: pendingModel === "openai/clip-vit-base-patch32" ? t('setup.openaiClip') : pendingModel.split('/').pop() })}
           </button>
           <button
             onClick={() => setShowSettings(true)}
-            className="px-5 py-3 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-sm font-semibold hover:scale-105 active:scale-95 cursor-pointer"
+            className="min-h-[44px] px-5 py-3 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-sm font-semibold hover:scale-105 active:scale-95 cursor-pointer"
           >
             {t('common:openSettings')}
           </button>
@@ -176,7 +176,7 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
       <div className="flex flex-col items-center justify-center mt-3 gap-2 animate-in fade-in duration-1000">
         <AsciiLogo />
         <div data-ascii-protected="true" className="text-center space-y-2 flex flex-col items-center">
-          <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('ready.title')}</h2>
+          <h2 className="text-xl sm:text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('ready.title')}</h2>
           <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
             {indexedFolders.length > 0
               ? t('ready.foldersReady', { count: indexedFolders.length })
@@ -184,19 +184,19 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
           </p>
           <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">{t('ready.browseHint')}</p>
           {tip && <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">{tip}</p>}
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
             <button
               onClick={() => setShowSettings(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
+              className="inline-flex max-w-full min-h-[40px] sm:min-h-0 items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
             >
               <div className="model-status-dot model-status-dot-online w-2 h-2 flex-shrink-0" aria-hidden="true" />
-              <span>{t('ready.activeModelLabel')} <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
+              <span className="min-w-0 break-all">{t('ready.activeModelLabel')} <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
             </button>
             {isOwner && (
               <button
                 onClick={handleUnloadModel}
                 disabled={isUnloadingModel || status.is_indexing}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                className="inline-flex min-h-[40px] sm:min-h-0 items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
                 title={status.is_indexing ? t('common:ejectTooltip.indexing') : t('common:ejectTooltip.idle')}
               >
                 <LogOut className="w-3.5 h-3.5 text-rose-500" />
@@ -213,7 +213,7 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
           <ImageIcon className="w-10 h-10 text-indigo-500 dark:text-indigo-400 opacity-80" />
         </div>
         <div className="text-center space-y-3 flex flex-col items-center">
-          <h2 className="text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('ready.title')}</h2>
+          <h2 className="text-xl sm:text-2xl font-light text-neutral-800 dark:text-neutral-300">{t('ready.title')}</h2>
           <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">
             {indexedFolders.length > 0
               ? t('ready.foldersReady', { count: indexedFolders.length })
@@ -221,19 +221,19 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
           </p>
           <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">{t('ready.browseHint')}</p>
           {tip && <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">{tip}</p>}
-          <div className="flex items-center gap-2 mt-2">
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
             <button
               onClick={() => setShowSettings(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
+              className="inline-flex max-w-full min-h-[40px] sm:min-h-0 items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
             >
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>{t('ready.activeModelLabel')} <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
+              <span className="min-w-0 break-all">{t('ready.activeModelLabel')} <span className="font-mono font-bold">{models.active_model.split('/').pop()}</span></span>
             </button>
             {isOwner && (
               <button
                 onClick={handleUnloadModel}
                 disabled={isUnloadingModel || status.is_indexing}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                className="inline-flex min-h-[40px] sm:min-h-0 items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-700 dark:text-neutral-300 hover:text-rose-600 dark:hover:text-rose-400 border border-gray-200 dark:border-neutral-700 hover:border-rose-300 dark:hover:border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
                 title={status.is_indexing ? t('common:ejectTooltip.indexing') : t('common:ejectTooltip.idle')}
               >
                 <LogOut className="w-3.5 h-3.5 text-rose-500" />

@@ -278,6 +278,14 @@ describe('SessionGate', () => {
         expect(alert.querySelector('code').textContent).toBe('add-account NAME --role owner');
       });
 
+      it('points to the VBLIS app when the desktop app shares but no account can sign in', async () => {
+        routes['POST /auth/login'] = () => reply(503, { detail: 'No account can sign in yet.', code: 'no_accounts' });
+        renderGate();
+        await signIn();
+        expect((await screen.findByRole('alert')).textContent)
+          .toBe('No account can sign in yet. Add one in the VBLIS app on the computer that shares.');
+      });
+
       it('reports a network error', async () => {
         routes['POST /auth/login'] = () => { throw new TypeError('offline'); };
         renderGate();

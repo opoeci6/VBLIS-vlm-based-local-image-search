@@ -27,7 +27,7 @@ describe('useAccounts', () => {
     .map(([, init]) => ({ init, body: init?.body ? JSON.parse(init.body) : undefined }));
 
   const renderAccounts = async () => {
-    const view = renderHook(() => useAccounts());
+    const view = renderHook(() => useAccounts({ mode: 'network' }));
     await waitFor(() => expect(view.result.current.isLoading).toBe(false));
     return view;
   };
@@ -50,7 +50,7 @@ describe('useAccounts', () => {
 
   describe('loading', () => {
     it('is empty with default limits until the list arrives, then holds it', async () => {
-      const view = renderHook(() => useAccounts());
+      const view = renderHook(() => useAccounts({ mode: 'network' }));
       expect(view.result.current.isLoading).toBe(true);
       expect(view.result.current.accounts).toEqual([]);
       expect(view.result.current.limits).toEqual({ max_accounts: 50, name_max: 32, password_min: 8, password_max: 256 });
@@ -209,5 +209,159 @@ describe('useAccounts', () => {
     expect(view.result.current.accounts[1].name).toBe('second');
     await act(async () => { answers[0](reply(listWith('first'))); await first; });
     expect(view.result.current.accounts[1].name).toBe('second');
+  });
+});
+
+describe('useAccounts by mode', () => {
+  let routes;
+  let fetchMock;
+
+  const calls = (route) => fetchMock.mock.calls
+    .filter(([url, init]) => `${init?.method || 'GET'} ${new URL(String(url)).pathname}` === route)
+    .map(([, init]) => ({ init, body: init?.body ? JSON.parse(init.body) : undefined }));
+
+  const renderAccounts = async (mode) => {
+    const view = renderHook(() => useAccounts(mode ? { mode } : undefined));
+    await waitFor(() => expect(view.result.current.isLoading).toBe(false));
+    return view;
+  };
+
+  beforeEach(() => {
+    routes = {};
+    fetchMock = vi.fn(async (url, init) => {
+      const key = `${init?.method || 'GET'} ${new URL(String(url)).pathname}`;
+      const handler = routes[key];
+      if (!handler) throw new Error(`unexpected ${key}`);
+      return handler(init);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  describe('desktop', () => {
+    const DESKTOP_LIST = { ...LIST, you: null, confirm_remembered_s: 0 };
+
+    beforeEach(() => {
+      routes['GET /sharing/accounts'] = () => reply(DESKTOP_LIST);
+    });
+
+    it('is the default mode of the session (the desktop) and loads /sharing/accounts', async () => {
+      const view = await renderAccounts();
+      expect(calls('GET /sharing/accounts')).toHaveLength(1);
+      expect(view.result.current.accounts).toEqual(LIST.accounts);
+      expect(view.result.current.you).toBeNull();
+    });
+
+    it('adds with POST and sends no current_password', async () => {
+      routes['POST /sharing/accounts'] = () => reply(DESKTOP_LIST);
+      const view = await renderAccounts('desktop');
+      const permissions = { originals: false, image_search: true, places: false };
+      await act(async () => {
+        await view.result.current.add({ name: 'carol', role: 'viewer', password: 'pw-12345', permissions, currentPassword: 'ignored' });
+      });
+      expect(calls('POST /sharing/accounts')[0].body).toEqual({ name: 'carol', role: 'viewer', password: 'pw-12345', permissions });
+    });
+
+    it('updates with POST (not PATCH) and never sends a password', async () => {
+      routes['POST /sharing/accounts/v%2F1'] = () => reply(DESKTOP_LIST);
+      const view = await renderAccounts('desktop');
+      await act(async () => { await view.result.current.update('v/1', { name: 'robert' }, 'ignored'); });
+      expect(calls('POST /sharing/accounts/v%2F1')[0].body).toEqual({ name: 'robert' });
+    });
+
+    it('sets a password, signs out and deletes without any password', async () => {
+      routes['POST /sharing/accounts/v1/password'] = () => reply(DESKTOP_LIST);
+      routes['POST /sharing/accounts/v1/sign-out'] = () => reply(DESKTOP_LIST);
+      routes['POST /sharing/accounts/v1/delete'] = () => reply({ ...DESKTOP_LIST, accounts: [LIST.accounts[0]] });
+      const view = await renderAccounts('desktop');
+      await act(async () => { await view.result.current.setPassword('v1', 'new-pass-1', 'ignored'); });
+      expect(calls('POST /sharing/accounts/v1/password')[0].body).toEqual({ new_password: 'new-pass-1' });
+      await act(async () => { await view.result.current.signOut('v1'); });
+      expect(calls('POST /sharing/accounts/v1/sign-out')[0].init).toEqual({ method: 'POST' });
+      await act(async () => { await view.result.current.remove('v1', 'ignored'); });
+      expect(calls('POST /sharing/accounts/v1/delete')[0].init).toEqual({ method: 'POST' });
+      expect(view.result.current.accounts).toHaveLength(1);
+    });
+
+    it('has no request body with a current_password anywhere', async () => {
+      routes['POST /sharing/accounts'] = () => reply(DESKTOP_LIST);
+      routes['POST /sharing/accounts/a1'] = () => reply(DESKTOP_LIST);
+      routes['POST /sharing/accounts/a1/password'] = () => reply(DESKTOP_LIST);
+      const view = await renderAccounts('desktop');
+      await act(async () => {
+        await view.result.current.add({ name: 'x', role: 'owner', password: 'pw-12345', currentPassword: 'p' });
+        await view.result.current.update('a1', { disabled: true }, 'p');
+        await view.result.current.setPassword('a1', 'pw-12345', 'p');
+      });
+      const bodies = fetchMock.mock.calls.map(([, init]) => init?.body ?? '');
+      expect(bodies.some((body) => body.includes('current_password'))).toBe(false);
+    });
+
+    it('never counts a password as remembered', async () => {
+      const view = await renderAccounts('desktop');
+      expect(view.result.current.isConfirmRemembered()).toBe(false);
+    });
+  });
+
+  describe('network', () => {
+    beforeEach(() => {
+      routes['GET /server/accounts'] = () => reply(LIST);
+    });
+
+    it('remembers a password for as long as the answer says, counted from now', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      routes['GET /server/accounts'] = () => reply({ ...LIST, confirm_remembered_s: 300, limits: { ...LIST.limits, confirm_remember_s: 300 } });
+      const view = await renderAccounts('network');
+      expect(view.result.current.isConfirmRemembered()).toBe(true);
+      vi.setSystemTime(new Date('2026-01-01T00:04:59Z'));
+      expect(view.result.current.isConfirmRemembered()).toBe(true);
+      vi.setSystemTime(new Date('2026-01-01T00:05:01Z'));
+      expect(view.result.current.isConfirmRemembered()).toBe(false);
+    });
+
+    it('remembers nothing when the answer carries no memory or zero seconds', async () => {
+      const view = await renderAccounts('network');
+      expect(view.result.current.isConfirmRemembered()).toBe(false);
+      routes['PATCH /server/accounts/v1'] = () => reply({ ...LIST, confirm_remembered_s: 0 });
+      await act(async () => { await view.result.current.update('v1', { name: 'x' }); });
+      expect(view.result.current.isConfirmRemembered()).toBe(false);
+    });
+
+    it('takes a new memory from the answer to a change, and forgets it on request', async () => {
+      routes['PATCH /server/accounts/v1'] = () => reply({ ...LIST, confirm_remembered_s: 120 });
+      const view = await renderAccounts('network');
+      await act(async () => { await view.result.current.update('v1', { name: 'x' }, 'mine'); });
+      expect(view.result.current.isConfirmRemembered()).toBe(true);
+      act(() => view.result.current.forgetConfirm());
+      expect(view.result.current.isConfirmRemembered()).toBe(false);
+    });
+
+    it('forgets the memory after a wrong or missing password', async () => {
+      routes['GET /server/accounts'] = () => reply({ ...LIST, confirm_remembered_s: 300 });
+      routes['POST /server/accounts/v1/delete'] = () => reply({ detail: 'x', code: 'confirm_password' }, 403);
+      routes['PATCH /server/accounts/v1'] = () => reply({ detail: 'x', code: 'wrong_password' }, 403);
+      const view = await renderAccounts('network');
+      expect(view.result.current.isConfirmRemembered()).toBe(true);
+      await act(async () => { await view.result.current.remove('v1'); });
+      expect(view.result.current.isConfirmRemembered()).toBe(false);
+
+      await act(async () => { await view.result.current.reload(); });
+      expect(view.result.current.isConfirmRemembered()).toBe(true);
+      await act(async () => { await view.result.current.update('v1', { name: 'x' }, 'bad'); });
+      expect(view.result.current.isConfirmRemembered()).toBe(false);
+    });
+
+    it('sends a delete without a password as an empty body', async () => {
+      routes['POST /server/accounts/v1/delete'] = () => reply(LIST);
+      const view = await renderAccounts('network');
+      await act(async () => { await view.result.current.remove('v1'); });
+      expect(calls('POST /server/accounts/v1/delete')[0].body).toEqual({});
+    });
   });
 });

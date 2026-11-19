@@ -114,3 +114,38 @@ describe('SearchResultCard without a score (library view)', () => {
     expect(screen.queryByText(formatTakenDate('2024-03-12T10:00:00'))).toBeNull();
   });
 });
+
+describe('SearchResultCard on a phone and on touch screens', () => {
+  afterEach(cleanup);
+
+  const overlayOf = () => screen.getByText('cat.jpg').parentElement.parentElement;
+
+  it('is a square below sm and keeps its fixed height from sm up', () => {
+    const { container } = render(<SearchResultCard res={imageRes()} idx={0} onSelect={() => {}} />);
+    const classes = container.firstChild.className.split(/\s+/);
+    expect(classes).toContain('aspect-square');
+    expect(classes).toContain('sm:aspect-auto');
+    expect(classes).toContain('sm:h-[250px]');
+    expect(classes).not.toContain('h-[250px]');
+  });
+
+  it.each(['modern', 'terminal'])('shows the details without hover on a device that cannot hover (%s theme)', (uiTheme) => {
+    render(<SearchResultCard res={imageRes()} idx={0} onSelect={() => {}} uiTheme={uiTheme} />);
+    const overlay = overlayOf();
+    expect(overlay.className).toContain('opacity-0');
+    expect(overlay.className).toContain('group-hover:opacity-100');
+    expect(overlay.className).toContain('[@media(hover:none)]:opacity-100');
+    expect(overlay.firstChild.className).toContain('[@media(hover:none)]:translate-y-0');
+  });
+
+  it('truncates the duplicate badge text so it fits a small card', () => {
+    render(
+      <SearchResultCard
+        res={imageRes({ isDuplicate: true, duplicateType: 'visual', dupeColor: '#f59e0b', otherPaths: ['/b.jpg', '/c.jpg'] })}
+        idx={0}
+        onSelect={() => {}}
+      />
+    );
+    expect(screen.getByText(/Visual Duplicate \(3\)/).className).toContain('truncate');
+  });
+});

@@ -24,7 +24,8 @@
       "busyNoWait": "The server is busy. Try again later.",
       "noOwnerAccount": "The server has no owner account yet. Add one on the server: <code>add-account NAME --role owner</code>",
       "network": "Could not reach the server. Check your connection and try again.",
-      "generic": "Sign-in failed (HTTP {{status}})."
+      "generic": "Sign-in failed (HTTP {{status}}).",
+      "noAccounts": "No account can sign in yet. Add one in the VBLIS app on the computer that shares."
     }
   },
   "role": {
@@ -33,6 +34,9 @@
   },
   "signedInAs": "Signed in as {{name}} · {{role}}",
   "signOut": "Sign out",
+  "headerMenu": {
+    "label": "Account and appearance"
+  },
   "viewer": {
     "noModelTitle": "The owner hasn't set up a model yet",
     "noModelDesc": "Search will be available once the owner sets one up on the server."
@@ -113,13 +117,26 @@
         "own_account": "You can't delete, turn off or demote your own account.",
         "too_many": "There can be at most 50 accounts.",
         "no_account": "This account no longer exists.",
-        "config_unreadable": "The server's settings file could not be read, so nothing was changed."
+        "config_unreadable": "The server's settings file could not be read, so nothing was changed.",
+        "no_accounts": "No account can sign in yet. Add one first.",
+        "from_environment": "This setting is set by an environment variable, so it can't be changed here.",
+        "invalid_setting": "That setting isn't valid.",
+        "start_failed": "Sharing couldn't start.",
+        "stopped_not_saved": "Sharing stopped, but the setting couldn't be saved, so it starts again with the app.",
+        "port_in_use": "The port is already in use by another program. Choose another port.",
+        "tls_file_missing": "HTTPS with your own files needs a certificate file and a key file, and both must exist.",
+        "tls_invalid": "The certificate file or the key file isn't valid.",
+        "tls_failed": "The self-signed certificate couldn't be created.",
+        "tls_unavailable": "Self-signed HTTPS isn't available in this build.",
+        "config_unwritable": "The settings file can't be written.",
+        "public_needs_https": "Access from the internet needs HTTPS, here or in a trusted proxy in front of VBLIS."
       },
       "tooManyAttempts_one": "Too many attempts. Try again in {{count}} second.",
       "tooManyAttempts_other": "Too many attempts. Try again in {{count}} seconds.",
       "tooManyAttemptsNoWait": "Too many attempts. Try again later.",
       "generic": "The server refused the change (HTTP {{status}}).",
-      "network": "Could not reach the server."
+      "network": "Could not reach the server.",
+      "invalidSetting": "That setting isn't valid: {{reason}}"
     }
   },
   "accounts": {
@@ -219,7 +236,8 @@
         "places": "Let {{name}} see places and filter by place?",
         "desc": "This gives {{name}} more access, so it needs your password. Switching it off again doesn't.",
         "submit": "Allow"
-      }
+      },
+      "again": "Enter your password again to confirm."
     },
     "done": {
       "added": "The account {{name}} was added.",

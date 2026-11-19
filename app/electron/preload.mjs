@@ -7,6 +7,7 @@ const apiToken = process.argv.find((arg) => arg.startsWith(TOKEN_ARG))?.slice(TO
 contextBridge.exposeInMainWorld('electronAPI', {
   apiToken,
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
+  openFile: (kind) => ipcRenderer.invoke('dialog:openFile', kind),
   openInExplorer: (filePath) => ipcRenderer.invoke('shell:openInExplorer', filePath),
   isDirectory: (filePath) => ipcRenderer.invoke('fs:isDirectory', filePath),
   getPathForFile: (file) => webUtils.getPathForFile(file),

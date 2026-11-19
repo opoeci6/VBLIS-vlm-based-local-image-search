@@ -119,9 +119,10 @@ export const IndexedFolderTree = ({
               } ${!folder.exists ? 'border-rose-200 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/5' : ''}`}
               title={rootTooltip}
             >
-              <div className="flex items-center justify-between gap-3">
+              {/* On a phone the actions sit on a row below the name, so the name keeps its room */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 {/* Left: Checkbox + Expand Button + Folder Info */}
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="flex items-center gap-0.5 sm:gap-2.5 min-w-0 flex-1">
                   {/* Root Checkbox */}
                   {isOwner && (
                     <button
@@ -130,30 +131,35 @@ export const IndexedFolderTree = ({
                         e.stopPropagation();
                         onToggleSelection(folder.path, false, folder);
                       }}
-                      className={`flex items-center justify-center w-5 h-5 rounded-lg border transition-all shrink-0 cursor-pointer ${
-                        isRootSelected || isAllSubsSelected
-                          ? 'bg-indigo-600 border-indigo-600 text-white'
-                          : isIndeterminate
-                          ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 text-indigo-600 dark:text-indigo-400'
-                          : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
-                      }`}
+                      className="flex items-center justify-center shrink-0 cursor-pointer max-sm:h-10 max-sm:w-10 max-sm:-ml-2.5"
                       title={isRootSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
+                      aria-label={isRootSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
                     >
-                      {isIndeterminate ? (
-                        <div className="w-2.5 h-0.5 bg-current rounded-full" />
-                      ) : (
-                        <svg
-                          className="w-3.5 h-3.5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="3.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
+                      <span
+                        className={`flex items-center justify-center w-5 h-5 rounded-lg border transition-all ${
+                          isRootSelected || isAllSubsSelected
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : isIndeterminate
+                            ? 'bg-indigo-100 dark:bg-indigo-500/20 border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                            : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
+                        }`}
+                      >
+                        {isIndeterminate ? (
+                          <div className="w-2.5 h-0.5 bg-current rounded-full" />
+                        ) : (
+                          <svg
+                            className="w-3.5 h-3.5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </span>
                     </button>
                   )}
 
@@ -165,8 +171,10 @@ export const IndexedFolderTree = ({
                         e.stopPropagation();
                         toggleExpand(folder.path);
                       }}
-                      className="p-1 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors shrink-0 cursor-pointer"
+                      className="p-1 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors shrink-0 cursor-pointer"
                       title={isExpanded ? t('tree.collapseSubfolders') : t('tree.expandSubfolders')}
+                      aria-label={isExpanded ? t('tree.collapseSubfolders') : t('tree.expandSubfolders')}
+                      aria-expanded={isExpanded}
                     >
                       {isExpanded ? (
                         <ChevronDown className="w-4 h-4 text-indigo-500" />
@@ -175,7 +183,7 @@ export const IndexedFolderTree = ({
                       )}
                     </button>
                   ) : (
-                    <div className="w-6 shrink-0" />
+                    <div className="w-6 shrink-0 max-sm:hidden" />
                   )}
 
                   {/* Folder Icon Tile */}
@@ -287,7 +295,7 @@ export const IndexedFolderTree = ({
                 </div>
 
                 {/* Right: Actions for Root Folder */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 max-sm:justify-end sm:shrink-0">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -295,8 +303,9 @@ export const IndexedFolderTree = ({
                       if (folder.exists) onBrowse(folder);
                     }}
                     disabled={!folder.exists}
-                    className="p-1.5 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                    className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                     title={folder.exists ? t('tree.viewGallery') : t('tree.folderMissingOrInaccessible')}
+                    aria-label={folder.exists ? t('tree.viewGallery') : t('tree.folderMissingOrInaccessible')}
                   >
                     <Eye className="w-4 h-4" />
                   </button>
@@ -310,8 +319,9 @@ export const IndexedFolderTree = ({
                         onReindex(folder.path);
                       }}
                       disabled={isIndexing}
-                      className="p-1.5 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
+                      className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
                       title={folder.exists ? t('tree.resyncRoot') : t('tree.resyncRootMissing')}
+                      aria-label={folder.exists ? t('tree.resyncRoot') : t('tree.resyncRootMissing')}
                     >
                       <RefreshCw className="w-4 h-4" />
                     </button>
@@ -325,8 +335,9 @@ export const IndexedFolderTree = ({
                         onDelete(folder.path);
                       }}
                       disabled={isIndexing}
-                      className="p-1.5 text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
+                      className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all disabled:opacity-30 cursor-pointer"
                       title={t('tree.deleteRoot')}
+                      aria-label={t('tree.deleteRoot')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -337,7 +348,7 @@ export const IndexedFolderTree = ({
 
             {/* Nested Recursive Subfolder Hierarchy */}
             {hasSubfolders && isExpanded && (
-              <div className="mt-1.5 ml-6 pl-4 border-l-2 border-dashed border-gray-200 dark:border-neutral-700/80 space-y-1.5 py-1 animate-in slide-in-from-top-1 fade-in duration-150">
+              <div className="mt-1.5 ml-3 pl-2.5 sm:ml-6 sm:pl-4 border-l-2 border-dashed border-gray-200 dark:border-neutral-700/80 space-y-1.5 py-1 animate-in slide-in-from-top-1 fade-in duration-150">
                 {folder.treeChildren.map((subNode) => (
                   <SubfolderTreeNode
                     key={subNode.path}

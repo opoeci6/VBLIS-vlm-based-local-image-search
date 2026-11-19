@@ -6,6 +6,8 @@ import { QueuedTaskList } from './QueuedTaskList';
 import { TaskHistoryList } from './TaskHistoryList';
 import { StopQueueModal } from './StopQueueModal';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { useBackToClose } from '../../hooks/useBackToClose';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { hasModelDependentTask, isModelDependentTask } from '../../utils/taskTypes';
 import { taskTitle } from '../../utils/taskTitle';
 
@@ -14,6 +16,9 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
   const [activeTab, setActiveTab] = useState('all');
   const isModern = uiTheme === 'modern';
   const backdropDismiss = useBackdropDismiss(onClose);
+  // The stop confirmation registers its own Esc above this one, so it closes first.
+  useEscapeKey(isOpen, onClose);
+  useBackToClose(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -71,21 +76,21 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
   return (
     <>
       <div
-        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+        className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
         {...backdropDismiss}
       >
         {/* Modal Dialog Card */}
         <div
-          className={`w-[780px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden rounded-3xl border animate-in zoom-in-95 duration-200 ${
+          className={`w-full sm:w-[780px] max-w-full h-dvh sm:h-auto sm:max-h-[85dvh] pt-safe pb-safe px-safe sm:p-0 flex flex-col shadow-2xl overflow-hidden sm:rounded-3xl sm:border animate-in zoom-in-95 duration-200 ${
             isModern
               ? 'bg-white dark:bg-neutral-900 border-gray-200 dark:border-neutral-800 text-neutral-900 dark:text-white'
-              : 'border-2 border-current bg-[var(--terminal-background)] text-[var(--terminal-foreground)]'
+              : 'sm:border-2 border-current bg-[var(--terminal-background)] text-[var(--terminal-foreground)]'
           }`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="p-6 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between bg-gray-50/50 dark:bg-neutral-900/50">
-            <div className="min-w-0 pr-4">
+          <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-start justify-between gap-y-3 bg-gray-50/50 dark:bg-neutral-900/50">
+            <div className="min-w-0 flex-1 pr-4">
               <div className="flex items-center gap-3">
                 <div className="icon-tile w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
                   <Layers className="w-5 h-5" />
@@ -103,11 +108,13 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0">
+            {/* On a phone this wrapper steps aside: the toggle gets a row of its own under the title */}
+            <div className="flex items-center gap-2.5 shrink-0 max-sm:contents">
               {/* Master Start / Pause Toggle */}
               <button
+                type="button"
                 onClick={handleMasterToggle}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-2xs ${
+                className={`px-3.5 py-1.5 max-sm:min-h-10 max-sm:order-last max-sm:w-full max-sm:justify-center rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-2xs ${
                   isPaused
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600'
                     : isStoppingAfterCurrent
@@ -135,9 +142,11 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
               </button>
 
               <button
+                type="button"
                 onClick={onClose}
-                className="p-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all"
+                className="p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center max-sm:shrink-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all"
                 title={t('common:close')}
+                aria-label={t('common:close')}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -145,11 +154,11 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
           </div>
 
           {/* Subheader / Tab Pills */}
-          <div className="px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2 bg-gray-50/40 dark:bg-neutral-800/20">
-            <div className="flex items-center gap-2">
+          <div className="px-4 sm:px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center justify-between gap-2 bg-gray-50/40 dark:bg-neutral-800/20">
+            <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
               <button
                 onClick={() => setActiveTab('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 max-sm:min-h-10 max-sm:flex-1 max-sm:justify-center rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                   activeTab === 'all'
                     ? isModern
                       ? 'bg-indigo-600 text-white shadow-xs'
@@ -157,13 +166,13 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                     : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-200/60 dark:border-neutral-700/60'
                 }`}
               >
-                <Layers className="w-3.5 h-3.5" />
+                <Layers className="w-3.5 h-3.5 max-sm:hidden" />
                 <span>{t('drawer.tabOverview')}</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('queued')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 max-sm:min-h-10 max-sm:flex-1 max-sm:justify-center rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                   activeTab === 'queued'
                     ? isModern
                       ? 'bg-indigo-600 text-white shadow-xs'
@@ -171,13 +180,13 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                     : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-200/60 dark:border-neutral-700/60'
                 }`}
               >
-                <Clock className="w-3.5 h-3.5" />
+                <Clock className="w-3.5 h-3.5 max-sm:hidden" />
                 <span>{t('drawer.tabQueued', { n: pendingCount })}</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('history')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 max-sm:min-h-10 max-sm:flex-1 max-sm:justify-center rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                   activeTab === 'history'
                     ? isModern
                       ? 'bg-indigo-600 text-white shadow-xs'
@@ -185,7 +194,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                     : 'bg-white dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-200/60 dark:border-neutral-700/60'
                 }`}
               >
-                <History className="w-3.5 h-3.5" />
+                <History className="w-3.5 h-3.5 max-sm:hidden" />
                 <span>{t('drawer.tabHistory', { n: historyCount })}</span>
               </button>
             </div>
@@ -198,7 +207,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
           </div>
 
           {/* Modal Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 sm:space-y-6 custom-scrollbar">
             {/* Model Mismatch / Missing Model Alert Banner */}
             {effectiveMismatch && (
               <div
@@ -233,7 +242,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                     <button
                       type="button"
                       onClick={() => controlWorker('adopt_active_model')}
-                      className="w-full sm:w-auto px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full sm:w-auto px-3.5 py-1.5 max-sm:min-h-10 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                       title={t('drawer.mismatch.retargetTitle', { model: effectiveMismatch.active_model })}
                     >
                       <span>{t('drawer.mismatch.proceed', { model: effectiveMismatch.active_model?.split('/').pop() })}</span>
@@ -250,7 +259,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                         onClose();
                         if (typeof onOpenSettings === 'function') onOpenSettings();
                       }}
-                      className="w-full sm:w-auto px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full sm:w-auto px-3.5 py-1.5 max-sm:min-h-10 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <span>{t('common:openSettings')}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -287,7 +296,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                     {pendingCount > 4 && (
                       <button
                         onClick={() => setActiveTab('queued')}
-                        className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        className="text-xs font-semibold max-sm:min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline"
                       >
                         {t('drawer.viewAllTasks', { count: pendingCount })}
                       </button>
@@ -313,7 +322,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                       {historyCount > 3 && (
                         <button
                           onClick={() => setActiveTab('history')}
-                          className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                          className="text-xs font-semibold max-sm:min-h-10 text-indigo-600 dark:text-indigo-400 hover:underline"
                         >
                           {t('drawer.viewAllEntries', { count: historyCount })}
                         </button>

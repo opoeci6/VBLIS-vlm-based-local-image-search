@@ -1,6 +1,7 @@
 import { AlertTriangle, X, ShieldAlert, Layers, Trash2, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { taskTitle } from '../../utils/taskTitle';
 
 export const ModelSwitchWarningModal = ({
@@ -17,6 +18,8 @@ export const ModelSwitchWarningModal = ({
 }) => {
   const { t } = useTranslation('settings');
   const backdropDismiss = useBackdropDismiss(onClose);
+  // It sits above Settings, so Esc closes it first.
+  useEscapeKey(isOpen, onClose);
 
   if (!isOpen) return null;
   const isModern = uiTheme === 'modern';
@@ -57,8 +60,11 @@ export const ModelSwitchWarningModal = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-lg"
+            className="p-1 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center max-sm:-mr-2 shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-lg"
+            title={t('common:close')}
+            aria-label={t('common:close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -106,16 +112,16 @@ export const ModelSwitchWarningModal = ({
 
         {/* Action Buttons */}
         {mode === 'active_task' ? (
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button
               onClick={onConfirmCancelAndSwitch}
-              className="flex-1 px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
+              className="flex-1 px-3 py-2 max-sm:min-h-10 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-colors shadow-xs"
             >
               {t('modelSwitch.cancelAndSwitch')}
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-bold transition-colors"
+              className="px-4 py-2 max-sm:min-h-10 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-bold transition-colors"
             >
               {t('modelSwitch.keepModel')}
             </button>
@@ -124,23 +130,23 @@ export const ModelSwitchWarningModal = ({
           <div className="flex flex-col gap-2">
             <button
               onClick={onConfirmProceedWithQueued}
-              className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+              className="w-full px-3 py-2 max-sm:min-h-10 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>{t('modelSwitch.proceed')}</span>
             </button>
 
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 onClick={onConfirmClearQueueAndSwitch}
-                className="flex-1 px-3 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                className="flex-1 px-3 py-2 max-sm:min-h-10 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>{t('modelSwitch.clearQueue')}</span>
               </button>
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-bold transition-colors"
+                className="px-4 py-2 max-sm:min-h-10 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-bold transition-colors"
               >
                 {t('common:cancel')}
               </button>

@@ -74,4 +74,11 @@ describe('HttpWarningBanner', () => {
   it('uses the key http_warning_dismissed', () => {
     expect(HTTP_WARNING_DISMISSED_KEY).toBe('http_warning_dismissed');
   });
+
+  it('uses the small phone padding and a 40 px dismiss target', () => {
+    const { container } = inSession(info('owner', false));
+    expect(container.firstChild.className).toContain('px-4');
+    expect(container.firstChild.className).toContain('sm:px-6');
+    expect(screen.getByRole('button', { name: 'Dismiss' }).className).toContain('p-3');
+  });
 });

@@ -146,6 +146,11 @@ describe('ModelCard', () => {
       expect(props.setShowConfirmDeleteModel).toHaveBeenCalledWith('org/model-a');
     });
 
+    it('gives the trash button a name, not only a tooltip', () => {
+      renderCard();
+      expect(screen.getByRole('button', { name: 'Delete local files' })).toBeTruthy();
+    });
+
     it('uses a different tooltip for partial files', () => {
       renderCard({ m: { id: 'org/model-a', downloaded: false, incomplete: true } });
       expect(screen.getByTitle('Delete partial files')).toBeTruthy();
