@@ -19,6 +19,7 @@ _ACCOUNT_ID = re.compile(r"^[0-9a-f]{12}$")
 class Session(NamedTuple):
     account_id: str
     expires: int
+    nonce: str = ""  # tells two sign-ins of one account apart (confirm_memory)
 
 
 def new_secret() -> str:
@@ -56,7 +57,7 @@ def verify(token, secret: str, find_account, scheme: str, now=None):
     parts = token.split(".")
     if len(parts) != 5:
         return None
-    version, account_id, expires_text, _nonce, signature = parts
+    version, account_id, expires_text, nonce, signature = parts
     if version != _VERSION or not _ACCOUNT_ID.match(account_id) or not expires_text.isdigit():
         return None
     account = find_account(account_id)
@@ -69,7 +70,7 @@ def verify(token, secret: str, find_account, scheme: str, now=None):
     expires = int(expires_text)
     if expires <= (time.time() if now is None else now):
         return None
-    return Session(account_id, expires)
+    return Session(account_id, expires, nonce)
 
 
 def cookie_name(scheme: str, port: int) -> str:

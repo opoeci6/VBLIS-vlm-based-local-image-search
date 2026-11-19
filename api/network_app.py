@@ -110,7 +110,10 @@ def build_core_app() -> FastAPI:
     return app
 
 
-def build_network_app(store, web_dir=None, port=8080, hostname=None, limiter=None, log=print) -> NetworkGate:
+def build_network_app(store, web_dir=None, port=8080, hostname=None, limiter=None, log=print,
+                      require_owner=True, confirmations=None) -> NetworkGate:
+    """require_owner=False when the desktop app shares (see NetworkListener). `confirmations` remembers
+    password confirmations in the Accounts window; a new gate starts with an empty one."""
     return NetworkGate(
         build_core_app(),
         ROUTE_TABLE,
@@ -120,4 +123,6 @@ def build_network_app(store, web_dir=None, port=8080, hostname=None, limiter=Non
         hostname=hostname,
         limiter=limiter or ratelimit.AttemptLimiter(),
         log=log,
+        require_owner=require_owner,
+        confirmations=confirmations,
     )

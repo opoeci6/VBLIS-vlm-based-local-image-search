@@ -20,6 +20,8 @@ Everyone signs in with their own **account**: a name and a password. Each accoun
 
 Names have up to 32 letters or digits (any language) and may use `.`, `_` and `-`; upper and lower case count as the same name. Passwords have at least 8 characters. There can be several owners; at least one has to stay. Every account can change its own password under **Settings**.
 
+In **Manage accounts**, a change that gives someone access (adding an account, a new password, turning a permission or an account on, a new name or role) asks for your own password. After you enter it, changes to viewers don't ask again for 5 minutes, in the same browser sign-in from the same address. Anything that could give someone owner access or lock you out always asks: adding an owner, making an account an owner, turning an owner back on, setting an owner's password, and any change to your own account. Signing out ends the 5 minutes early.
+
 Original files keep the location data the camera wrote. So a viewer with **Originals** on can still read where a photo was taken from a downloaded file, even with **Places** off.
 
 A browser can only index folders inside the **library folders** you list in the server settings, so nobody can reach other folders through the browser.

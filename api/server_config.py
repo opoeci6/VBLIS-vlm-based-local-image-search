@@ -76,13 +76,19 @@ class ServerConfig:
 
     @property
     def has_owner(self) -> bool:
-        """An owner account that can sign in exists; the listener doesn't start without one."""
+        """An owner account that can sign in exists; the command-line server doesn't start without one."""
         return acct.has_active_owner(self.accounts)
+
+    @property
+    def has_sign_in(self) -> bool:
+        """Any account can sign in; sharing from the desktop app doesn't start without one."""
+        return acct.can_sign_in_count(self.accounts) > 0
 
     def account_counts(self) -> dict:
         return {
             "owners": sum(1 for account in self.accounts if account.is_owner),
             "viewers": sum(1 for account in self.accounts if not account.is_owner),
+            "can_sign_in": acct.can_sign_in_count(self.accounts),
         }
 
     @property
@@ -291,14 +297,17 @@ def apply_env(config: ServerConfig, env) -> ServerConfig:
 
 # ---------------------------------------------------------------- checks before starting
 
-def start_problems(config: ServerConfig) -> list:
-    """(code, message) pairs that stop the listener from starting."""
+def start_problems(config: ServerConfig, require_owner=True) -> list:
+    """(code, message) pairs that stop the listener from starting. require_owner=False is for sharing
+    from the desktop app, which is the owner itself: then any account that can sign in is enough."""
     found = []
     if config.load_error:
         found.append(("config_unreadable", config.load_error))
         return found
-    if not config.has_owner:
+    if require_owner and not config.has_owner:
         found.append(("no_owner_account", "Add an owner account first: add-account NAME --role owner"))
+    elif not require_owner and not config.has_sign_in:
+        found.append(("no_accounts", "Add an account first, so someone can sign in."))
     if config.tls_mode == "files":
         for label, path in (("certificate", config.cert_file), ("key", config.key_file)):
             if not path:
@@ -311,6 +320,56 @@ def start_problems(config: ServerConfig) -> list:
             "Access from the internet needs HTTPS, here or in a trusted proxy in front of VBLIS.",
         ))
     return found
+
+
+# ---------------------------------------------------------------- changes from the desktop app
+
+class InvalidSetting(ValueError):
+    """A changed setting that doesn't pass the file's own checks; nothing is written."""
+
+    def __init__(self, problems):
+        super().__init__("; ".join(problems))
+        self.problems = tuple(problems)
+
+
+# Changeable settings and where they sit in the file's JSON
+_JSON_PLACES = {
+    "enabled": ("enabled",),
+    "host": ("host",),
+    "port": ("port",),
+    "tls_mode": ("tls", "mode"),
+    "cert_file": ("tls", "cert_file"),
+    "key_file": ("tls", "key_file"),
+    "allowed_hosts": ("allowed_hosts",),
+    "library_roots": ("library_roots",),
+    "public_access": ("public_access",),
+    "trusted_proxies": ("trusted_proxies",),
+}
+
+
+def validated_changes(stored: ServerConfig, **changes) -> ServerConfig:
+    """`stored` (the file's own values) with `changes` applied, checked the way the file is checked when
+    it is read. A file read falls back to a default for a bad value; a change is refused instead
+    (InvalidSetting), so nobody gets a different setting than the one they chose."""
+    unknown = set(changes) - set(_JSON_PLACES)
+    if unknown:
+        raise ValueError(f"not a changeable setting: {sorted(unknown)}")
+    data = stored.to_json()
+    before = set(config_from_json(data).problems)
+    for name, value in changes.items():
+        place = _JSON_PLACES[name]
+        if isinstance(value, tuple):
+            value = list(value)
+        if len(place) == 2:
+            data[place[0]] = {**data[place[0]], place[1]: value}
+        else:
+            data[place[0]] = value
+    updated = config_from_json(data)
+    new_problems = [problem for problem in updated.problems if problem not in before]
+    if new_problems:
+        # "...; using 8080" describes what reading the file does; here the change is refused instead
+        raise InvalidSetting([problem.split("; using ")[0].split("; skipped")[0] for problem in new_problems])
+    return replace(updated, problems=())
 
 
 # ---------------------------------------------------------------- the store
@@ -387,6 +446,10 @@ class ServerConfigStore:
     def stored(self) -> ServerConfig:
         with self._lock:
             return self._stored()
+
+    def with_env(self, config: ServerConfig) -> ServerConfig:
+        """`config` (file values) as it would take effect here, with this store's environment overrides."""
+        return apply_env(config, self._env)
 
     @contextlib.contextmanager
     def _changing(self):
@@ -480,10 +543,11 @@ class ServerConfigStore:
             return self.update(accounts=changed), account
 
     def update_account(self, account_id, name=None, role=None, permissions=None, disabled=None,
-                       acting_id=None) -> ServerConfig:
+                       acting_id=None, keep_owner=True) -> ServerConfig:
         with self._changing():
             changed = acct.update(self._stored().accounts, account_id, name=name, role=role,
-                                  permissions=permissions, disabled=disabled, acting_id=acting_id)
+                                  permissions=permissions, disabled=disabled, acting_id=acting_id,
+                                  keep_owner=keep_owner)
             return self.update(accounts=changed)
 
     def set_account_password(self, account_id, password) -> ServerConfig:
@@ -496,6 +560,7 @@ class ServerConfigStore:
         with self._changing():
             return self.update(accounts=acct.sign_out(self._stored().accounts, account_id))
 
-    def remove_account(self, account_id, acting_id=None) -> ServerConfig:
+    def remove_account(self, account_id, acting_id=None, keep_owner=True) -> ServerConfig:
         with self._changing():
-            return self.update(accounts=acct.remove(self._stored().accounts, account_id, acting_id=acting_id))
+            return self.update(accounts=acct.remove(self._stored().accounts, account_id, acting_id=acting_id,
+                                                    keep_owner=keep_owner))
