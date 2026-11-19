@@ -168,6 +168,13 @@ describe('MediaLightbox', () => {
       await waitFor(() => expect(props.setToast).toHaveBeenCalled());
       expect(props.setSelectedImage).not.toHaveBeenCalled();
     });
+
+    it.each(['modern', 'terminal'])('has a 40 px tap area on a phone (%s theme)', (uiTheme) => {
+      // The button stays 24 px; an absolutely placed ::before, 8 px past each edge, takes the touch.
+      renderLightbox(imageResult(), { uiTheme });
+      const classes = screen.getByRole('button', { name: 'Copy path' }).className.split(/\s+/);
+      expect(classes).toEqual(expect.arrayContaining(['relative', 'max-sm:before:absolute', 'max-sm:before:-inset-2']));
+    });
   });
 
   describe('closing', () => {

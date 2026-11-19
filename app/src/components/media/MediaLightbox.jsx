@@ -338,7 +338,8 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
             aria-label={t('lightbox.copyPath')}
             title={t('lightbox.copyPath')}
             className={cn(
-              "flex-shrink-0 p-1 transition-all",
+              // 24 px to see; on a phone an invisible 8 px margin makes it a 40 px tap target
+              "relative flex-shrink-0 p-1 transition-all max-sm:before:absolute max-sm:before:-inset-2",
               uiTheme === 'modern'
                 ? "rounded-md bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white border border-white/15"
                 : "rounded-none bg-black border border-white text-white font-mono hover:bg-white hover:text-black"
