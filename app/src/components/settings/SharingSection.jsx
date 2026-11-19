@@ -21,7 +21,7 @@ function CopyButton({ label, onCopy, disabled }) {
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="flex-shrink-0 p-1.5 text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg transition-all disabled:opacity-40 cursor-pointer"
+      className="flex-shrink-0 p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg transition-all disabled:opacity-40 cursor-pointer"
     >
       <Copy className="w-3.5 h-3.5" aria-hidden="true" />
     </button>
@@ -62,12 +62,12 @@ function SignOutAll({ disabled, onSignOut }) {
 // A path field with a "Choose..." button that opens the native file dialog (only in the Windows app).
 function FileField({ id, label, value, onChange, chooseLabel, onChoose, disabled }) {
   return (
-    <div className="flex items-end gap-2">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
       <div className="flex-1 min-w-0">
         <Field id={id} label={label} autoComplete="off" spellCheck={false} disabled={disabled} value={value} onChange={onChange} />
       </div>
       {onChoose && (
-        <button type="button" onClick={onChoose} disabled={disabled} className={cn(secondaryButton, 'flex-shrink-0')}>{chooseLabel}</button>
+        <button type="button" onClick={onChoose} disabled={disabled} className={cn(secondaryButton, 'sm:flex-shrink-0')}>{chooseLabel}</button>
       )}
     </div>
   );

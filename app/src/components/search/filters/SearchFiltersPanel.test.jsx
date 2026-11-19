@@ -3,6 +3,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import i18n from '../../../i18n';
 import { useSearchFilters } from '../../../hooks/useSearchFilters';
 import { SessionProvider } from '../../../session/SessionProvider';
+import { setNetworkModeForTests } from '../../../config';
+import { resetBackToCloseForTests } from '../../../hooks/useBackToClose';
+import { resetEscapeKeyForTests, useEscapeKey } from '../../../hooks/useEscapeKey';
 import { SearchFiltersPanel } from './SearchFiltersPanel';
 
 const API = 'http://127.0.0.1:8000';
@@ -903,6 +906,143 @@ describe('SearchFiltersPanel', () => {
 
       await act(async () => { rerender(<Wrapper taskId={null} />); });
       expect(optionCalls()).toBe(2);
+    });
+  });
+
+  describe('as a bottom sheet on a phone', () => {
+    // jsdom runs history traversals asynchronously and fires popstate, like a browser: wait for them to land.
+    const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    const Above = ({ onEscape }) => {
+      useEscapeKey(true, onEscape);
+      return <p>view above</p>;
+    };
+
+    afterEach(async () => {
+      cleanup();
+      await settle();
+      resetBackToCloseForTests();
+      resetEscapeKeyForTests();
+      setNetworkModeForTests(false);
+      window.history.replaceState(null, '');
+    });
+
+    it('has the sheet classes: full width at the bottom, rounded top, 85dvh with its own scroll', async () => {
+      await renderPanel();
+      const classes = screen.getByRole('dialog').className;
+      ['fixed', 'inset-x-0', 'bottom-0', 'rounded-t-2xl', 'max-h-[85dvh]', 'overflow-y-auto'].forEach(name => {
+        expect(classes.split(/\s+/)).toContain(name);
+      });
+      expect(classes).toContain('env(safe-area-inset-bottom');
+      // From sm up it floats under the header as before.
+      ['sm:top-24', 'sm:left-1/2', 'sm:max-h-[70dvh]', 'sm:rounded-2xl'].forEach(name => {
+        expect(classes.split(/\s+/)).toContain(name);
+      });
+    });
+
+    it('has a header row with the title and a Close button that closes the sheet', async () => {
+      await renderPanel();
+      const dialog = screen.getByRole('dialog');
+      const title = within(dialog).getByRole('heading', { name: 'Filters' });
+      const close = within(dialog).getByRole('button', { name: 'Close filters' });
+      expect(title.parentElement).toBe(close.parentElement);
+      expect(title.parentElement.className).toContain('sticky');
+      fireEvent.click(close);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('dims the page with a backdrop that is hidden from sm up, and a tap on it closes the sheet', async () => {
+      await renderPanel();
+      const backdrop = document.querySelector('[data-filters-backdrop]');
+      expect(backdrop).toBeTruthy();
+      expect(backdrop.className).toContain('bg-black/40');
+      expect(backdrop.className).toContain('sm:hidden');
+      // The press alone does not close it, so the click that follows cannot land on what is under the finger.
+      fireEvent.mouseDown(backdrop);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      fireEvent.click(backdrop);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.querySelector('[data-filters-backdrop]')).toBeNull();
+    });
+
+    it('still closes on a press outside the sheet and its backdrop', async () => {
+      await renderPanel();
+      fireEvent.mouseDown(screen.getByTestId('outside'));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('keeps the date inputs at 16 px on a phone', async () => {
+      await renderPanel();
+      fireEvent.click(screen.getByRole('button', { name: 'Custom...' }));
+      const inputs = screen.getByRole('dialog').querySelectorAll('input[type="date"]');
+      expect(inputs).toHaveLength(2);
+      inputs.forEach(input => {
+        expect(input.className).toContain('text-base');
+        expect(input.className).toContain('sm:text-xs');
+      });
+    });
+
+    it('gives the option buttons a 40 px minimum height on a phone', async () => {
+      await renderPanel();
+      expect(screen.getByRole('button', { name: 'Images' }).className).toContain('min-h-[40px]');
+      expect(screen.getByRole('button', { name: 'Done' }).className).toContain('min-h-[40px]');
+    });
+
+    it('closes on Esc through the shared stack: a view opened above it takes the first Esc', async () => {
+      await renderPanel();
+      const onEscape = vi.fn();
+      render(<Above onEscape={onEscape} />);
+
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+
+      cleanup();
+      resetEscapeKeyForTests();
+    });
+
+    it('closes on Esc when it is the top view', async () => {
+      await renderPanel();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('pushes no history entry outside network mode', async () => {
+      const pushState = vi.spyOn(window.history, 'pushState');
+      await renderPanel();
+      await settle();
+      expect(pushState).not.toHaveBeenCalled();
+    });
+
+    describe('in network mode', () => {
+      beforeEach(() => {
+        setNetworkModeForTests(true);
+        window.history.replaceState(null, '');
+      });
+
+      it('pushes one history entry when opened, and goes back one when closed from the screen', async () => {
+        const pushState = vi.spyOn(window.history, 'pushState');
+        const go = vi.spyOn(window.history, 'go');
+        await renderPanel();
+        await settle();
+        expect(pushState).toHaveBeenCalledTimes(1);
+        expect(pushState).toHaveBeenCalledWith({ vblisBack: 1 }, '');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+        await settle();
+        expect(go).toHaveBeenCalledTimes(1);
+        expect(go).toHaveBeenCalledWith(-1);
+        expect(window.history.state?.vblisBack ?? 0).toBe(0);
+      });
+
+      it('closes when the phone Back button is pressed', async () => {
+        await renderPanel();
+        await settle();
+        expect(screen.getByRole('dialog')).toBeTruthy();
+        await act(async () => { window.history.back(); });
+        await settle();
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(latest.current.isOpen).toBe(false);
+      });
     });
   });
 });

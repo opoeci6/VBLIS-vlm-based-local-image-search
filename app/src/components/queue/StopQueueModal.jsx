@@ -1,10 +1,13 @@
 import { Pause, CheckCircle2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'modern' }) => {
   const { t } = useTranslation('queue');
   const backdropDismiss = useBackdropDismiss(onClose);
+  // It sits above the queue window, so Esc closes it first.
+  useEscapeKey(isOpen, onClose);
 
   if (!isOpen) return null;
   const isModern = uiTheme === 'modern';
@@ -28,8 +31,11 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
             <h3 className="text-sm font-bold">{t('stopModal.title')}</h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-lg"
+            className="p-1 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center max-sm:-mr-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-lg"
+            title={t('common:close')}
+            aria-label={t('common:close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -85,10 +91,10 @@ export const StopQueueModal = ({ isOpen, onClose, onSelectOption, uiTheme = 'mod
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end">
+        <div className="flex flex-col sm:flex-row sm:justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-bold transition-colors"
+            className="px-4 py-2 max-sm:min-h-10 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-bold transition-colors"
           >
             {t('common:cancel')}
           </button>

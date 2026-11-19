@@ -6,15 +6,15 @@ export const ModelLoadErrorBanner = ({ modelLoadError, setModelLoadError, status
   if (!(modelLoadError && !status.is_downloading)) return null;
 
   return (
-    <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
+    <div className="w-full max-w-7xl px-4 sm:px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
       <div className="bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border border-rose-500/30 dark:border-rose-500/20 rounded-2xl p-4 flex flex-col gap-3 relative text-rose-800 dark:text-rose-200 shadow-sm">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="icon-tile w-9 h-9 bg-rose-100 dark:bg-rose-500/20 rounded-xl flex items-center justify-center flex-shrink-0 text-rose-600 dark:text-rose-400">
               <AlertTriangle className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-rose-900 dark:text-rose-200">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-rose-900 dark:text-rose-200 break-words">
                 {t('loadError.title', { model: modelLoadError.model ? modelLoadError.model.split('/').pop() : t('loadError.fallbackModel') })}
               </h3>
               <p className="text-xs text-rose-700/80 dark:text-rose-300/80 font-medium">
@@ -22,7 +22,7 @@ export const ModelLoadErrorBanner = ({ modelLoadError, setModelLoadError, status
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:flex-shrink-0">
             <button
               onClick={() => {
                 const targetModel = modelLoadError.model || pendingModel;
@@ -30,14 +30,14 @@ export const ModelLoadErrorBanner = ({ modelLoadError, setModelLoadError, status
                 setPendingModel(targetModel);
                 handleDownloadModel(targetModel);
               }}
-              className="text-xs px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[40px] sm:min-h-0 text-xs px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               {t('loadError.retryResume')}
             </button>
             <button
               onClick={() => setModelLoadError(null)}
-              className="p-1.5 text-rose-400 hover:text-rose-600 dark:hover:text-rose-200 rounded-lg transition-colors cursor-pointer"
+              className="p-3 sm:p-1.5 text-rose-400 hover:text-rose-600 dark:hover:text-rose-200 rounded-lg transition-colors cursor-pointer"
               title={t('loadError.dismiss')}
             >
               <X className="w-4 h-4" />

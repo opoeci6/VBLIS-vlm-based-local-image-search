@@ -11,7 +11,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
       <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">{t('performance.title')}</label>
       <div 
         className={cn(
-          "flex items-center justify-between p-3 border rounded-xl transition-all duration-200 mb-3",
+          "flex items-center justify-between gap-3 p-3 border rounded-xl transition-all duration-200 mb-3",
           gpuSettings.use_gpu && gpuSettings.cuda_available
             ? "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30"
             : "bg-gray-50 dark:bg-neutral-800/30 border-gray-100 dark:border-neutral-800"
@@ -33,7 +33,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
             onClick={handleToggleGpu}
             disabled={!gpuSettings.cuda_available || isSwitchingGpu}
             className={cn(
-              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-40 cursor-pointer flex-shrink-0",
+              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-40 cursor-pointer flex-shrink-0 max-sm:before:absolute max-sm:before:-inset-2",
               gpuSettings.use_gpu ? "bg-indigo-600" : "bg-gray-200 dark:bg-neutral-700"
             )}
             aria-label={gpuSettings.use_gpu ? t('performance.gpuDisable') : t('performance.gpuEnable')}
@@ -55,7 +55,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
             type="button"
             onClick={handleToggleGpu}
             disabled={!gpuSettings.cuda_available || isSwitchingGpu}
-            className="relative inline-flex h-7 w-7 items-center justify-center bg-black border border-white focus:outline-none disabled:cursor-not-allowed flex-shrink-0"
+            className="relative inline-flex h-7 w-7 items-center justify-center bg-black border border-white focus:outline-none disabled:cursor-not-allowed flex-shrink-0 max-sm:before:absolute max-sm:before:-inset-2.5"
             aria-label={gpuSettings.use_gpu ? t('performance.gpuDisable') : t('performance.gpuEnable')}
           >
             {isSwitchingGpu
@@ -72,7 +72,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
       )}
 
       {/* Batch Size & Precision Mode Grid */}
-      <div className="grid grid-cols-2 gap-3 mt-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
         <div className="p-3 border border-gray-100 dark:border-neutral-800 rounded-xl bg-gray-50/50 dark:bg-neutral-800/20">
           <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1.5">
             {t('performance.batchSize.title')}
@@ -97,7 +97,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
               value={gpuSettings.batch_size ?? 0}
               onChange={(e) => handleUpdatePerformanceSettings({ batch_size: e.target.value })}
               disabled={isSwitchingGpu}
-              className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full text-base sm:text-xs p-2 sm:p-1.5 max-sm:min-h-10 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               <option value="0">{t('performance.batchSize.auto')}</option>
               <option value="1">1</option>
@@ -135,7 +135,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
               value={gpuSettings.precision_mode || 'auto'}
               onChange={(e) => handleUpdatePerformanceSettings({ precision_mode: e.target.value })}
               disabled={isSwitchingGpu}
-              className="w-full text-xs p-1.5 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full text-base sm:text-xs p-2 sm:p-1.5 max-sm:min-h-10 rounded-lg bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
               <option value="auto">{autoPrecisionLabel}</option>
               <option value="fp16">{t('performance.precision.fp16')}</option>
@@ -150,7 +150,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
 
       {/* OOM Protection Badge - Only displayed if an OOM / VRAM spill event actually occurred */}
       {(gpuSettings.oom_triggered || status.oom_triggered) && (
-        <div className="mt-2.5 p-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg flex items-center justify-between text-[10px] text-amber-700 dark:text-amber-300 animate-in fade-in duration-200">
+        <div className="mt-2.5 p-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg flex items-center justify-between gap-2 text-[10px] text-amber-700 dark:text-amber-300 animate-in fade-in duration-200">
           <span className="font-semibold flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
             {t('performance.oom.title')}

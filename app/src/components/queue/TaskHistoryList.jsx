@@ -59,7 +59,7 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
         </span>
         <button
           onClick={onClearHistory}
-          className="text-[11px] text-neutral-500 hover:text-rose-600 dark:hover:text-rose-400 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          className="text-[11px] max-sm:min-h-10 text-neutral-500 hover:text-rose-600 dark:hover:text-rose-400 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
         >
           <Trash2 className="w-3.5 h-3.5" />
           <span>{t('history.clear')}</span>
@@ -81,7 +81,7 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
                   : 'border border-current'
               }`}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     {getStatusBadge(task.status)}
@@ -102,7 +102,7 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
 
                 <button
                   onClick={() => onRetry(task.id)}
-                  className="px-2.5 py-1 bg-gray-50 dark:bg-neutral-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border border-gray-200/80 dark:border-neutral-600/50 shrink-0 cursor-pointer shadow-2xs"
+                  className="px-2.5 py-1 max-sm:min-h-10 max-sm:justify-center bg-gray-50 dark:bg-neutral-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border border-gray-200/80 dark:border-neutral-600/50 sm:shrink-0 cursor-pointer shadow-2xs"
                   title={t('history.requeueTitle')}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -115,7 +115,7 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
                 <div className="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-neutral-700/50">
                   <button
                     onClick={() => setExpandedErrorId(isErrorExpanded ? null : task.id)}
-                    className="flex items-center gap-1 text-[10px] font-semibold text-rose-500 hover:text-rose-600 transition-colors cursor-pointer"
+                    className="flex items-center gap-1 max-sm:min-h-10 text-[10px] font-semibold text-rose-500 hover:text-rose-600 transition-colors cursor-pointer"
                   >
                     {isErrorExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     <span>{t('history.errorMessages', { count: task.errors.length })}</span>

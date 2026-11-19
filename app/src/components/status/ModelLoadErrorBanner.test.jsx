@@ -60,4 +60,11 @@ describe('ModelLoadErrorBanner', () => {
     expect(props.setModelLoadError).toHaveBeenCalledWith(null);
     expect(props.handleDownloadModel).not.toHaveBeenCalled();
   });
+
+  it('uses the small phone padding and wraps its buttons under the text', () => {
+    const { container } = render(<ModelLoadErrorBanner {...makeProps()} />);
+    expect(container.firstChild.className).toContain('px-4');
+    expect(container.firstChild.className).toContain('sm:px-6');
+    expect(container.querySelector('.flex-col.gap-3.sm\\:flex-row')).toBeTruthy();
+  });
 });

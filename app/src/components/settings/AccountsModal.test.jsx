@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { setNetworkModeForTests } from '../../config';
+import { resetBackToCloseForTests } from '../../hooks/useBackToClose';
+import { resetEscapeKeyForTests, useEscapeKey } from '../../hooks/useEscapeKey';
 import i18n from '../../i18n';
 import { SessionContext } from '../../session/sessionContext';
 import { AccountsModal } from './AccountsModal';
@@ -86,6 +89,7 @@ describe('AccountsModal', () => {
 
   afterEach(() => {
     cleanup();
+    resetEscapeKeyForTests();
     vi.unstubAllGlobals();
   });
 
@@ -757,6 +761,32 @@ describe('AccountsModal', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
+    it('leaves Esc to a view opened above it, and takes it back when that one closes', async () => {
+      const lower = vi.fn();
+      const upper = vi.fn();
+      const View = ({ onEscape }) => {
+        useEscapeKey(true, onEscape);
+        return null;
+      };
+      const tree = (withUpper) => (
+        <SessionContext.Provider value={session}>
+          <View onEscape={lower} />
+          <AccountsModal onClose={onClose} setToast={setToast} />
+          {withUpper && <View onEscape={upper} />}
+        </SessionContext.Provider>
+      );
+      const { rerender } = render(tree(true));
+      await screen.findByRole('table', { name: 'Accounts' });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(upper).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+
+      rerender(tree(false));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(lower).not.toHaveBeenCalled();
+    });
+
     it('closes on a click on the backdrop, not on the panel', async () => {
       await renderModal();
       const dialog = screen.getByRole('dialog', { name: 'Accounts' });
@@ -780,6 +810,61 @@ describe('AccountsModal', () => {
       fireEvent.click(within(await stepDialog('Delete bob?')).getByRole('button', { name: 'Cancel' }));
       expect(screen.queryByRole('dialog', { name: 'Delete bob?' })).toBeNull();
       expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the Back button on a phone', () => {
+    // jsdom runs history traversals asynchronously and fires popstate, like a browser: wait for them to land.
+    const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    const back = async () => {
+      await act(async () => { window.history.back(); });
+      await settle();
+    };
+    let pushState;
+
+    beforeEach(() => {
+      window.history.replaceState(null, '');
+      pushState = vi.spyOn(window.history, 'pushState');
+    });
+
+    afterEach(async () => {
+      cleanup();
+      await settle();
+      resetBackToCloseForTests();
+      setNetworkModeForTests(false);
+      vi.restoreAllMocks();
+      window.history.replaceState(null, '');
+    });
+
+    it('makes no history calls outside network mode', async () => {
+      await renderModal();
+      await settle();
+      expect(pushState).not.toHaveBeenCalled();
+    });
+
+    it('closes the window in network mode', async () => {
+      setNetworkModeForTests(true);
+      await renderModal();
+      await settle();
+      expect(pushState).toHaveBeenCalledTimes(1);
+      await back();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes a confirm step first, then the window', async () => {
+      setNetworkModeForTests(true);
+      await renderModal();
+      pick('bob', 'Delete');
+      await stepDialog('Delete bob?');
+      await settle();
+      expect(pushState).toHaveBeenCalledTimes(2);
+
+      await back();
+      expect(screen.queryByRole('dialog', { name: 'Delete bob?' })).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+
+      await back();
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -14,7 +14,10 @@
     "visualDetected_other": "Visual Duplicate (98.5%+ Similarity) detected in {{count}} other locations",
     "alsoFoundAt": "Also found at:",
     "copyPath": "Copy path",
-    "showPathInExplorer": "Show {{path}} in Explorer"
+    "showPathInExplorer": "Show {{path}} in Explorer",
+    "previous": "Previous picture",
+    "next": "Next picture",
+    "position": "{{current}} / {{total}}"
   },
   "originals": {
     "open": "Open original",

@@ -36,4 +36,12 @@ describe('ActiveFilterChips', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
     expect(onClearAll).toHaveBeenCalledTimes(1);
   });
+
+  it('gives each x button a hit area of at least 32 by 32 px with the same small icon', () => {
+    render(<ActiveFilterChips chips={makeChips(['Images only'])} onClearAll={vi.fn()} />);
+    const remove = screen.getByRole('button', { name: 'Remove filter: Images only' });
+    expect(remove.className).toContain('h-8');
+    expect(remove.className).toContain('w-8');
+    expect(remove.querySelector('svg').getAttribute('class')).toContain('w-3');
+  });
 });

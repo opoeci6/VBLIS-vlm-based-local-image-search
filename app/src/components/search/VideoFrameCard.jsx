@@ -22,7 +22,7 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
       className={cn(
         "group cursor-pointer overflow-hidden focus:outline-none transition-all duration-200",
         isModern
-          ? "rounded-2xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800/40 hover:shadow-lg hover:border-indigo-300 dark:hover:border-indigo-500/40"
+          ? "rounded-xl sm:rounded-2xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-800/40 hover:shadow-lg hover:border-indigo-300 dark:hover:border-indigo-500/40"
           : "border border-white bg-black focus:ring-2 focus:ring-white"
       )}
       onClick={() => onSelect(frame)}
@@ -34,7 +34,7 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
       }}
     >
       <div className={cn(
-        "relative h-44 overflow-hidden bg-neutral-200 dark:bg-neutral-800",
+        "relative aspect-square sm:aspect-auto sm:h-44 overflow-hidden bg-neutral-200 dark:bg-neutral-800",
         isModern ? "border-b border-gray-100 dark:border-neutral-700/50" : "border-b border-white"
       )}>
         {/* Placeholder skeleton while loading */}
@@ -66,7 +66,7 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
         )}
 
         <span className={cn(
-          "absolute bottom-2 left-2 px-2.5 py-1 text-xs font-bold shadow-lg",
+          "absolute bottom-2 left-2 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-bold shadow-lg",
           isModern
             ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10"
             : "border border-white bg-black text-white"
@@ -74,7 +74,7 @@ export const VideoFrameCard = memo(function VideoFrameCard({ frame, index, onSel
           {formatVideoTimestamp(frame.timestamp_seconds)}
         </span>
       </div>
-      <div className="flex items-center justify-between gap-3 p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 p-2 sm:p-3 text-xs font-bold text-neutral-700 dark:text-neutral-200">
         <span>{t('frameCard.frame', { n: index + 1 })}</span>
         {hasScore(frame) ? (
           <span className="text-emerald-500 font-semibold">{formatScoreLabelUpper(frame.score, frame.score_kind)}</span>

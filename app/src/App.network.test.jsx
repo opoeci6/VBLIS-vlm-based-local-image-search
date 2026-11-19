@@ -102,6 +102,8 @@ const accountsPayload = {
 
 const json = (body) => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(body)) });
 
+const openMenu = () => fireEvent.click(screen.getByRole('button', { name: 'Account and appearance' }));
+
 const openSettings = (container) => fireEvent.click(container.querySelector('header button.hover\\:rotate-45'));
 
 describe('App in a browser', () => {
@@ -370,9 +372,10 @@ describe('App in a browser', () => {
       expect(screen.queryByText('Clean Ghost Records')).toBeNull();
     });
 
-    it('shows the role and signs out from the title bar', async () => {
+    it('shows the role and signs out from the header menu', async () => {
       const { onSignOut } = renderApp(viewer());
       await screen.findByText('Ready to Search');
+      openMenu();
       expect(screen.getByText('Signed in as bob · Viewer')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
       expect(onSignOut).toHaveBeenCalledTimes(1);
@@ -402,6 +405,7 @@ describe('App in a browser', () => {
 
       expect(screen.getByTitle('Open Background Task Queue')).toBeTruthy();
       expect(screen.getByText('Add Folder(s)')).toBeTruthy();
+      openMenu();
       expect(screen.getByText('Signed in as alice · Owner')).toBeTruthy();
       expect(screen.queryByTitle('Minimize')).toBeNull();
       expect(screen.queryByTitle('Maximize')).toBeNull();
@@ -466,7 +470,57 @@ describe('App in a browser', () => {
     });
   });
 
+  describe('without a title bar', () => {
+    it('renders no title bar and no room for one, with the account in the header menu', async () => {
+      const { container } = renderApp(sessionInfo('owner'));
+      await screen.findByText('Ready to Search');
+      expect(screen.queryByTestId('title-bar')).toBeNull();
+      expect(container.firstChild.className).not.toContain('pt-8');
+      expect(container.firstChild.className).toContain('pt-safe');
+      // The menu button shows the account name next to the icon (hidden below sm by CSS).
+      expect(within(screen.getByRole('button', { name: 'Account and appearance' })).getByText('alice')).toBeTruthy();
+      expect(screen.queryByText('Signed in as alice · Owner')).toBeNull();
+    });
+
+    it('switches the style and light or dark from the header menu, closing it after each choice', async () => {
+      const { container } = renderApp(sessionInfo('owner'));
+      await screen.findByText('Ready to Search');
+      expect(container.firstChild.className).toContain('theme-modern');
+
+      openMenu();
+      fireEvent.click(screen.getByRole('button', { name: /Retro Terminal/ }));
+      expect(container.firstChild.className).toContain('theme-terminal');
+      expect(screen.queryByText('Signed in as alice · Owner')).toBeNull();
+
+      expect(document.documentElement.classList.contains('dark')).toBe(false);
+      openMenu();
+      fireEvent.click(screen.getByRole('button', { name: 'Switch to Dark Mode' }));
+      expect(document.documentElement.classList.contains('dark')).toBe(true);
+      expect(screen.queryByText('Signed in as alice · Owner')).toBeNull();
+
+      openMenu();
+      expect(screen.getByRole('button', { name: 'Switch to Light Mode' })).toBeTruthy();
+    });
+
+    it('signs out from the header menu and closes it', async () => {
+      const { onSignOut } = renderApp(sessionInfo('owner'));
+      await screen.findByText('Ready to Search');
+      openMenu();
+      fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+      expect(onSignOut).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Signed in as alice · Owner')).toBeNull();
+    });
+  });
+
   describe('on the desktop', () => {
+    it('keeps the title bar and its top room, and has no header menu', async () => {
+      const { container } = render(<App />);
+      await screen.findByText('Ready to Search');
+      expect(screen.getByTestId('title-bar')).toBeTruthy();
+      expect(container.firstChild.className).toContain('pt-8');
+      expect(screen.queryByRole('button', { name: 'Account and appearance' })).toBeNull();
+    });
+
     it('keeps the window buttons and the Explorer controls', () => {
       window.electronAPI = { minimize: vi.fn(), maximize: vi.fn(), close: vi.fn(), openInExplorer: vi.fn() };
       render(<TitleBar theme="light" setTheme={vi.fn()} uiTheme="modern" setUiTheme={vi.fn()} />);

@@ -3,6 +3,8 @@ import { FolderOpen, Loader2, AlertTriangle, X, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FolderContentRow } from './FolderContentRow';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { useBackToClose } from '../../hooks/useBackToClose';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { cn } from '../../utils/cn';
 import { useSession } from '../../session/sessionContext';
 
@@ -11,20 +13,24 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
   // Cleaning up missing files re-syncs the folder, which only the owner can do.
   const { isOwner } = useSession();
   const backdropDismiss = useBackdropDismiss(handleCloseFolderContents);
+  const isShowing = Boolean(showFolderContents && browsingFolder);
+  // The lightbox opens over this window and registers later, so Esc and Back close it first.
+  useEscapeKey(isShowing, handleCloseFolderContents);
+  useBackToClose(isShowing, handleCloseFolderContents);
 
-  if (!(showFolderContents && browsingFolder)) return null;
+  if (!isShowing) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
       {...backdropDismiss}
     >
       <div
-        className="bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl w-[820px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+        className="bg-white dark:bg-neutral-900 sm:border border-gray-200 dark:border-neutral-800 sm:rounded-3xl w-full sm:w-[820px] max-w-full h-dvh sm:h-auto sm:max-h-[85dvh] pt-safe pb-safe px-safe sm:p-0 flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="p-6 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between bg-gray-50/50 dark:bg-neutral-900/50">
-          <div className="min-w-0 pr-6">
+        <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between bg-gray-50/50 dark:bg-neutral-900/50">
+          <div className="min-w-0 pr-3 sm:pr-6">
             <div className="flex items-center gap-3">
               <div className="icon-tile w-10 h-10 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 rounded-xl flex items-center justify-center ring-1 ring-cyan-200 dark:ring-cyan-500/20 flex-shrink-0">
                 <FolderOpen className="w-5 h-5" />
@@ -38,15 +44,18 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
             </div>
           </div>
           <button
+            type="button"
             onClick={handleCloseFolderContents}
-            className="p-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all"
+            aria-label={t('common:close')}
+            title={t('common:close')}
+            className="p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center flex-shrink-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {folderContents && (
-          <div className="px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2 bg-gray-50/40 dark:bg-neutral-800/20">
+          <div className="px-4 sm:px-6 py-3 border-b border-gray-100 dark:border-neutral-800 flex flex-wrap items-center gap-2 bg-gray-50/40 dark:bg-neutral-800/20">
             <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold">
               {t('modal.images', { count: folderContents.image_count })}
             </span>
@@ -63,7 +72,7 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
               </span>
             )}
             {(folderContents.missing_on_disk_count > 0) && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 text-xs font-bold border border-rose-200/60 dark:border-rose-500/30 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 text-rose-500" />
                   {t('modal.missingFromDisk', { count: folderContents.missing_on_disk_count })}
@@ -80,7 +89,7 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
                         setIsCleaningGhostRecords(false);
                       }
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                    className="px-2.5 py-1 max-sm:min-h-10 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                     title={t('modal.cleanTooltip')}
                   >
                     <RefreshCw className={cn("w-3 h-3", isCleaningGhostRecords && "animate-spin")} />
@@ -96,7 +105,7 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
         )}
 
         <div
-          className="flex-1 overflow-y-auto p-4 custom-scrollbar"
+          className="flex-1 overflow-y-auto p-3 sm:p-4 custom-scrollbar"
           onScroll={(e) => {
             const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
             if (scrollHeight - scrollTop - clientHeight < 300) {
@@ -133,7 +142,7 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
                     type="button"
                     onClick={() => setFolderVisibleLimit(prev => Math.min(prev + 100, folderContents.items.length))}
                     className={cn(
-                      "text-xs font-bold px-4 py-1.5 rounded-xl border transition-all",
+                      "text-xs font-bold px-4 py-1.5 max-sm:min-h-10 rounded-xl border transition-all",
                       uiTheme === 'modern'
                         ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100"
                         : "border border-white text-white"

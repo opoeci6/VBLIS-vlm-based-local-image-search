@@ -42,4 +42,13 @@ describe('IndexingErrorsAlert', () => {
     fireEvent.click(screen.getByRole('button'));
     expect(setShowErrorAlert).toHaveBeenCalledWith(false);
   });
+
+  it('uses the small phone padding and a 40 px close button', () => {
+    const { container } = render(
+      <IndexingErrorsAlert showErrorAlert setShowErrorAlert={vi.fn()} status={{ failed_files: ['/a.jpg'] }} />
+    );
+    expect(container.firstChild.className).toContain('px-4');
+    expect(container.firstChild.className).toContain('sm:px-6');
+    expect(container.querySelector('button').className).toContain('p-3');
+  });
 });

@@ -32,6 +32,9 @@
   },
   "signedInAs": "登录身份：{{name}} · {{role}}",
   "signOut": "退出登录",
+  "headerMenu": {
+    "label": "账户与外观"
+  },
   "viewer": {
     "noModelTitle": "所有者尚未设置模型",
     "noModelDesc": "所有者在服务器上设置模型后即可搜索。"

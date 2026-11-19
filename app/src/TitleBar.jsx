@@ -1,32 +1,19 @@
-import React from 'react';
-import { Minus, Square, X, Moon, Sun, Shirt, Check, Sparkles, Terminal, LogOut, Radio, TriangleAlert } from 'lucide-react';
+import { Minus, Square, X, Moon, Sun, Radio, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from './session/sessionContext';
+import { ThemeStyleMenu } from './components/layout/ThemeStyle';
 
+// The bar of the Windows app (and the dev page). A browser has none: its theme, account and Sign out controls
+// are in the header menu (components/layout/HeaderMenu.jsx).
 // `sharingRunning` and `sharingProblem` (the problem code, or null) come from the status poll of the Windows app:
 // while it shares, a pill says so; while it should share but cannot, an amber one does. Clicking opens the
 // sharing settings through `onOpenSharing`.
 const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme, sharingRunning = false, sharingProblem = null, onOpenSharing }) => {
   const { t } = useTranslation('settings');
-  const { mode, role, account, signOut } = useSession();
-  const roleLabel = role === 'owner' ? t('session:role.owner') : t('session:role.viewer');
+  const { mode } = useSession();
   const showSharingPill = mode === 'desktop' && (sharingRunning || Boolean(sharingProblem));
-  const signedInLabel = account ? t('session:signedInAs', { name: account.name, role: roleLabel }) : roleLabel;
-  // The window buttons and the drag region belong to the Electron window; a browser tab has its own.
+  // The window buttons and the drag region belong to the Electron window.
   const hasWindowControls = Boolean(window.electronAPI);
-  const [showThemeMenu, setShowThemeMenu] = React.useState(false);
-  const themeMenuRef = React.useRef(null);
-
-  React.useEffect(() => {
-    const handlePointerDown = (event) => {
-      if (!themeMenuRef.current?.contains(event.target)) {
-        setShowThemeMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, []);
 
   const handleMinimize = () => {
     window.electronAPI?.minimize();
@@ -44,13 +31,8 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme, sharingRunn
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
-  const themeOptions = [
-    { id: 'modern', label: t('theme.modern.name'), icon: Sparkles, desc: t('titleBar.themeOptions.modern.desc') },
-    { id: 'terminal', label: t('theme.terminal.name'), icon: Terminal, desc: t('titleBar.themeOptions.terminal.desc') }
-  ];
-
   return (
-    <div className="h-8 w-full bg-white dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 flex items-center justify-between select-none fixed top-0 left-0 z-[200]">
+    <div data-testid="title-bar" className="h-8 w-full bg-white dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 flex items-center justify-between select-none fixed top-0 left-0 z-[200]">
       <div className="flex-1 h-full flex items-center px-3" style={hasWindowControls ? { WebkitAppRegion: 'drag' } : undefined}>
         <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 tracking-tight">VBLIS</span>
       </div>
@@ -70,71 +52,13 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme, sharingRunn
             {sharingProblem ? t('titleBar.notSharing') : t('titleBar.sharing')}
           </button>
         )}
-        <div ref={themeMenuRef} className="relative h-full">
-          <button
-            onClick={() => setShowThemeMenu(current => !current)}
-            className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-indigo-400 transition-colors"
-            title={t('titleBar.switchTheme')}
-            aria-label={t('titleBar.switchTheme')}
-            aria-expanded={showThemeMenu}
-          >
-            <Shirt className="w-4 h-4" />
-          </button>
-
-          {showThemeMenu && (
-            <div className="absolute right-0 top-full z-[220] mt-1 w-64 border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 rounded-xl p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                {t('theme.title')}
-              </div>
-              <div className="space-y-1">
-                {themeOptions.map((opt) => {
-                  const Icon = opt.icon;
-                  const isSelected = uiTheme === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      onClick={() => {
-                        setUiTheme?.(opt.id);
-                        setShowThemeMenu(false);
-                      }}
-                      className={`flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left rounded-lg transition-all ${
-                        isSelected
-                          ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-semibold'
-                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-gray-100 dark:hover:bg-neutral-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Icon className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-neutral-400'}`} />
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold leading-tight">{opt.label}</div>
-                          <div className="text-[10px] text-neutral-400 dark:text-neutral-500 truncate leading-normal">{opt.desc}</div>
-                        </div>
-                      </div>
-                      {isSelected && <Check className="w-4 h-4 flex-shrink-0 text-indigo-600 dark:text-indigo-400" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
+        <ThemeStyleMenu
+          uiTheme={uiTheme}
+          setUiTheme={setUiTheme}
+          wrapperClassName="relative h-full"
+          triggerClassName="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-indigo-400 transition-colors"
+        />
         <div className="w-[1px] h-4 bg-gray-200 dark:bg-neutral-800 mx-1" />
-        {mode === 'network' && (
-          <>
-            <span className="hidden sm:inline truncate max-w-[16rem] px-3 text-xs text-neutral-500 dark:text-neutral-400" title={signedInLabel}>
-              {signedInLabel}
-            </span>
-            <button
-              onClick={signOut}
-              className="h-full px-3 flex items-center justify-center gap-1.5 text-xs text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-indigo-400 transition-colors"
-              title={t('session:signOut')}
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>{t('session:signOut')}</span>
-            </button>
-            <div className="w-[1px] h-4 bg-gray-200 dark:bg-neutral-800 mx-1" />
-          </>
-        )}
         <button
           onClick={toggleTheme}
           className="h-full px-3.5 flex items-center justify-center text-neutral-500 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-amber-400 transition-colors"
@@ -174,4 +98,3 @@ const TitleBar = ({ theme, setTheme, uiTheme = 'modern', setUiTheme, sharingRunn
 };
 
 export default TitleBar;
-

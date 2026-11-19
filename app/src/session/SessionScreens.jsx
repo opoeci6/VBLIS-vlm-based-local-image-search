@@ -1,23 +1,24 @@
 import { useState } from 'react';
 import { Image as ImageIcon, Loader2, AlertTriangle } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
-import TitleBar from '../TitleBar';
+import { SessionThemeControl } from '../components/layout/SessionThemeControl';
 import { useThemePreferences } from '../hooks/useThemePreferences';
 import { cn } from '../utils/cn';
 
 // The page behind the sign-in, loading and connection-error screens. It follows the saved theme and
-// style like the app does, and keeps the title bar so both can still be switched here.
+// style like the app does. These screens only show in a browser, which has no title bar, so a small
+// floating control at the top right switches both here.
 function ScreenShell({ children }) {
   const { theme, setTheme, uiTheme, setUiTheme } = useThemePreferences();
   return (
     <div
       className={cn(
-        "isolate h-screen w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative pt-8 custom-scrollbar",
+        "isolate h-dvh w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative pt-safe px-safe custom-scrollbar",
         uiTheme === 'terminal' ? "terminal-theme theme-terminal" : "theme-modern bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100"
       )}
     >
-      <TitleBar theme={theme} setTheme={setTheme} uiTheme={uiTheme} setUiTheme={setUiTheme} />
-      <main className="w-full max-w-sm px-6 my-auto py-10">
+      <SessionThemeControl theme={theme} setTheme={setTheme} uiTheme={uiTheme} setUiTheme={setUiTheme} />
+      <main className="w-full max-w-sm px-4 sm:px-6 my-auto pt-16 pb-10">
         <div className="flex items-center justify-center gap-3 mb-8">
           <div className="icon-tile w-10 h-10 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center ring-1 ring-indigo-200 dark:ring-indigo-500/20 flex-shrink-0">
             <ImageIcon className="w-5 h-5" />
@@ -57,7 +58,7 @@ export function ConnectionErrorScreen({ onRetry }) {
         <button
           type="button"
           onClick={onRetry}
-          className="w-full px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+          className="w-full min-h-[44px] px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
         >
           {t('connectionError.retry')}
         </button>
@@ -154,7 +155,7 @@ export function SignInScreen({ onSignIn, secure = true, expired = false }) {
         <button
           type="submit"
           disabled={isSubmitting || !name.trim() || !password}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
           {isSubmitting ? t('signIn.submitting') : t('signIn.submit')}

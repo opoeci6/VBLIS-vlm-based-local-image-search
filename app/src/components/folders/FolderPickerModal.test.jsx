@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { setNetworkModeForTests } from '../../config';
+import { resetBackToCloseForTests } from '../../hooks/useBackToClose';
+import { resetEscapeKeyForTests, useEscapeKey } from '../../hooks/useEscapeKey';
 import { FolderPickerModal } from './FolderPickerModal';
 
 const reply = (body, status = 200) => ({ ok: status < 400, status, json: async () => JSON.parse(JSON.stringify(body)) });
@@ -225,5 +228,70 @@ describe('FolderPickerModal', () => {
     expect(nav.textContent).toContain('Trips');
     fireEvent.click(screen.getByRole('button', { name: 'Up' }));
     await waitFor(() => expect(fetchMock.mock.calls.map(([url]) => decodeURIComponent(String(url)))).toContain('http://127.0.0.1:8000/fs/list?path=D:\\Photos'));
+  });
+});
+
+// jsdom runs history traversals asynchronously and fires popstate, like a browser: wait for them to land.
+const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+const back = async () => {
+  await act(async () => { window.history.back(); });
+  await settle();
+};
+
+describe('FolderPickerModal on a phone', () => {
+  let pushState;
+  let go;
+
+  beforeEach(() => {
+    window.history.replaceState(null, '');
+    pushState = vi.spyOn(window.history, 'pushState');
+    go = vi.spyOn(window.history, 'go');
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await settle();
+    resetBackToCloseForTests();
+    resetEscapeKeyForTests();
+    setNetworkModeForTests(false);
+    vi.restoreAllMocks();
+    window.history.replaceState(null, '');
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ roots: [] }) })));
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('makes no history calls outside network mode', async () => {
+    render(<FolderPickerModal onClose={vi.fn()} onConfirm={vi.fn()} />);
+    await settle();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(go).not.toHaveBeenCalled();
+  });
+
+  it('pushes one history entry and closes with Back in network mode', async () => {
+    setNetworkModeForTests(true);
+    const onClose = vi.fn();
+    render(<FolderPickerModal onClose={onClose} onConfirm={vi.fn()} />);
+    await settle();
+    expect(pushState).toHaveBeenCalledTimes(1);
+    await back();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Esc to a view above it', async () => {
+    const onClose = vi.fn();
+    const onEscape = vi.fn();
+    const Above = () => {
+      useEscapeKey(true, onEscape);
+      return null;
+    };
+    render(<><FolderPickerModal onClose={onClose} onConfirm={vi.fn()} /><Above /></>);
+    await settle();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

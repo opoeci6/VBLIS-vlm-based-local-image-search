@@ -251,3 +251,34 @@ describe('browse wording', () => {
     expect(screen.getByText('No matches with the current filters')).toBeTruthy();
   });
 });
+
+describe('empty states on a phone', () => {
+  afterEach(cleanup);
+
+  it('center and wrap the no-matches texts, with less space above on a phone', () => {
+    const { container, rerender } = render(<NoMatches />);
+    expect(container.firstChild.className).toContain('text-center');
+    expect(container.firstChild.className).toContain('mt-16');
+    expect(container.firstChild.className).toContain('sm:mt-32');
+    rerender(<NoMatches filtersActive onClearFilters={vi.fn()} />);
+    expect(container.firstChild.className).toContain('text-center');
+    expect(screen.getByRole('button', { name: 'Clear filters' }).className).toContain('min-h-[40px]');
+  });
+
+  it('wrap the setup buttons and give them 44 px of height', () => {
+    render(<ModelSetupState models={{ models: [] }} handleModelSwitch={vi.fn()} setShowSettings={vi.fn()} handleDownloadModel={vi.fn()} pendingModel="org/some-model" />);
+    const settings = screen.getByRole('button', { name: 'Open Settings' });
+    expect(settings.parentElement.className).toContain('flex-wrap');
+    expect(settings.className).toContain('min-h-[44px]');
+  });
+
+  it('wrap the model buttons of the ready screen and let a long model name break', () => {
+    const models = { active_model: 'org/' + 'm'.repeat(80) };
+    render(<ReadyToSearch uiTheme="modern" indexedFolders={[]} models={models} setShowSettings={vi.fn()} handleUnloadModel={vi.fn()} isUnloadingModel={false} status={{}} />);
+    const modelButton = screen.getByText('m'.repeat(80)).closest('button');
+    expect(modelButton.parentElement.className).toContain('flex-wrap');
+    expect(modelButton.className).toContain('max-w-full');
+    expect(modelButton.className).toContain('min-h-[40px]');
+    expect(screen.getByText('m'.repeat(80)).parentElement.className).toContain('break-all');
+  });
+});

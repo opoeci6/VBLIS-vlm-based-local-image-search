@@ -33,7 +33,8 @@
     "label": "Search filters",
     "labelActive_one": "Search filters ({{count}} active)",
     "labelActive_other": "Search filters ({{count}} active)",
-    "text": "Filters"
+    "text": "Filters",
+    "pictureText": "Picture"
   },
   "tree": {
     "collapse": "Collapse {{name}}",

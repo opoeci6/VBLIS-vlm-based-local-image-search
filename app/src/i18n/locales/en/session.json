@@ -34,6 +34,9 @@
   },
   "signedInAs": "Signed in as {{name}} · {{role}}",
   "signOut": "Sign out",
+  "headerMenu": {
+    "label": "Account and appearance"
+  },
   "viewer": {
     "noModelTitle": "The owner hasn't set up a model yet",
     "noModelDesc": "Search will be available once the owner sets one up on the server."

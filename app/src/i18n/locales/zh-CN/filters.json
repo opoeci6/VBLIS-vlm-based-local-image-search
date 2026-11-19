@@ -32,7 +32,8 @@
   "button": {
     "label": "搜索筛选",
     "labelActive_other": "搜索筛选（已启用 {{count}} 项）",
-    "text": "筛选"
+    "text": "筛选",
+    "pictureText": "图片"
   },
   "tree": {
     "collapse": "折叠 {{name}}",

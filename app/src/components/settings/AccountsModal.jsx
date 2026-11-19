@@ -6,6 +6,8 @@ import { Switch, PermissionSwitch } from './PermissionSwitch';
 import { Field, cardClass, dangerButton, errorClass, primaryButton, secondaryButton } from './serverUi';
 import { useAccounts } from '../../hooks/useAccounts';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { useBackToClose } from '../../hooks/useBackToClose';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useSession } from '../../session/sessionContext';
 import { cn } from '../../utils/cn';
 
@@ -49,6 +51,8 @@ function ConfirmStep({ kind, permission, account, isYou, limits, needsPassword, 
   const [error, setError] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
   const backdropDismiss = useBackdropDismiss(() => { if (!isBusy) onCancel(); });
+  // On a phone Back closes this step before the Accounts window under it.
+  useBackToClose(true, () => { if (!isBusy) onCancel(); });
 
   const { name } = account;
   let text;
@@ -140,7 +144,7 @@ function ConfirmStep({ kind, permission, account, isYou, limits, needsPassword, 
           />
         )}
         {error && <p className={errorClass} role="alert">{error}</p>}
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           <button type="button" onClick={onCancel} disabled={isBusy} className={secondaryButton}>{t('common:cancel')}</button>
           <button type="submit" disabled={isBusy} className={isDanger ? dangerButton : primaryButton}>
             {isBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
@@ -226,7 +230,7 @@ function AddAccountCard({ limits, passwordFor, onAdd, onClose, uiTheme }) {
         <Field id="add-account-current" label={t('accounts.confirm.password')} type="password" autoComplete="current-password" disabled={isBusy} value={current} onChange={setCurrent} />
       )}
       {error && <p className={errorClass} role="alert">{error}</p>}
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <button type="submit" disabled={isBusy} className={primaryButton}>
           {isBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />}
           {isBusy ? t('accounts.add.submitting') : t('accounts.add.submit')}
@@ -251,19 +255,19 @@ function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, ui
     { api: 'places', column: t('accounts.columns.places'), label: t('accounts.switches.places') }
   ];
   const switchLabel = (permission) => t('accounts.permissionFor', { permission, name });
-  const cellClass = 'flex items-center justify-between gap-3 min-w-0 sm:justify-start';
+  const cellClass = 'flex items-center justify-between gap-3 min-w-0 max-sm:min-h-10 sm:justify-start';
   const cardLabel = (text) => <span className="text-[11px] font-semibold text-neutral-500 sm:hidden" aria-hidden="true">{text}</span>;
 
   return (
     <div
       role="row"
       className={cn(
-        'flex flex-col gap-2 p-3 rounded-2xl border border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20',
+        'flex flex-col gap-2 p-3 max-sm:relative rounded-2xl border border-gray-100 dark:border-neutral-800 bg-gray-50/60 dark:bg-neutral-800/20',
         'sm:rounded-none sm:border-0 sm:border-b sm:bg-transparent dark:sm:bg-transparent sm:px-3 sm:py-2',
         GRID
       )}
     >
-      <div role="cell" className="flex items-center gap-2 min-w-0">
+      <div role="cell" className="flex items-center gap-2 min-w-0 max-sm:pr-12">
         <span className="text-sm font-bold truncate text-neutral-800 dark:text-neutral-200" title={name}>{name}</span>
         {isYou && <span className={cn(badgeClass, 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30')}>{t('accounts.you')}</span>}
         {disabled && <span className={cn(badgeClass, 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/30')}>{t('accounts.turnedOff')}</span>}
@@ -304,7 +308,7 @@ function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, ui
         />
       </div>
 
-      <div role="cell" className="relative flex justify-end" ref={isMenuOpen ? menuRef : undefined}>
+      <div role="cell" className="relative flex justify-end max-sm:absolute max-sm:top-1.5 max-sm:right-1.5" ref={isMenuOpen ? menuRef : undefined}>
         <button
           type="button"
           onClick={() => onToggleMenu(id)}
@@ -312,7 +316,7 @@ function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, ui
           aria-label={t('accounts.actionsFor', { name })}
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
-          className="p-2 text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all disabled:opacity-40 cursor-pointer"
+          className="p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all disabled:opacity-40 cursor-pointer"
         >
           {isBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <MoreHorizontal className="w-4 h-4" aria-hidden="true" />}
         </button>
@@ -335,7 +339,7 @@ function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, ui
                 disabled={isYou && ownDisabled}
                 title={isYou && ownDisabled ? t('accounts.ownAccount') : undefined}
                 onClick={() => onMenuAction(account, action)}
-                className="block w-full text-left px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="block w-full text-left px-3 py-2 max-sm:py-3 max-sm:text-sm text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 {text}
               </button>
@@ -386,17 +390,14 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
   }, []);
 
   // Esc closes the innermost thing: the menu, then the confirm step, then the dialog.
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      if (menuFor) setMenuFor(null);
-      else if (step) {
-        if (!isStepBusy) closeStep();
-      } else onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [menuFor, step, isStepBusy, closeStep, onClose]);
+  useEscapeKey(true, () => {
+    if (menuFor) setMenuFor(null);
+    else if (step) {
+      if (!isStepBusy) closeStep();
+    } else onClose();
+  });
+  // On a phone Back closes the window (the confirm step has its own entry above it).
+  useBackToClose(true, onClose);
 
   useEffect(() => {
     if (!menuFor) return undefined;
@@ -519,7 +520,7 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
       {...backdropDismiss}
     >
       <div
@@ -527,19 +528,19 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
         aria-modal="true"
         aria-label={t('accounts.title')}
         className={cn(
-          'w-[880px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200',
+          'w-full sm:w-[880px] max-w-full h-dvh sm:h-auto sm:max-h-[85dvh] pt-safe pb-safe px-safe sm:p-0 flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200',
           modern
-            ? 'bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl'
-            : 'bg-white dark:bg-black border border-black dark:border-white'
+            ? 'bg-white dark:bg-neutral-900 sm:border border-gray-200 dark:border-neutral-800 sm:rounded-3xl'
+            : 'bg-white dark:bg-black sm:border border-black dark:border-white'
         )}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="p-5 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between gap-4 bg-gray-50/50 dark:bg-neutral-900/50">
+        <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between gap-3 sm:gap-4 bg-gray-50/50 dark:bg-neutral-900/50">
           <div className="min-w-0">
             <h2 className="text-xl font-bold text-neutral-900 dark:text-white">{t('accounts.title')}</h2>
             <p className="text-xs text-neutral-500 mt-1">{t('accounts.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             <button
               type="button"
               onClick={openAdd}
@@ -555,7 +556,7 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
               onClick={onClose}
               aria-label={t('common:close')}
               title={t('common:close')}
-              className="p-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all cursor-pointer"
+              className="p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
