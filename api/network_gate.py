@@ -4,8 +4,8 @@ In order, for every request:
 1. Proxy headers are only believed from trusted_proxies; from anyone else they are refused.
 2. The Host header must name this machine (an address, its host name, or allowed_hosts), which
    stops DNS rebinding.
-3. Clients outside the private networks are refused unless public access is on, and then only
-   over HTTPS.
+3. Clients outside the private networks (and the owner's other local networks) are refused unless
+   public access is on, and then only over HTTPS.
 4. Anything outside /api is a file of the built interface, served from a fixed list.
 5. Under /api: changes need an Origin equal to this site and a declared body size; then the
    session cookie gives the role, and the route table decides. A route with no entry is refused.
@@ -111,6 +111,7 @@ class NetworkGate:
         self.confirmations = confirmations if confirmations is not None else RecentConfirmations()
         self._default_names = netaddr.default_host_names(socket.gethostname() if hostname is None else hostname)
         self._parsed_proxies = ((), ())
+        self._parsed_local = ((), ())
         self._uploads = 0
         self._api_slots = None  # created in the server's event loop on first use
 
@@ -122,6 +123,17 @@ class NetworkGate:
             networks = netaddr.parse_networks(config.trusted_proxies)
             self._parsed_proxies = (config.trusted_proxies, networks)
         return networks
+
+    def _locality(self, config, client):
+        """ratelimit.PRIVATE for a private address, ratelimit.LOCAL_NETWORKS for one in the owner's other
+        local networks, None for anything else. It is also the client's sign-in group."""
+        if netaddr.is_private_client(client):
+            return ratelimit.PRIVATE
+        entries, networks = self._parsed_local
+        if entries != config.local_networks:
+            networks = netaddr.parse_local_networks(config.local_networks)
+            self._parsed_local = (config.local_networks, networks)
+        return ratelimit.LOCAL_NETWORKS if netaddr.in_networks(client, networks) else None
 
     def requirement(self, scope):
         """(route path, requirement) of the route that fully matches scope, or (None, None) when
@@ -195,10 +207,19 @@ class NetworkGate:
             return
 
         # 3. Where the client is
-        if not netaddr.is_private_client(client):
+        locality = self._locality(config, client)
+        if locality is None:
             if not config.public_access:
-                self.log(f"[Network] Refused {client}: access from outside the local network is off")
-                await self._refuse(scope, receive, send, 403, "Access from outside the local network is turned off.")
+                # The address is the client's own, in the form to add (an IPv4 client of a server on :: is
+                # shown as IPv4): it tells the owner what to add when the network shows a device on it with
+                # an address outside the private ranges
+                seen = netaddr.parse_ip(client)
+                seen = str(seen) if seen is not None else "an unknown address"
+                self.log(f"[Network] Refused {seen}: access from outside the local network is off "
+                         "(a device on your network? add its address to local_networks)")
+                await self._refuse(scope, receive, send, 403,
+                                   "Access from outside the local network is turned off. "
+                                   f"This server sees your device as {seen}.")
                 return
             if scheme != "https":
                 await self._refuse(scope, receive, send, 403, "Access from the internet needs HTTPS.")
@@ -207,7 +228,7 @@ class NetworkGate:
         if not is_api:
             await self._serve_static(scope, receive, send)
             return
-        await self._serve_api(scope, receive, send, headers, config, client, scheme)
+        await self._serve_api(scope, receive, send, headers, config, client, scheme, locality or ratelimit.PUBLIC)
 
     async def _serve_static(self, scope, receive, send):
         if scope["method"] not in ("GET", "HEAD"):
@@ -233,7 +254,7 @@ class NetworkGate:
                                 headers=response_headers)
         await response(scope, receive, send)
 
-    async def _serve_api(self, scope, receive, send, headers, config, client, scheme):
+    async def _serve_api(self, scope, receive, send, headers, config, client, scheme, sign_in_group):
         method = scope["method"]
         sub_path = scope["path"][len(API_PREFIX):] or "/"
         child = dict(scope)
@@ -274,7 +295,7 @@ class NetworkGate:
                 auth = Auth(account.role, NETWORK, frozenset(grants), client, account.id, account.name)
         child[NET_SCOPE_KEY] = NetRequest(client, scheme, cookie_name, self.store, self.limiter,
                                           self.require_owner, session if auth is not None else None,
-                                          self.confirmations)
+                                          self.confirmations, sign_in_group)
         if auth is not None:
             child[SCOPE_KEY] = auth
 

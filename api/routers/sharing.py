@@ -7,10 +7,10 @@ Only main.app includes this router, and local_owner answers 404 to anything but 
 change is a POST (no PATCH), so the desktop's CORS rules stay as they are."""
 import asyncio
 import os
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints
 
 import app_state
 import paths
@@ -31,6 +31,7 @@ router = APIRouter(dependencies=[Depends(local_owner)])
 
 MAX_ROOTS = 200
 _PATH_MAX = 4096
+_NETWORK_MAX = 64  # an IPv6 range with its prefix is at most 43 characters
 
 
 class SharingChange(BaseModel):
@@ -42,6 +43,9 @@ class SharingChange(BaseModel):
     cert_file: Optional[str] = Field(None, max_length=_PATH_MAX)
     key_file: Optional[str] = Field(None, max_length=_PATH_MAX)
     library_roots: Optional[list[str]] = Field(None, max_length=MAX_ROOTS)
+    # Applies to the next request; no restart (the gate reads the settings per request)
+    local_networks: Optional[list[Annotated[str, StringConstraints(max_length=_NETWORK_MAX)]]] = Field(
+        None, max_length=server_config.MAX_LOCAL_NETWORKS)
 
 
 def _store():
@@ -102,6 +106,7 @@ def _view(status: dict) -> dict:
         "library_roots": list(config.library_roots),
         "allowed_hosts": list(config.allowed_hosts),
         "public_access": config.public_access,
+        "local_networks": list(config.local_networks),
         "from_environment": sorted(config.env_fields),
         "urls": urls,
         "fingerprint": fingerprint,
@@ -135,8 +140,9 @@ async def change_sharing(req: SharingChange):
         return error(503, "start_failed", detail="Sharing isn't available in this backend.")
     store = _store()
     changes = {name: value for name, value in req.model_dump(exclude_unset=True).items() if value is not None}
-    if "library_roots" in changes:
-        changes["library_roots"] = tuple(changes["library_roots"])
+    for name in ("library_roots", "local_networks"):
+        if name in changes:
+            changes[name] = tuple(changes[name])
 
     def prepare():
         # Under the listener's lock: the settings read here are the ones the change is applied to

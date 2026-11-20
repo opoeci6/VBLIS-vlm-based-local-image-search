@@ -88,6 +88,7 @@ export function SharingSection({ uiTheme, setToast }) {
   const [certDraft, setCertDraft] = useState(null);
   const [keyDraft, setKeyDraft] = useState(null);
   const [folderDraft, setFolderDraft] = useState('');
+  const [networkDraft, setNetworkDraft] = useState('');
 
   const toast = (message, type = 'success') => setToast?.({ message, type });
 
@@ -147,6 +148,7 @@ export function SharingSection({ uiTheme, setToast }) {
   const problems = state.running ? [] : (state.problems ?? []);
   const isStuck = state.enabled && !state.running;
   const roots = state.library_roots ?? [];
+  const networks = state.local_networks ?? [];
   const urls = state.urls ?? [];
   const counts = state.accounts;
   const hasFilePicker = Boolean(window.electronAPI?.openFile);
@@ -214,6 +216,20 @@ export function SharingSection({ uiTheme, setToast }) {
   };
 
   const removeFolder = (root) => run({ library_roots: roots.filter((item) => item !== root) }, t('sharing.done.saved'));
+
+  const networksLocked = isLocked('local_networks');
+
+  const addNetwork = async () => {
+    const value = networkDraft.trim();
+    if (!value) return;
+    if (networks.includes(value)) {
+      setNetworkDraft('');
+      return;
+    }
+    if (await run({ local_networks: [...networks, value] }, t('sharing.done.saved'))) setNetworkDraft('');
+  };
+
+  const removeNetwork = (network) => run({ local_networks: networks.filter((item) => item !== network) }, t('sharing.done.saved'));
 
   const httpsOptions = [
     { mode: 'off', label: t('sharing.https.off') },
@@ -379,6 +395,48 @@ export function SharingSection({ uiTheme, setToast }) {
           </div>
         )}
         <p className={subtleClass}>{t('sharing.folders.hint')}</p>
+      </div>
+
+      <div className={cardClass}>
+        <h5 className="text-xs font-bold text-neutral-700 dark:text-neutral-300">{t('sharing.localNetworks.title')}</h5>
+        {networks.length === 0 ? (
+          <p className={subtleClass}>{t('sharing.localNetworks.none')}</p>
+        ) : (
+          <ul className="space-y-1">
+            {networks.map((network) => (
+              <li key={network} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 break-all font-mono text-xs text-neutral-800 dark:text-neutral-200">{network}</span>
+                <button
+                  type="button"
+                  onClick={() => removeNetwork(network)}
+                  disabled={isBusy || networksLocked}
+                  aria-label={t('sharing.localNetworks.removeFor', { network })}
+                  className={cn(secondaryButton, 'flex-shrink-0')}
+                >
+                  {t('sharing.localNetworks.remove')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex items-end gap-2">
+          <div className="flex-1 min-w-0">
+            <Field
+              id="sharing-local-network"
+              label={t('sharing.localNetworks.field')}
+              autoComplete="off"
+              spellCheck={false}
+              inputMode="text"
+              disabled={isBusy || networksLocked}
+              value={networkDraft}
+              onChange={setNetworkDraft}
+            />
+          </div>
+          <button type="button" onClick={addNetwork} disabled={isBusy || networksLocked || !networkDraft.trim()} className={cn(secondaryButton, 'flex-shrink-0')}>
+            {t('sharing.localNetworks.add')}
+          </button>
+        </div>
+        <p className={subtleClass}>{t('sharing.localNetworks.hint')}</p>
       </div>
 
       <div className={cardClass}>

@@ -143,6 +143,7 @@ The settings live in `data/server.json` inside the data folder. Change them with
 | `set allowed-hosts photos.example.com,nas.lan` | Extra host names browsers may use. The machine's own name, `<name>.local`, `localhost` and any IP address always work. |
 | `set trusted-proxies 127.0.0.1` | Reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` headers are believed. |
 | `set public-access true` | Allow clients from the internet; needs HTTPS. |
+| `set local-networks 203.0.113.0/24,198.51.100.7` | Other addresses or ranges that count as your local network (see [Access from outside your home](#access-from-outside-your-home)). An empty value (`""`) clears the list. |
 | `sign-out-everywhere` | Every browser has to sign in again. |
 | `show-config` | Print the settings and the accounts (never the passwords). |
 
@@ -150,7 +151,7 @@ An owner can do the same in the browser, under **Settings → Manage accounts**.
 
 A permission that isn't `true` or `false` in a hand-edited `server.json` counts as off.
 
-For Docker or systemd, these environment variables override the file: `VBLIS_SERVER_HOST`, `VBLIS_SERVER_PORT`, `VBLIS_SERVER_TLS`, `VBLIS_SERVER_CERT_FILE`, `VBLIS_SERVER_KEY_FILE`, `VBLIS_SERVER_LIBRARY_ROOTS` (separated by `:` on Linux, `;` on Windows), `VBLIS_SERVER_ALLOWED_HOSTS`, `VBLIS_SERVER_TRUSTED_PROXIES` (comma-separated) and `VBLIS_SERVER_PUBLIC_ACCESS`.
+For Docker or systemd, these environment variables override the file: `VBLIS_SERVER_HOST`, `VBLIS_SERVER_PORT`, `VBLIS_SERVER_TLS`, `VBLIS_SERVER_CERT_FILE`, `VBLIS_SERVER_KEY_FILE`, `VBLIS_SERVER_LIBRARY_ROOTS` (separated by `:` on Linux, `;` on Windows), `VBLIS_SERVER_ALLOWED_HOSTS`, `VBLIS_SERVER_TRUSTED_PROXIES` and `VBLIS_SERVER_LOCAL_NETWORKS` (comma-separated), and `VBLIS_SERVER_PUBLIC_ACCESS`.
 
 ## HTTPS
 
@@ -176,7 +177,11 @@ Over plain HTTP, anyone on the same network can read the password and the pictur
 
 ## Access from outside your home
 
-By default the server refuses clients from outside private networks (home and office networks, VPN ranges such as Tailscale's, and the machine itself). The safest ways to reach it from elsewhere:
+By default the server refuses clients from outside private networks (home and office networks, VPN ranges such as Tailscale's, and the machine itself).
+
+**A device on your own network is refused?** Some networks, such as a building's or a school's, show a device to the server with an address outside those ranges, for example a phone on the Wi-Fi while the server is on a cable. The refusal names the address the server saw ("This server sees your device as 203.0.113.7."), and so does the server's log. Add that address, or its range, to the other local networks: in the Windows app under **Settings → Network sharing → Other local networks**, or with `set local-networks`. It applies at once. Those devices are then treated like devices at home, so plain HTTP is allowed for them too. A range may be at most a /8 (IPv4) or a /32 (IPv6); for clients from anywhere, use public access instead.
+
+The safest ways to reach the server from elsewhere:
 
 - **A VPN** such as Tailscale or WireGuard: the server sees a private address, and nothing is exposed to the internet.
 - **An SSH tunnel:** `ssh -L 8080:127.0.0.1:8080 you@server`, then open `http://localhost:8080`.

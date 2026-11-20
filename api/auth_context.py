@@ -50,6 +50,9 @@ class NetRequest(NamedTuple):
     require_owner: bool = True
     session: object = None  # the verified sessions.Session, or None
     confirmations: object = None  # confirm_memory.RecentConfirmations of this listener
+    # The client's sign-in group (ratelimit.PRIVATE, LOCAL_NETWORKS or PUBLIC), as the gate placed it; None:
+    # from the address alone
+    sign_in_group: Optional[str] = None
 
 
 def current_auth(request: Request) -> Auth:

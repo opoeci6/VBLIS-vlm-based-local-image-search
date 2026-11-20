@@ -26,6 +26,7 @@ SETTABLE = {
     "public-access": "public_access",
     "allowed-hosts": "allowed_hosts",
     "trusted-proxies": "trusted_proxies",
+    "local-networks": "local_networks",
 }
 _ACCOUNT_COMMANDS = {
     "remove-account", "set-password", "rename-account", "set-role", "allow", "disable-account",
@@ -112,7 +113,7 @@ def _set_field(store, name, value):
 
     field = SETTABLE[name]
     data = store.stored().to_json()
-    if field in ("allowed_hosts", "trusted_proxies"):
+    if field in ("allowed_hosts", "trusted_proxies", "local_networks"):
         data[field] = [part.strip() for part in value.split(",") if part.strip()]
     elif field in ("tls_mode", "cert_file", "key_file"):
         data["tls"][{"tls_mode": "mode"}.get(field, field)] = value
@@ -152,6 +153,7 @@ def show_config(store) -> None:
     print(f"  Access from the internet: {'on (HTTPS only)' if config.public_access else 'off'}")
     print("  Extra host names: " + (", ".join(config.allowed_hosts) or "none"))
     print("  Trusted proxies: " + (", ".join(config.trusted_proxies) or "none"))
+    print("  Other local networks: " + (", ".join(config.local_networks) or "none"))
     counts = config.account_counts()
     print(f"  Accounts: {counts['owners']} owner, {counts['viewers']} viewer"
           + ("" if config.has_owner else " (NO owner account can sign in)"))
