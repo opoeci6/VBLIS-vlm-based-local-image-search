@@ -22,6 +22,7 @@
   "originals": {
     "open": "Open original",
     "playVideo": "Play video",
-    "download": "Download"
+    "download": "Download",
+    "cannotPlay": "This browser can't play this video. Download it to watch it."
   }
 }

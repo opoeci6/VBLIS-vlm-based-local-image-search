@@ -20,6 +20,7 @@
   "originals": {
     "open": "打开原件",
     "playVideo": "播放视频",
-    "download": "下载"
+    "download": "下载",
+    "cannotPlay": "此浏览器无法播放这个视频，请下载后观看。"
   }
 }

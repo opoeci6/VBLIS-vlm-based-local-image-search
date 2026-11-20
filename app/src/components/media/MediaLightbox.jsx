@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { ChevronLeft, ChevronRight, FolderOpen, X, Sparkles, Copy, ClipboardCopy, MapPin, Video } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API_BASE } from '../../config';
@@ -8,8 +9,10 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { cn } from '../../utils/cn';
 import { copyText, openInExplorer } from '../../utils/electron';
 import { formatBytes, formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
-import { decideSwipe, lightboxPosition, nextItem, previousItem } from '../../utils/lightboxNav';
+import { decideSwipe, lightboxPosition, mediaKey, nextItem, previousItem } from '../../utils/lightboxNav';
 import { getMediaPreviewUrl } from '../../utils/media';
+import { startPlayback } from '../../utils/originals';
+import { OriginalVideoPlayer } from './OriginalVideoPlayer';
 import { formatPlaceLine } from '../../utils/placeNames';
 import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
 import { OriginalLinks } from './OriginalLinks';
@@ -41,6 +44,17 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
   // On a phone, Back closes the view. Keyed on open/closed only: moving to another picture adds no history entry.
   useBackToClose(isOpen, close);
 
+  // Playing the original video in place of the picture: 'idle' (picture, Play video offered), 'playing' or
+  // 'failed' (picture again, with a message). Reset when another item is shown.
+  const [play, setPlay] = useState('idle');
+  const playerRef = useRef(null);
+  const shownKey = selectedImage ? mediaKey(selectedImage) : null;
+  const [playKey, setPlayKey] = useState(shownKey);
+  if (shownKey !== playKey) {
+    setPlayKey(shownKey);
+    setPlay('idle');
+  }
+
   const nav = useMemo(() => {
     if (!selectedImage || selectedImage.isBrowsing) return null;
     const position = lightboxPosition(navItems, selectedImage);
@@ -64,6 +78,8 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
     const onKeyDown = (event) => {
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (isTypingTarget(event.target)) return;
+      // The video player's own keys (seeking) win while it has the focus.
+      if (event.target?.closest?.('video')) return;
       let handle;
       if (hasNav && event.key === 'ArrowLeft') {
         handle = () => { if (previous) setSelectedImage(previous); };
@@ -105,6 +121,8 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
 
   const onPointerDown = (event) => {
     if (event.pointerType !== 'touch') return;
+    // A finger on the player scrubs the timeline; it is not a swipe.
+    if (event.target?.closest?.('video')) return;
     const touches = touchesRef.current;
     touches.add(event.pointerId);
     gestureRef.current = touches.size === 1
@@ -152,6 +170,13 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
       ? t('lightbox.exactDetected', { count: selectedImage.otherPaths.length })
       : t('lightbox.visualDetected', { count: selectedImage.otherPaths.length }))
     : null;
+
+  // The picture and the player (poster) share the preview and the sizing.
+  const previewUrl = getMediaPreviewUrl(API_BASE, selectedImage, 'full');
+  const previewClassName = cn(
+    "w-full max-w-full object-contain rounded-none shadow-2xl animate-in zoom-in-95 duration-300 sm:w-auto sm:rounded-lg",
+    selectedImage.isDuplicate ? "max-h-[calc(100dvh-8rem)] sm:max-h-[70dvh]" : "max-h-[calc(100dvh-8rem)] sm:max-h-[80dvh]"
+  );
 
   const handleCopyPath = async (e) => {
     e.stopPropagation();
@@ -243,23 +268,39 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
               path={selectedImage.path}
               mediaType={selectedImage.media_type}
               onClick={(e) => e.stopPropagation()}
+              onPlay={selectedImage.media_type === 'video' && play === 'idle' ? () => {
+                // Mounted within the tap, so it can start with sound there (see startPlayback).
+                flushSync(() => setPlay('playing'));
+                startPlayback(playerRef.current);
+              } : undefined}
               className={TOOLBAR_BUTTON}
             />
           </div>
         </div>
       </div>
 
-      <img
-        src={getMediaPreviewUrl(API_BASE, selectedImage, 'full')}
-        alt={selectedImage.media_type === 'video' ? t('common:videoFrameAt', { ts: formatVideoTimestamp(selectedImage.timestamp_seconds) }) : t('lightbox.fullSizeAlt')}
-        className={cn(
-          "w-full max-w-full object-contain rounded-none shadow-2xl animate-in zoom-in-95 duration-300 sm:w-auto sm:rounded-lg",
-          selectedImage.isDuplicate ? "max-h-[calc(100dvh-8rem)] sm:max-h-[70dvh]" : "max-h-[calc(100dvh-8rem)] sm:max-h-[80dvh]"
-        )}
-        onClick={(e) => e.stopPropagation()}
-      />
+      {selectedImage.media_type === 'video' && play === 'playing' ? (
+        <OriginalVideoPlayer
+          ref={playerRef}
+          path={selectedImage.path}
+          start={selectedImage.timestamp_seconds}
+          poster={previewUrl}
+          className={previewClassName}
+          onFailed={() => setPlay('failed')}
+        />
+      ) : (
+        <img
+          src={previewUrl}
+          alt={selectedImage.media_type === 'video' ? t('common:videoFrameAt', { ts: formatVideoTimestamp(selectedImage.timestamp_seconds) }) : t('lightbox.fullSizeAlt')}
+          className={previewClassName}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
 
       <div className="mt-4 w-full px-4 pb-4 text-center sm:mt-6 sm:w-auto sm:px-0 sm:pb-0" onClick={(e) => e.stopPropagation()}>
+        {play === 'failed' && (
+          <p role="status" className="mb-2 text-sm font-medium text-amber-300">{t('originals.cannotPlay')}</p>
+        )}
         {!selectedImage.isBrowsing && hasScore(selectedImage) && (
           <p className="text-xl font-medium text-white mb-2">
             {isSimilarityKind(selectedImage.score_kind)
