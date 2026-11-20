@@ -18,9 +18,14 @@ from fastapi import FastAPI
 import app_state
 import paths
 import security
+import win_asyncio
 from bootstrap import API_TOKEN
 from network_listener import NetworkListener
 from routers import indexing, media, models, queue, search, settings, sharing
+
+# Windows: a browser resetting a connection (a video player does, while it buffers or seeks) no longer
+# prints a traceback and leaves the socket open
+win_asyncio.install()
 
 # Shares the library on the network next to the desktop app, when the settings say so. The desktop app is
 # the owner itself, so viewer accounts alone are enough to share from here.
