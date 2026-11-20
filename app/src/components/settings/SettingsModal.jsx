@@ -37,7 +37,7 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
+      className="app-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 dark:bg-black/60 backdrop-blur-sm sm:items-center sm:p-4"
       {...backdropDismiss}
     >
       <div className="relative w-full max-w-full animate-in fade-in zoom-in-95 duration-200 sm:w-[480px]">

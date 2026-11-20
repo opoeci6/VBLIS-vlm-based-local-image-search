@@ -43,7 +43,11 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 dark:bg-black/85 backdrop-blur-md sm:p-6 animate-in fade-in duration-200"
+      className={cn(
+        "app-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 dark:bg-black/85 sm:p-6 animate-in fade-in duration-200",
+        // A playing video would make the page behind be blurred again on every frame.
+        play !== 'playing' && "backdrop-blur-md"
+      )}
       {...backdropDismiss}
     >
       <div

@@ -194,6 +194,16 @@ describe('original links', () => {
       expect(setSelectedImage).not.toHaveBeenCalled();
     });
 
+    it('stops blurring the page behind while the video plays, and blurs it again when it cannot play', () => {
+      const { container } = inSession(info('owner', true), lightbox(videoItem()));
+      const overlay = container.querySelector('.app-overlay');
+      expect(overlay.classList.contains('backdrop-blur-md')).toBe(true);
+      play();
+      expect(overlay.classList.contains('backdrop-blur-md')).toBe(false);
+      fireEvent.error(container.querySelector('video'));
+      expect(overlay.classList.contains('backdrop-blur-md')).toBe(true);
+    });
+
     it('has no fragment for a frame at 0 or without a time, and trims the decimals', () => {
       const srcFor = (extra) => {
         const { container, unmount } = inSession(info('owner', true), lightbox(videoItem(extra)));
@@ -353,6 +363,16 @@ describe('original links', () => {
         const frame = within(container).getByRole('button', { name: /Frame 1/i });
         expect(video.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Play video' })).toBeNull();
+      });
+
+      it('stops blurring the page behind while the video plays', () => {
+        const { container } = inSession(info('viewer', true), modal());
+        const overlay = container.querySelector('.app-overlay');
+        expect(overlay.classList.contains('backdrop-blur-md')).toBe(true);
+        play();
+        expect(overlay.classList.contains('backdrop-blur-md')).toBe(false);
+        fireEvent.error(container.querySelector('video'));
+        expect(overlay.classList.contains('backdrop-blur-md')).toBe(true);
       });
 
       it('shows a message and no Play video when the browser cannot play it', () => {

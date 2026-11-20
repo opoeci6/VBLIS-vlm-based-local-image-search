@@ -170,7 +170,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
+      className="app-overlay fixed inset-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
       {...backdropDismiss}
     >
       <div
