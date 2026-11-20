@@ -1,0 +1,126 @@
+{
+  "connecting": "正在连接服务器……",
+  "connectionError": {
+    "title": "无法连接到服务器",
+    "desc": "请检查网络连接，并确认服务器正在运行。",
+    "retry": "重试"
+  },
+  "signIn": {
+    "title": "登录",
+    "password": "密码",
+    "submit": "登录",
+    "submitting": "正在登录……",
+    "expired": "登录已失效，请重新登录。",
+    "insecure": "此连接未加密。",
+    "errors": {
+      "wrongPassword": "密码不正确。",
+      "tooManyAttempts_other": "尝试次数过多，请在 {{count}} 秒后重试。",
+      "tooManyAttemptsNoWait": "尝试次数过多，请稍后重试。",
+      "busy_other": "服务器正忙，请在 {{count}} 秒后重试。",
+      "busyNoWait": "服务器正忙，请稍后重试。",
+      "noOwnerPassword": "服务器尚未设置所有者密码。请在服务器上执行：<code>set-password owner</code>",
+      "network": "无法连接到服务器。请检查网络连接后重试。",
+      "generic": "登录失败（HTTP {{status}}）。"
+    }
+  },
+  "role": {
+    "owner": "所有者",
+    "viewer": "查看者"
+  },
+  "signedInAs": "登录身份：{{role}}",
+  "signOut": "退出登录",
+  "viewer": {
+    "noModelTitle": "所有者尚未设置模型",
+    "noModelDesc": "所有者在服务器上设置模型后即可搜索。"
+  },
+  "overlay": {
+    "searchByImage": "松开以按图片搜索",
+    "searchByImageHint": "在媒体库中查找相似的图片和视频"
+  },
+  "fileDrop": {
+    "useAddFolders": "无法将文件夹拖入浏览器。请改用“添加文件夹”按钮。"
+  },
+  "server": {
+    "title": "服务器",
+    "loading": "正在加载服务器设置……",
+    "loadFailed": "无法加载服务器设置。",
+    "viewers": {
+      "title": "查看者可以做什么",
+      "originals": "打开和下载原始文件",
+      "imageSearch": "以图片搜索",
+      "saveFailed": "无法保存查看者权限。"
+    },
+    "facts": {
+      "title": "服务器信息",
+      "libraryFolders": "媒体库文件夹",
+      "noLibraryFolders": "暂无",
+      "port": "端口",
+      "https": "HTTPS",
+      "httpsOff": "已关闭",
+      "httpsSelfSigned": "已开启（自签名证书）",
+      "httpsFiles": "已开启（证书文件）",
+      "internet": "互联网访问",
+      "internetOn": "允许",
+      "internetOff": "仅限局域网",
+      "fromEnvironment": "由环境变量设置：{{names}}",
+      "hint": "这些设置需在服务器上修改。详见 SERVER.md。"
+    },
+    "password": {
+      "title": "修改密码",
+      "role": "修改哪个密码",
+      "roleOwner": "所有者",
+      "roleViewer": "查看者",
+      "new": "新密码",
+      "repeat": "再次输入新密码",
+      "current": "当前所有者密码",
+      "submit": "修改密码",
+      "submitting": "正在保存……",
+      "changedOwner": "所有者密码已修改。",
+      "changedViewer": "查看者密码已修改。",
+      "errors": {
+        "mismatch": "两次输入的新密码不一致。",
+        "tooShort": "密码至少需要 8 个字符。",
+        "tooLong": "密码最多 256 个字符。",
+        "currentRequired": "请输入当前所有者密码。"
+      }
+    },
+    "removeViewer": {
+      "button": "移除查看者密码",
+      "confirm": "移除后，查看者将无法登录。请输入当前所有者密码以继续。",
+      "submit": "移除密码",
+      "removed": "查看者密码已移除。"
+    },
+    "signOutOthers": {
+      "button": "让其他浏览器退出登录",
+      "confirm": "登录此服务器的其他所有浏览器都需要重新登录。当前浏览器保持登录。",
+      "submit": "让其他浏览器退出登录",
+      "done": "其他浏览器已退出登录。",
+      "failed": "无法让其他浏览器退出登录。"
+    },
+    "errors": {
+      "codes": {
+        "wrong_password": "当前密码不正确。",
+        "empty": "新密码不能为空。",
+        "too_short": "新密码太短。",
+        "too_long": "新密码太长。",
+        "same_as_other": "所有者密码和查看者密码不能相同。",
+        "config_unreadable": "无法读取服务器的设置文件，未做任何更改。"
+      },
+      "tooManyAttempts_other": "尝试次数过多，请在 {{count}} 秒后重试。",
+      "tooManyAttemptsNoWait": "尝试次数过多，请稍后重试。",
+      "generic": "服务器拒绝了此更改（HTTP {{status}}）。",
+      "network": "无法连接到服务器。"
+    }
+  },
+  "httpBanner": {
+    "message": "此连接未加密。同一网络中的其他人可能看到密码和图片。",
+    "howTo": "如何开启 HTTPS",
+    "hideHowTo": "收起",
+    "dismiss": "关闭",
+    "ownerSelfSigned": "最简单：在服务器上运行 <code>set tls self_signed</code>。",
+    "ownerFiles": "使用自己的证书：让服务器使用证书文件和密钥文件。",
+    "ownerProxy": "或者将服务器置于提供 HTTPS 的反向代理之后。",
+    "ownerDocs": "具体步骤见 SERVER.md。",
+    "viewerAsk": "请联系服务器的所有者开启 HTTPS。"
+  }
+}

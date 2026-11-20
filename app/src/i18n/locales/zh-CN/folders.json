@@ -84,5 +84,27 @@
     "resyncSub": "仅重新同步此子文件夹",
     "resyncSubMissing": "重新同步子文件夹（例如重新连接 USB 驱动器）",
     "deleteSub": "仅从索引中删除此子文件夹"
+  },
+  "picker": {
+    "title": "添加服务器上的文件夹",
+    "subtitle": "选择服务器上要添加到媒体库的文件夹。",
+    "roots": "媒体库文件夹",
+    "up": "上一级",
+    "loading": "正在加载……",
+    "empty": "此处没有子文件夹。",
+    "indexed": "已索引",
+    "unavailable": "不可用",
+    "unavailableTooltip": "服务器上目前无法访问此文件夹。",
+    "openFolder": "打开 {{name}}",
+    "selectFolder": "选择 {{name}}",
+    "deselectFolder": "取消选择 {{name}}",
+    "addThisFolder": "添加此文件夹",
+    "noRootsTitle": "服务器上还没有媒体库文件夹",
+    "noRootsDesc": "服务器的所有者需要在服务器上使用 <code>add-library-folder</code> 命令添加媒体库文件夹。详见 SERVER.md。",
+    "truncated": "仅显示前一部分文件夹。请打开子文件夹查看更多。",
+    "skipped_other": "有 {{count}} 个文件夹名称无法显示。",
+    "readFailed": "无法读取此文件夹。",
+    "add_other": "添加 {{count}} 个文件夹",
+    "adding": "正在添加……"
   }
 }

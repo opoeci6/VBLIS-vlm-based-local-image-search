@@ -1,11 +1,19 @@
 import os
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 import app_state
+from auth_context import Auth, current_auth
 from task_queue import TaskType
-from routers.guards import require_indexed_path
+from routers.guards import check_index_target, require_indexed_path
 
 router = APIRouter()
+
+# What a viewer sees of /status: progress only, no file names, task payloads or error text
+VIEWER_STATUS_KEYS = frozenset({
+    "is_indexing", "progress", "percent", "total_files", "indexed_files", "is_loading_model",
+    "is_downloading", "last_task_id", "has_active_task", "is_paused", "queue_pending_count",
+    "queue_worker_state",
+})
 
 class FolderDeleteRequest(BaseModel):
     folder_path: str
@@ -39,11 +47,12 @@ def get_indexed_folders():
 @router.get("/index/folder/contents")
 def get_indexed_folder_contents(
     folder_path: str = Query(...),
-    limit: int = Query(50000, ge=1, le=100000)
+    limit: int = Query(50000, ge=1, le=100000),
+    auth: Auth = Depends(current_auth),
 ):
-    require_indexed_path(folder_path)
+    require_indexed_path(folder_path, auth=auth, is_folder=True)
     try:
-        return app_state.indexer.get_folder_contents(folder_path, limit)
+        return app_state.indexer.get_folder_contents(folder_path, limit, skip_links=auth.is_network)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -59,8 +68,8 @@ def delete_folder_index(req: FolderDeleteRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/index/folder/reindex")
-def reindex_folder(req: FolderDeleteRequest):
-    folder_path = os.path.abspath(os.path.normpath(req.folder_path))
+def reindex_folder(req: FolderDeleteRequest, auth: Auth = Depends(current_auth)):
+    folder_path = check_index_target(auth, req.folder_path)
     if not os.path.isdir(folder_path):
         raise HTTPException(status_code=400, detail="Invalid directory path.")
 
@@ -81,8 +90,8 @@ def batch_delete_folders(req: BatchFolderRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/index/folders/batch-reindex")
-def batch_reindex_folders(req: BatchFolderRequest):
-    canonical = [os.path.abspath(os.path.normpath(p)) for p in req.folder_paths]
+def batch_reindex_folders(req: BatchFolderRequest, auth: Auth = Depends(current_auth)):
+    canonical = [check_index_target(auth, p) for p in req.folder_paths]
     valid_dirs = [d for d in canonical if os.path.isdir(d)]
     if not valid_dirs:
         raise HTTPException(status_code=400, detail="No valid directory paths provided.")
@@ -102,7 +111,7 @@ def scan_media_info():
     return {"status": "queued" if created else "duplicate", "task_id": task.id}
 
 @router.get("/status")
-def get_status():
+def get_status(auth: Auth = Depends(current_auth)):
     status = app_state.indexer.get_status()
     # Augment with queue status
     queue_snap = app_state.task_queue.get_snapshot()
@@ -116,4 +125,6 @@ def get_status():
         or (active_task is not None and (active_task.get("is_paused") or active_task.get("status") == "paused"))
     )
     status["is_paused"] = is_paused
+    if not auth.is_owner:
+        return {key: value for key, value in status.items() if key in VIEWER_STATUS_KEYS}
     return status
