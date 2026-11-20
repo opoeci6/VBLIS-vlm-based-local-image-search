@@ -30,6 +30,7 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 ## System Requirements
 
 - Windows 10 or 11, 64-bit.
+- Server mode also runs on a 64-bit Linux (x86-64 or ARM64) with Python 3.11 to 3.13, or in Docker. See [SERVER.md](SERVER.md).
 - An NVIDIA GPU is optional: VBLIS uses it through CUDA when one is available and runs on the CPU otherwise (indexing is slower).
 - Disk space: about 4.5 GB for the app, plus 0.6–4.3 GB for each downloaded model, plus the index and the thumbnail cache.
 
@@ -54,6 +55,7 @@ The `naflex` models look at each image in its own aspect ratio; the others resiz
 
 1. **Download & Install**: From the [Releases](https://github.com/opoeci6/VBLIS-vlm-based-local-image-search/releases) page, download the latest `VBLIS-Setup-<version>.exe` and run it.
 Or use the portable version `VBLIS-<version>-win.7z`: extract it with [7-Zip](https://www.7-zip.org/) (or the extraction built into Windows 11) into a folder you can write to, not Program Files, and launch `VBLIS.exe`.
+For a server on Linux or in Docker, follow [SERVER.md](SERVER.md) instead. The release's `VBLIS-web-<version>.zip` holds the web interface, so the server needs no Node.js.
 > [!NOTE]
 > The installer isn't code-signed, so Windows SmartScreen may show "Windows protected your PC". Click **More info**, then **Run anyway**. To check a download, compare the output of `Get-FileHash <file>` in PowerShell with its line in the release's `SHA256SUMS.txt`.
 2. **Select a Model**: On first launch, choose a model and download it (a SigLIP 2 model is highly recommended; see [Models](#models)).
@@ -67,12 +69,14 @@ Or use the portable version `VBLIS-<version>-win.7z`: extract it with [7-Zip](ht
 8. **Model Management**: You can download, switch, and delete models in the settings.
 9. **Index and Cache Management**: You can clear the index and cache in the settings.
 10. **Language**: Choose English or Simplified Chinese in the settings, or let VBLIS follow Windows. Searching works best with English queries; in Chinese, use common words.
+11. **Share on Your Network**: Turn on **Share on my network** in the settings, add an account for each person with **Manage accounts**, and open one of the addresses it shows in a browser on a phone or another computer. Sharing lasts while the app is open. See [SERVER.md](SERVER.md) for HTTPS, permissions and running VBLIS as a server.
 
 ## Upgrading
 
 - Your index, downloaded models and settings are kept. The installer keeps them in `%LOCALAPPDATA%\VBLIS`, and the portable version in the `VBLIS-data` folder next to `VBLIS.exe`. When you install over an older version, its data is moved there automatically.
 - After upgrading from v0.2.0 or older, re-sync your folders once (the **Re-sync** button of each folder in the Indexed Folders panel). That picks up AVIF files, and turns portrait videos and photos that older versions indexed sideways upright. Only those files are embedded again.
 - If some HEIC photos showed up turned in v0.4.0 or older, re-sync their folder once and use **Clear Image Cache** in the settings. Only those photos are embedded again.
+- Upgrading from v0.5.0 needs no re-indexing. Sharing stays off until you turn on **Share on my network**.
 - The date, place, orientation and resolution filters need media details that older versions didn't read. VBLIS reads them in the background the first time you open the Filters panel; no re-indexing is needed.
 
 ## TODO / Roadmap
@@ -85,6 +89,7 @@ Or use the portable version `VBLIS-<version>-win.7z`: extract it with [7-Zip](ht
 - [x] Place names and a location filter, from the GPS data in photos and videos.
 - [x] Advanced filtering (by date, folder, or image properties).
 - [x] Image-to-Video searching.
+- [x] Server mode: use the library from a browser on other devices, phones included, and run it on Linux or in Docker.
 
 ## Credits
 
