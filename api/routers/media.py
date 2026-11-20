@@ -26,6 +26,7 @@ NETWORK_MAX_PREWARM_FRAMES = 100
 # with size=preview: owners and viewers with originals get it too, but only as a smaller stand-in
 # (a small enough picture is still the file itself); /media/original keeps serving the file.
 PREVIEW_MAX_SIDE = 2560
+PREVIEW_JPEG_QUALITY = 88
 
 
 def _restricted(auth: Auth) -> bool:
@@ -41,12 +42,34 @@ def _frame_time(auth: Auth, timestamp: float) -> float:
     return round(timestamp / VIDEO_ANALYSIS_INTERVAL_SECONDS) * VIDEO_ANALYSIS_INTERVAL_SECONDS
 
 
-def _preview_response(path: str):
-    img, _ = open_image_upright(path)
-    try:
-        return _jpeg_response(img, PREVIEW_MAX_SIDE)
-    finally:
-        img.close()
+def _preview_cache_path(path: str):
+    """The screen-sized copy's place in the image cache, next to the thumbnails: by content, so exact copies
+    share it and an edited file gets a new one. "Clear Image Cache" removes it with the thumbnails."""
+    return IMAGE_CACHE_DIR / f"{compute_file_hash(path)}_{PREVIEW_MAX_SIDE}.jpg"
+
+
+def _preview_response(path: str, fits: bool):
+    """The picture as a JPEG of at most PREVIEW_MAX_SIDE, without the file's metadata. `fits` is
+    _fits_preview(path): such a picture is quick to re-encode, so that is done on each request. Any other
+    (HEIC, or larger: a 48 MP phone photo takes a second or more to decode) is made once and kept."""
+    if fits:
+        img, _ = open_image_upright(path)
+        try:
+            return _jpeg_response(img, PREVIEW_MAX_SIDE)
+        finally:
+            img.close()
+
+    def render(fp):
+        img, _ = open_image_upright(path)
+        try:
+            out = img.convert("RGB")
+            out.info.clear()
+            out.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))
+            out.save(fp, format="JPEG", quality=PREVIEW_JPEG_QUALITY, optimize=True)
+        finally:
+            img.close()
+
+    return FileResponse(get_or_create_thumbnail(_preview_cache_path(path), render), media_type="image/jpeg")
 
 
 def _fits_preview(path: str) -> bool:
@@ -61,7 +84,7 @@ def _fits_preview(path: str) -> bool:
         return False
 
 
-def _jpeg_response(img, max_side=None, quality=88):
+def _jpeg_response(img, max_side=None, quality=PREVIEW_JPEG_QUALITY):
     """img as a JPEG without any of the source's metadata (EXIF, XMP, comments), shrunk to fit max_side."""
     out = img.convert("RGB")
     out.info.clear()
@@ -123,7 +146,8 @@ def serve_image(
     """Serve a local image file by absolute path. Transcodes HEIC to JPEG.
     Supports size='thumbnail' for faster loading in the UI grid, and size='preview' for a picture of at
     most PREVIEW_MAX_SIDE (the file itself when it already fits).
-    Thumbnails are cached on disk in segregated 'cache/images' and 'cache/videos' directories.
+    Thumbnails are cached on disk in segregated 'cache/images' and 'cache/videos' directories, and so are
+    the screen-sized copies of HEIC and larger pictures (_preview_response).
     """
     require_indexed_path(path, IMAGE_EXTENSIONS | VIDEO_EXTENSIONS, auth=auth)
     if not os.path.isfile(path):
@@ -180,7 +204,7 @@ def serve_image(
 
     if _restricted(auth):
         try:
-            return _preview_response(path)
+            return _preview_response(path, _fits_preview(path))
         except Exception:
             raise HTTPException(status_code=500, detail="Failed to prepare the picture")
 
@@ -189,7 +213,7 @@ def serve_image(
         if _fits_preview(path):
             return FileResponse(path)
         try:
-            return _preview_response(path)
+            return _preview_response(path, False)
         except Exception:
             raise HTTPException(status_code=500, detail="Failed to prepare the picture")
 

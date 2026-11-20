@@ -8,8 +8,10 @@ export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
     <div className="pt-2">
       <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">{t('theme.title')}</label>
       <div className="grid grid-cols-2 gap-3 mb-2">
+        {/* aria-pressed also gives the chosen style the terminal theme's inverted look (index.css) */}
         <button
           type="button"
+          aria-pressed={uiTheme === 'modern'}
           onClick={() => setUiTheme('modern')}
           className={cn(
             "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
@@ -26,6 +28,7 @@ export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
         </button>
         <button
           type="button"
+          aria-pressed={uiTheme === 'terminal'}
           onClick={() => setUiTheme('terminal')}
           className={cn(
             "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
