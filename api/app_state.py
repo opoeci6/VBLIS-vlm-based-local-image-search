@@ -9,7 +9,12 @@ from model_manager import ModelManager
 from indexer import Indexer
 from task_queue import TaskQueueManager
 from warmup import CacheWarmer
+from server_config import ServerConfigStore
 
+# The network listener's settings; read lazily, so a desktop-only start never opens the file
+server_config = ServerConfigStore()
+# The desktop app's network listener (network_listener.NetworkListener); main.py sets it
+network_listener = None
 model_manager = ModelManager()
 indexer = Indexer(model_manager)
 indexer.warmer = CacheWarmer(indexer)

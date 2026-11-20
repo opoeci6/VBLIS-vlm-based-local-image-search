@@ -8,6 +8,7 @@ pydantic
 python-dotenv
 python-multipart
 requests
+cryptography
 
 # Image and video processing
 Pillow

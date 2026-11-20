@@ -3,6 +3,9 @@ import { AlertTriangle, Loader2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../../utils/cn';
 import { formatNumber } from '../../../utils/formatters';
+import { useSession } from '../../../session/sessionContext';
+import { useBackToClose } from '../../../hooks/useBackToClose';
+import { useEscapeKey } from '../../../hooks/useEscapeKey';
 import {
   DUPLICATE_KINDS,
   MEGAPIXEL_CHOICES,
@@ -24,7 +27,8 @@ const Section = ({ title, children }) => (
   </section>
 );
 
-const dateInputClass = 'rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs text-neutral-900 dark:text-neutral-100';
+// 16 px on a phone, where a smaller font makes iOS zoom into the field.
+const dateInputClass = 'min-w-0 flex-1 sm:flex-none rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2.5 sm:px-2 sm:py-1.5 text-base sm:text-xs text-neutral-900 dark:text-neutral-100';
 
 // Media kinds that get their own group in the Format section; every other format goes under "Other".
 const FORMAT_KINDS = ['image', 'video'];
@@ -107,29 +111,30 @@ function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsF
   );
 }
 
-// Floating panel under the header with every search filter. Rendered once by App; the Filters
-// button toggles it. It does not trap focus, and closes on Escape or a click outside it.
+// Panel with every search filter. Rendered once by App; the Filters button toggles it. It floats under the
+// header from sm up, and is a bottom sheet with a dimmed backdrop on a phone. It does not trap focus, and closes
+// on Escape (through the shared Esc stack), a click outside it, and the Back button of a phone browser.
 export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
   const { t } = useTranslation('filters');
+  const { may } = useSession();
   const panelRef = useRef(null);
   const { isOpen, close } = filters;
 
+  useBackToClose(isOpen, close);
+  useEscapeKey(isOpen, close);
+
   useEffect(() => {
     if (!isOpen) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') close();
-    };
     const onMouseDown = (event) => {
       if (panelRef.current?.contains(event.target)) return;
       if (event.target.closest?.('[data-filters-toggle]')) return;
+      // The phone backdrop closes on its click instead: closing on the press would let the click land on
+      // whatever sits under the finger once the backdrop is gone.
+      if (event.target.closest?.('[data-filters-backdrop]')) return;
       close();
     };
-    document.addEventListener('keydown', onKeyDown);
     document.addEventListener('mousedown', onMouseDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('mousedown', onMouseDown);
-    };
+    return () => document.removeEventListener('mousedown', onMouseDown);
   }, [isOpen, close]);
 
   if (!isOpen) return null;
@@ -151,26 +156,35 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
   const placeNodes = options?.places || [];
   // Hidden unless the backend says it has place data (an older backend sends no such key). While the
   // options are not loaded yet the section is shown with a status line, like the Format section.
-  const showPlaces = !options || options.places_available === true;
+  // A viewer without the places permission never sees it, whatever the options say.
+  const showPlaces = may('places') && (!options || options.places_available === true);
   const orientationLabels = getOrientationLabels(t);
   const duplicateLabels = getDuplicateLabels(t);
   const formatTitles = { image: t('format.images'), video: t('format.videos'), other: t('format.other') };
 
   return (
+    <>
+      {/* Phone only: dims the page behind the sheet; a tap on it closes the sheet. */}
+      <div
+        data-filters-backdrop="true"
+        aria-hidden="true"
+        onClick={close}
+        className="fixed inset-0 z-[59] bg-black/40 animate-in fade-in duration-150 sm:hidden"
+      />
     <div
       ref={panelRef}
       role="dialog"
       aria-modal="false"
       aria-label={t('panel.label')}
-      className="fixed z-[60] top-24 left-1/2 -translate-x-1/2 w-[min(42rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto custom-scrollbar rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 shadow-2xl text-neutral-900 dark:text-neutral-100 animate-in fade-in duration-150"
+      className="fixed z-[60] inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto overscroll-contain custom-scrollbar rounded-t-2xl border-t border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 pt-0 pb-0 shadow-2xl text-neutral-900 dark:text-neutral-100 animate-in fade-in slide-in-from-bottom-4 duration-150 sm:inset-x-auto sm:bottom-auto sm:top-24 sm:left-1/2 sm:-translate-x-1/2 sm:w-[min(42rem,calc(100vw-2rem))] sm:max-h-[70dvh] sm:rounded-2xl sm:border sm:p-5"
     >
-      <div className="mb-4 flex items-center justify-between">
+      <div className="sticky top-0 z-10 -mx-5 mb-4 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-3 dark:border-neutral-800 dark:bg-neutral-900 sm:static sm:mx-0 sm:border-b-0 sm:p-0">
         <h2 className="text-base font-bold">{t('panel.title')}</h2>
         <button
           type="button"
           onClick={close}
           aria-label={t('panel.close')}
-          className="p-1.5 rounded-lg text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 cursor-pointer"
+          className="p-3 -m-1 sm:m-0 sm:p-1.5 rounded-lg text-neutral-500 hover:bg-gray-100 dark:hover:bg-neutral-800 cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -201,8 +215,8 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
           <FilterToggle pressed={datePreset === 'custom'} onClick={() => setDatePreset('custom')}>{t('date.custom')}</FilterToggle>
         </div>
         {datePreset === 'custom' && (
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-            <label className="flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm sm:text-xs">
+            <label className="flex w-full items-center gap-2 sm:w-auto">
               <span>{t('date.from')}</span>
               <input
                 type="date"
@@ -211,7 +225,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
                 className={dateInputClass}
               />
             </label>
-            <label className="flex items-center gap-2">
+            <label className="flex w-full items-center gap-2 sm:w-auto">
               <span>{t('date.to')}</span>
               <input
                 type="date"
@@ -314,41 +328,49 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
           scanActive={scanActive}
           missingDetails={missingDetails}
         />
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {options?.registry_available !== false && (
-            <button
-              type="button"
-              onClick={readDetailsNow}
-              disabled={isStartingScan || scanActive}
-              className={cn(
-                'px-3 py-1.5 rounded-xl border text-xs font-semibold disabled:opacity-50 cursor-pointer',
-                missingDetails > 0
-                  ? 'border-indigo-600 bg-indigo-600 hover:bg-indigo-500 text-white'
-                  : 'border-gray-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800'
-              )}
-            >
-              {t('common:readDetailsNow')}
-            </button>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={clearAll}
-              disabled={activeCount === 0}
-              className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
-            >
-              {t('panel.clearAll')}
-            </button>
-            <button
-              type="button"
-              onClick={close}
-              className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
-            >
-              {t('panel.done')}
-            </button>
-          </div>
+      </div>
+
+      {/* On a phone the buttons stay at the bottom of the sheet while it scrolls (about 1,600 px on a real library).
+          A sticky element can't leave its parent, so this row is a child of the scrolling sheet itself; it also
+          keeps clear of the home bar, which is why the sheet has no bottom padding of its own on a phone. */}
+      <div
+        data-filters-footer="true"
+        className="sticky bottom-0 z-10 -mx-5 mt-3 flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] dark:border-neutral-800 dark:bg-neutral-900 sm:static sm:z-auto sm:mx-0 sm:border-t-0 sm:p-0"
+      >
+        {options?.registry_available !== false && (
+          <button
+            type="button"
+            onClick={readDetailsNow}
+            disabled={isStartingScan || scanActive}
+            className={cn(
+              'min-h-[40px] sm:min-h-0 px-3 py-1.5 rounded-xl border text-xs font-semibold disabled:opacity-50 cursor-pointer',
+              missingDetails > 0
+                ? 'border-indigo-600 bg-indigo-600 hover:bg-indigo-500 text-white'
+                : 'border-gray-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800'
+            )}
+          >
+            {t('common:readDetailsNow')}
+          </button>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={clearAll}
+            disabled={activeCount === 0}
+            className="min-h-[40px] sm:min-h-0 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+          >
+            {t('panel.clearAll')}
+          </button>
+          <button
+            type="button"
+            onClick={close}
+            className="min-h-[40px] sm:min-h-0 px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
+          >
+            {t('panel.done')}
+          </button>
         </div>
       </div>
     </div>
+    </>
   );
 };

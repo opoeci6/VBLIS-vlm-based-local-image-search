@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { setNetworkModeForTests } from '../../config';
+import { resetBackToCloseForTests } from '../../hooks/useBackToClose';
+import { resetEscapeKeyForTests, useEscapeKey } from '../../hooks/useEscapeKey';
 import { VideoGroupModal } from './VideoGroupModal';
 import { formatTakenDate } from '../../utils/formatters';
 
@@ -284,5 +288,120 @@ describe('VideoGroupModal without scores (library view)', () => {
     renderModal({ selectedVideoGroup: libraryGroup(), canFindMoreFrames: false, uiTheme });
     expect(screen.queryByText(/BEST/)).toBeNull();
     expect(screen.getAllByText(formatTakenDate('2024-03-12T10:00:00'))).toHaveLength(2);
+  });
+});
+
+describe('VideoGroupModal: Esc, Back and the close button', () => {
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+  const pressEscape = () => fireEvent.keyDown(document.body, { key: 'Escape' });
+
+  // A host that really closes the modal, so the history effects see it unmount.
+  const Host = ({ onClose }) => {
+    const [group, setGroup] = useState(makeGroup());
+    return (
+      <VideoGroupModal
+        selectedVideoGroup={group}
+        setSelectedVideoGroup={(next) => { onClose(next); setGroup(next); }}
+        setSelectedImage={vi.fn()}
+        setToast={vi.fn()}
+        uiTheme="modern"
+      />
+    );
+  };
+
+  const Over = ({ onEscape }) => {
+    useEscapeKey(true, onEscape);
+    return null;
+  };
+
+  let pushState;
+  let go;
+
+  beforeEach(() => {
+    window.history.replaceState(null, '');
+    pushState = vi.spyOn(window.history, 'pushState');
+    go = vi.spyOn(window.history, 'go');
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await settle();
+    resetBackToCloseForTests();
+    resetEscapeKeyForTests();
+    setNetworkModeForTests(false);
+    vi.restoreAllMocks();
+    window.history.replaceState(null, '');
+  });
+
+  it('names the close button and keeps it a 40 px target', () => {
+    renderModal();
+    const close = screen.getByRole('button', { name: 'Close video results' });
+    expect(close.className).toContain('h-10');
+    expect(close.className).toContain('w-10');
+  });
+
+  it('closes with Esc', () => {
+    const { props } = renderModal();
+    pressEscape();
+    expect(props.setSelectedVideoGroup).toHaveBeenCalledTimes(1);
+    expect(props.setSelectedVideoGroup).toHaveBeenCalledWith(null);
+  });
+
+  it('does not listen for Esc while closed', () => {
+    const { props } = renderModal({ selectedVideoGroup: null });
+    pressEscape();
+    expect(props.setSelectedVideoGroup).not.toHaveBeenCalled();
+  });
+
+  it('lets a view opened later (the lightbox) take Esc first', () => {
+    const { props, rerender } = renderModal();
+    const over = vi.fn();
+    rerender(<><VideoGroupModal {...props} /><Over onEscape={over} /></>);
+    pressEscape();
+    expect(over).toHaveBeenCalledTimes(1);
+    expect(props.setSelectedVideoGroup).not.toHaveBeenCalled();
+
+    rerender(<VideoGroupModal {...props} />);
+    pressEscape();
+    expect(props.setSelectedVideoGroup).toHaveBeenCalledWith(null);
+  });
+
+  it('makes no history calls outside network mode', async () => {
+    const onClose = vi.fn();
+    render(<Host onClose={onClose} />);
+    await settle();
+    fireEvent.click(screen.getByLabelText('Close video results'));
+    await settle();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(go).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledWith(null);
+  });
+
+  describe('in network mode', () => {
+    beforeEach(() => setNetworkModeForTests(true));
+
+    it('adds one history entry while open and closes on Back', async () => {
+      const onClose = vi.fn();
+      render(<Host onClose={onClose} />);
+      await settle();
+      expect(pushState).toHaveBeenCalledTimes(1);
+      expect(window.history.state?.vblisBack).toBe(1);
+
+      await act(async () => { window.history.back(); });
+      await settle();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledWith(null);
+      expect(screen.queryByLabelText('Close video results')).toBeNull();
+      expect(window.history.state?.vblisBack ?? 0).toBe(0);
+    });
+
+    it('steps back through its history entry when closed from the screen', async () => {
+      render(<Host onClose={vi.fn()} />);
+      await settle();
+      fireEvent.click(screen.getByLabelText('Close video results'));
+      await settle();
+      expect(go).toHaveBeenCalledWith(-1);
+      expect(window.history.state?.vblisBack ?? 0).toBe(0);
+    });
   });
 });

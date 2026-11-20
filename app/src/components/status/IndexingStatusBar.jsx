@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
 import { hasModelDependentTask } from '../../utils/taskTypes';
 import { taskTitle } from '../../utils/taskTitle';
+import { useSession } from '../../session/sessionContext';
 
 export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, isCancellingIndexing, handleCancelIndexing }) => {
   const { t } = useTranslation('status');
+  const { isOwner } = useSession();
   if (!(status.is_indexing || queue.activeTask || (queue.pendingCount > 0 && queue.workerState === 'paused'))) return null;
   const isQueuePaused = status.is_paused || queue.activeTask?.is_paused || queue.activeTask?.status === 'paused' || queue.workerState === 'paused';
   const displayTask = queue.activeTask || queue.pendingTasks[0];
@@ -16,7 +18,7 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
   const totalCount = queue.activeTask ? (queue.activeTask.total_count || 0) : (displayTask ? (displayTask.total_count || 0) : 0);
 
   return (
-    <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
+    <div className="w-full max-w-7xl px-4 sm:px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
       <div
         className={cn(
           "border rounded-2xl p-4 flex flex-col gap-2.5 relative transition-all duration-300 shadow-sm",
@@ -29,7 +31,7 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
             : "bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-500/20 text-indigo-900 dark:text-indigo-200"
         )}
       >
-        <div className="flex justify-between items-center text-sm font-bold">
+        <div className="flex flex-col gap-2 text-sm font-bold sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             {isMissingModel ? (
               <div className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 shrink-0">
@@ -71,75 +73,79 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
             ) : null}
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 sm:shrink-0">
             <span className="font-mono text-xs font-bold">
               {progressPct}%
             </span>
 
-            {/* Pause / Resume Button */}
-            {isQueuePaused ? (
-              <button
-                onClick={() => {
-                  if (isMissingModel) {
-                    setToast({
-                      message: t('indexing.cannotResumeNoModel'),
-                      type: 'error'
-                    });
-                    setShowSettings(true);
-                    return;
-                  }
-                  if (queue.activeTask) {
-                    queue.resumeTask(queue.activeTask.id);
-                  }
-                  if (queue.workerState === 'paused') {
-                    if (queue.modelMismatch?.reason === 'model_difference') {
-                      queue.controlWorker('start', true);
-                    } else {
-                      queue.controlWorker('start');
-                    }
-                  }
-                }}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                title={isModelMismatch ? t('indexing.resumeAdoptTitle', { model: queue.modelMismatch.active_model?.split('/').pop() }) : t('indexing.resumeTitle')}
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{isModelMismatch ? t('indexing.adoptAndResume') : t('common:resume')}</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  if (queue.activeTask) {
-                    queue.pauseTask(queue.activeTask.id);
-                  } else {
-                    queue.controlWorker('pause_immediate');
-                  }
-                }}
-                className="px-2.5 py-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-bold rounded-lg transition-all border border-gray-200 dark:border-neutral-700 flex items-center gap-1.5 cursor-pointer"
-                title={t('indexing.pauseTitle')}
-              >
-                <Pause className="w-3.5 h-3.5" />
-                <span>{t('common:pause')}</span>
-              </button>
-            )}
+            {isOwner && (
+              <>
+                {/* Pause / Resume Button */}
+                {isQueuePaused ? (
+                  <button
+                    onClick={() => {
+                      if (isMissingModel) {
+                        setToast({
+                          message: t('indexing.cannotResumeNoModel'),
+                          type: 'error'
+                        });
+                        setShowSettings(true);
+                        return;
+                      }
+                      if (queue.activeTask) {
+                        queue.resumeTask(queue.activeTask.id);
+                      }
+                      if (queue.workerState === 'paused') {
+                        if (queue.modelMismatch?.reason === 'model_difference') {
+                          queue.controlWorker('start', true);
+                        } else {
+                          queue.controlWorker('start');
+                        }
+                      }
+                    }}
+                    className="min-h-[40px] sm:min-h-0 px-3 sm:px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    title={isModelMismatch ? t('indexing.resumeAdoptTitle', { model: queue.modelMismatch.active_model?.split('/').pop() }) : t('indexing.resumeTitle')}
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>{isModelMismatch ? t('indexing.adoptAndResume') : t('common:resume')}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (queue.activeTask) {
+                        queue.pauseTask(queue.activeTask.id);
+                      } else {
+                        queue.controlWorker('pause_immediate');
+                      }
+                    }}
+                    className="min-h-[40px] sm:min-h-0 px-3 sm:px-2.5 py-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-bold rounded-lg transition-all border border-gray-200 dark:border-neutral-700 flex items-center gap-1.5 cursor-pointer"
+                    title={t('indexing.pauseTitle')}
+                  >
+                    <Pause className="w-3.5 h-3.5" />
+                    <span>{t('common:pause')}</span>
+                  </button>
+                )}
 
-            {/* Cancel Button */}
-            <button
-              onClick={() => {
-                if (queue.activeTask) {
-                  queue.cancelTask(queue.activeTask.id);
-                } else if (queue.pendingTasks.length > 0) {
-                  queue.cancelTask(queue.pendingTasks[0].id);
-                } else {
-                  handleCancelIndexing();
-                }
-              }}
-              disabled={isCancellingIndexing || status.cancel_requested}
-              className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 text-xs font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-              title={t('indexing.cancelTitle')}
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              <span>{isCancellingIndexing || status.cancel_requested ? t('indexing.cancelling') : t('common:cancel')}</span>
-            </button>
+                {/* Cancel Button */}
+                <button
+                  onClick={() => {
+                    if (queue.activeTask) {
+                      queue.cancelTask(queue.activeTask.id);
+                    } else if (queue.pendingTasks.length > 0) {
+                      queue.cancelTask(queue.pendingTasks[0].id);
+                    } else {
+                      handleCancelIndexing();
+                    }
+                  }}
+                  disabled={isCancellingIndexing || status.cancel_requested}
+                  className="min-h-[40px] sm:min-h-0 px-3 sm:px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 text-xs font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title={t('indexing.cancelTitle')}
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>{isCancellingIndexing || status.cancel_requested ? t('indexing.cancelling') : t('common:cancel')}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -159,7 +165,7 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
         </div>
 
         <div className="flex justify-between items-center text-xs text-neutral-500 dark:text-neutral-400 font-medium pt-0.5 gap-3">
-          <p className="flex-1 min-w-0 font-mono text-[11px] leading-snug" title={displayTask?.current_item || status.current_file}>
+          <p className="flex-1 min-w-0 break-all font-mono text-[11px] leading-snug" title={displayTask?.current_item || status.current_file}>
             {isMissingModel
               ? t('indexing.noModelLine')
               : isModelMismatch
@@ -168,12 +174,14 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
               ? t('indexing.pausedAt', { item: displayTask?.current_item || status.current_file || t('indexing.currentItemFallback') })
               : t('indexing.processing', { item: displayTask?.current_item || status.current_file || t('indexing.preparingFallback') })}
           </p>
-          <button
-            onClick={() => queue.setIsDrawerOpen(true)}
-            className="px-2 py-0.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ml-2 rounded-md border border-indigo-200/50 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
-          >
-            {t('indexing.viewInQueue')}
-          </button>
+          {isOwner && (
+            <button
+              onClick={() => queue.setIsDrawerOpen(true)}
+              className="min-h-[40px] sm:min-h-0 inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ml-2 rounded-md border border-indigo-200/50 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+            >
+              {t('indexing.viewInQueue')}
+            </button>
+          )}
         </div>
       </div>
     </div>

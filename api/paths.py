@@ -30,6 +30,19 @@ ENV_FILE = DATA_ROOT / ".env"
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", API_DIR))
 PLACES_FILE = RESOURCE_DIR / "place_data" / "places.npz"
 
+# The built web interface the network listener serves: VBLIS_WEB_DIR, else the copy bundled
+# with a frozen build, else the frontend's build folder next to the api folder (from source)
+_web_dir_env = os.environ.get("VBLIS_WEB_DIR")
+if _web_dir_env:
+    WEB_DIR = Path(_web_dir_env).resolve()
+elif getattr(sys, "frozen", False):
+    WEB_DIR = RESOURCE_DIR / "web"
+else:
+    WEB_DIR = API_DIR.parent / "app" / "dist"
+
+_DATA_LOCK_NAME = ".backend.lock"
+_data_lock_fd = None
+
 # Everything packaged builds used to keep inside the install folder
 LEGACY_DATA_ITEMS = ("models", "chroma_data", "cache", "data", ".env")
 _STAGING_SUFFIX = ".migrating"
@@ -44,6 +57,27 @@ def ensure_dirs():
     """Create the data folders that must exist before the backend starts."""
     for directory in (DATA_ROOT, CACHE_DIR, IMAGE_CACHE_DIR, VIDEO_CACHE_DIR, DATA_DIR):
         directory.mkdir(parents=True, exist_ok=True)
+
+
+class DataLockedError(RuntimeError):
+    """Another VBLIS backend already uses this data folder."""
+
+
+def lock_data_dir():
+    """Hold a lock on the data folder until the process ends, so a server started from the command
+    line and the desktop app never write one index at the same time. Raises DataLockedError."""
+    global _data_lock_fd
+    if _data_lock_fd is not None:
+        return
+    # Inside the data subfolder, next to server.json: a source checkout already ignores it there
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    fd = os.open(DATA_DIR / _DATA_LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        _lock_fd(fd)
+    except OSError as e:
+        os.close(fd)
+        raise DataLockedError(f"Another VBLIS backend is already using {DATA_ROOT}") from e
+    _data_lock_fd = fd
 
 
 def migrate_legacy_data(legacy_root=None, data_root=None, frozen=None, retry_delay=1.0):

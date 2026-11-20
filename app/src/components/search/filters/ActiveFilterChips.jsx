@@ -11,14 +11,14 @@ export const ActiveFilterChips = ({ chips, onClearAll, className = '' }) => {
       {chips.map(chip => (
         <span
           key={chip.key}
-          className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-2xl text-xs font-semibold text-indigo-700 dark:text-indigo-300"
+          className="inline-flex max-w-full items-center gap-1.5 pl-3 pr-1.5 py-1 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-2xl text-xs font-semibold text-indigo-700 dark:text-indigo-300"
         >
-          <span>{chip.label}</span>
+          <span className="min-w-0 break-words">{chip.label}</span>
           <button
             type="button"
             onClick={chip.onRemove}
             aria-label={t('activeChips.remove', { label: chip.label })}
-            className="p-1 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors cursor-pointer"
+            className="-my-2 -mr-1.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors cursor-pointer"
           >
             <X className="w-3 h-3" />
           </button>

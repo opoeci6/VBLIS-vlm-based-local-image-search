@@ -12,7 +12,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
 
       {/* Image Thumbnails Card */}
       <div className="p-3.5 bg-gray-50/80 dark:bg-neutral-950/40 border border-gray-200/80 dark:border-neutral-800 rounded-2xl space-y-2.5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <ImageIcon className="w-4 h-4 text-indigo-500" />
             <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">{t('thumbnailCache.images.title')}</span>
@@ -29,7 +29,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
               <button
                 onClick={() => handleClearThumbnailCache('images')}
                 disabled={isClearingThumbnails}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-1.5 text-xs font-bold flex justify-center items-center gap-1.5 transition-colors"
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg py-1.5 max-sm:min-h-10 text-xs font-bold flex justify-center items-center gap-1.5 transition-colors"
               >
                 {isClearingThumbnails ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                 <span>{t('thumbnailCache.images.confirmYes')}</span>
@@ -37,7 +37,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
               <button
                 onClick={() => setShowConfirmClearThumbnails(null)}
                 disabled={isClearingThumbnails}
-                className="flex-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-white rounded-lg py-1.5 text-xs font-bold transition-colors"
+                className="flex-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-white rounded-lg py-1.5 max-sm:min-h-10 text-xs font-bold transition-colors"
               >
                 {t('common:cancel')}
               </button>
@@ -47,7 +47,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
           <button
             onClick={() => setShowConfirmClearThumbnails('images')}
             disabled={isClearingThumbnails || cacheStats.images.count === 0}
-            className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-indigo-200/70 dark:border-indigo-500/20"
+            className="w-full px-3 py-2 max-sm:min-h-10 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-indigo-200/70 dark:border-indigo-500/20"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>{t('thumbnailCache.images.clear')}</span>
@@ -57,7 +57,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
 
       {/* Video Keyframes Card */}
       <div className="p-3.5 bg-gray-50/80 dark:bg-neutral-950/40 border border-gray-200/80 dark:border-neutral-800 rounded-2xl space-y-2.5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Video className="w-4 h-4 text-cyan-500" />
             <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300">{t('thumbnailCache.videos.title')}</span>
@@ -104,7 +104,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
                   <button
                     onClick={() => handleClearThumbnailCache('videos')}
                     disabled={isClearingThumbnails}
-                    className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg py-1.5 text-xs font-bold flex justify-center items-center gap-1.5 transition-colors"
+                    className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg py-1.5 max-sm:min-h-10 text-xs font-bold flex justify-center items-center gap-1.5 transition-colors"
                   >
                     {isClearingThumbnails ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                     <span>{t('thumbnailCache.videos.confirmYes')}</span>
@@ -112,7 +112,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
                   <button
                     onClick={() => setShowConfirmClearThumbnails(null)}
                     disabled={isClearingThumbnails}
-                    className="flex-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-white rounded-lg py-1.5 text-xs font-bold transition-colors"
+                    className="flex-1 bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-white rounded-lg py-1.5 max-sm:min-h-10 text-xs font-bold transition-colors"
                   >
                     {t('common:cancel')}
                   </button>
@@ -123,7 +123,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
                 <button
                   onClick={handleRebuildVideoThumbnails}
                   disabled={status.is_indexing || isTriggeringRebuildThumbnails}
-                  className="flex-1 px-3 py-2 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-cyan-200/70 dark:border-cyan-500/20"
+                  className="flex-1 px-3 py-2 max-sm:min-h-10 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-cyan-200/70 dark:border-cyan-500/20"
                 >
                   {isTriggeringRebuildThumbnails ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-500" />
@@ -135,7 +135,7 @@ export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, 
                 <button
                   onClick={() => setShowConfirmClearThumbnails('videos')}
                   disabled={isClearingThumbnails || cacheStats.videos.count === 0}
-                  className="px-3 py-2 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-600 dark:text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-gray-200/80 dark:border-neutral-700"
+                  className="px-3 py-2 max-sm:min-h-10 bg-gray-100 dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-neutral-600 dark:text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs border border-gray-200/80 dark:border-neutral-700"
                   title={t('thumbnailCache.videos.clearTooltip')}
                 >
                   <Trash2 className="w-3.5 h-3.5" />

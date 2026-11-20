@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { API_BASE } from '../config';
 import { apiFetch } from '../utils/api';
 import { formatNumber } from '../utils/formatters';
+import { useSession } from '../session/sessionContext';
 import i18n from '../i18n';
 import {
   buildFilterChips,
@@ -16,6 +17,10 @@ import {
 } from '../utils/searchFilters';
 import { togglePlaceSelection } from '../utils/placeNames';
 
+// Stands in for the selected places when the session may not use places: the request, the count and the
+// chips are all built from it, so no `places` filter is ever sent without the permission.
+const NO_PLACES = Object.freeze([]);
+
 const toggleInList = (list, value) => (list.includes(value) ? list.filter(item => item !== value) : [...list, value]);
 
 // State of the search filters, the request object derived from it, the pills shown for active
@@ -27,6 +32,8 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   // Only the filter chips are derived text, so only they need `t`: it changes when the language does,
   // and that is what updates the chips (and the memoized results grid they are passed to).
   const { t } = useTranslation('filters');
+  const { isOwner, may } = useSession();
+  const placesAllowed = may('places');
   const [mediaType, setMediaType] = useState(null);
   const [folders, setFolders] = useState([]);
   const [datePreset, setDatePresetState] = useState(null);
@@ -37,7 +44,8 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   const [minMegapixels, setMinMegapixels] = useState(null);
   const [duplicates, setDuplicates] = useState([]);
   // Selected places as { id, en, zh }: the names are kept so the chips do not need the options.
-  const [places, setPlaces] = useState([]);
+  const [selectedPlaces, setPlaces] = useState([]);
+  const places = placesAllowed ? selectedPlaces : NO_PLACES;
   const [isOpen, setIsOpen] = useState(false);
 
   const [options, setOptions] = useState(null);
@@ -192,6 +200,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   // Starts the media details scan. `autoFor` is the number of files an automatic start is for: it
   // changes the toast, and an automatic start says nothing when a scan was already queued.
   const requestScan = useCallback(async (autoFor = null) => {
+    if (!isOwner) return;
     setIsStartingScan(true);
     try {
       const res = await apiFetch(`${API_BASE}/index/media-info/scan`, { method: 'POST' });
@@ -213,7 +222,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     } finally {
       setIsStartingScan(false);
     }
-  }, []);
+  }, [isOwner]);
 
   const readDetailsNow = useCallback(() => requestScan(), [requestScan]);
 

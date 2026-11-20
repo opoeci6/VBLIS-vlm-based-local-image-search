@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { useFileDrop } from './useFileDrop';
+import { SessionProvider } from '../session/SessionProvider';
 
 const makeEvent = ({ types = ['Files'], files = [] } = {}) => ({
   preventDefault: vi.fn(),
@@ -121,10 +123,19 @@ describe('useFileDrop', () => {
       expect(onImage).not.toHaveBeenCalled();
     });
 
-    it('skips files without a resolvable path', async () => {
+    it('skips non-image files without a resolvable path', async () => {
       const { result } = render(true);
-      await act(async () => { await result.current.handleDrop(makeEvent({ files: [{ path: '', type: 'image/png' }] })); });
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [{ path: '', type: '' }] })); });
       expect(setToast).toHaveBeenCalledWith({ message: 'Please drop a folder or an image file.', type: 'error' });
+    });
+
+    it('searches with an image whose path is unknown, without looking the path up', async () => {
+      const { result } = render(true);
+      const noPath = { path: '', type: 'image/png' };
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [noPath] })); });
+      expect(onImage).toHaveBeenCalledWith(noPath);
+      expect(window.electronAPI.isDirectory).not.toHaveBeenCalled();
+      expect(setToast).not.toHaveBeenCalled();
     });
 
     it('treats files as non-directories outside Electron', async () => {
@@ -132,6 +143,72 @@ describe('useFileDrop', () => {
       const { result } = render(true);
       await act(async () => { await result.current.handleDrop(makeEvent({ files: [imageFile] })); });
       expect(onImage).toHaveBeenCalledWith(imageFile);
+    });
+  });
+
+  describe('in a browser (network session)', () => {
+    const sessionInfo = (role, imageSearch = true) => ({
+      signed_in: true,
+      role,
+      account: { id: 'a1', name: 'alice' },
+      permissions: { originals: role === 'owner', image_search: imageSearch, places: true },
+      secure: true,
+      case_sensitive_paths: true,
+    });
+
+    const renderIn = (info) => renderHook(
+      () => useFileDrop({ enabled: true, setToast, onFolders, onImage }),
+      { wrapper: ({ children }) => createElement(SessionProvider, { info, onSignOut: vi.fn() }, children) },
+    );
+
+    // A browser file has no path.
+    const pic = { type: 'image/png', name: 'cat.png' };
+    const folder = { type: '', name: 'photos' };
+
+    beforeEach(() => {
+      delete window.electronAPI;
+    });
+
+    it('searches with a dropped image for an owner', async () => {
+      const { result } = renderIn(sessionInfo('owner'));
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [pic] })); });
+      expect(onImage).toHaveBeenCalledWith(pic);
+      expect(setToast).not.toHaveBeenCalled();
+    });
+
+    it('points an owner who drops a folder at the Add Folder(s) button', async () => {
+      const { result } = renderIn(sessionInfo('owner'));
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [folder] })); });
+      expect(setToast).toHaveBeenCalledWith({
+        message: "Folders can't be dropped into a browser. Use the Add Folder(s) button instead.",
+        type: 'info',
+      });
+      expect(onFolders).not.toHaveBeenCalled();
+      expect(onImage).not.toHaveBeenCalled();
+    });
+
+    it('lets a viewer with image search drop an image but ignores a dropped folder', async () => {
+      const { result } = renderIn(sessionInfo('viewer'));
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [pic] })); });
+      expect(onImage).toHaveBeenCalledWith(pic);
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [folder] })); });
+      expect(setToast).not.toHaveBeenCalled();
+      expect(onFolders).not.toHaveBeenCalled();
+    });
+
+    it('offers a viewer without image search nothing: no overlay, no search, no toast', async () => {
+      const { result } = renderIn(sessionInfo('viewer', false));
+      act(() => result.current.handleDragOver(makeEvent()));
+      expect(result.current.isDragging).toBe(false);
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [pic] })); });
+      expect(onImage).not.toHaveBeenCalled();
+      expect(setToast).not.toHaveBeenCalled();
+    });
+
+    it('shows the overlay for a viewer who may search by image', () => {
+      const { result } = renderIn(sessionInfo('viewer'));
+      act(() => result.current.handleDragOver(makeEvent()));
+      expect(result.current.isDragging).toBe(true);
     });
   });
 });

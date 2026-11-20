@@ -22,7 +22,7 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
           : "bg-gray-50 dark:bg-neutral-800/30 border-gray-100 dark:border-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-800/50"
       )}
     >
-      <div className="flex items-center justify-between gap-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
         <div className="min-w-0 flex-1">
           <span
             className={cn("block truncate whitespace-nowrap text-sm font-semibold", isActive ? "text-indigo-600 dark:text-indigo-300" : "text-neutral-700 dark:text-neutral-200")}
@@ -72,14 +72,14 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center justify-end gap-2 sm:flex-shrink-0">
           {/* Action Buttons: Activate or Checkmark */}
           {isActive ? (
             <button
               onClick={handleUnloadModel}
               disabled={isUnloadingModel || status.is_indexing}
               className={cn(
-                "flex items-center gap-1.5 text-xs px-3 py-1.5 font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50",
+                "flex items-center gap-1.5 text-xs px-3 py-1.5 max-sm:min-h-10 font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50",
                 uiTheme === 'modern'
                   ? "bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30 rounded-xl hover:scale-105 active:scale-95"
                   : "border border-rose-500 bg-rose-500/10 text-rose-500 hover:bg-rose-500/20"
@@ -94,7 +94,7 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
               onClick={() => handleModelSwitch(m.id)}
               disabled={isSwitchingModel || status.is_downloading || status.is_indexing}
               className={cn(
-                "text-xs px-3.5 py-1.5 font-bold transition-all disabled:opacity-50 shadow-sm cursor-pointer",
+                "text-xs px-3.5 py-1.5 max-sm:min-h-10 font-bold transition-all disabled:opacity-50 shadow-sm cursor-pointer",
                 uiTheme === 'modern'
                   ? "bg-gray-100 dark:bg-neutral-800 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-600 text-neutral-800 dark:text-neutral-200 rounded-xl border border-gray-200 dark:border-neutral-700 hover:border-indigo-600 hover:scale-105 active:scale-95"
                   : "border border-white bg-black text-white"
@@ -126,7 +126,7 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
                         handleCancelDownload();
                       }}
                       className={cn(
-                        "text-[9px] font-bold uppercase self-end transition-colors transition-all",
+                        "text-[9px] max-sm:text-[11px] max-sm:min-h-10 font-bold uppercase self-end transition-colors transition-all",
                         status.cancel_download
                           ? "text-rose-500 animate-pulse cursor-default"
                           : "text-neutral-400 dark:text-neutral-500 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer"
@@ -149,7 +149,7 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
                 handleDownloadModel(m.id);
               }}
               disabled={status.is_downloading}
-              className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 shadow-sm"
+              className="text-xs px-3 py-1.5 max-sm:min-h-10 rounded-lg font-bold transition-all flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 shadow-sm"
               title={t('modelCard.resumeTooltip')}
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -162,7 +162,7 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
                 handleDownloadModel(m.id);
               }}
               disabled={status.is_downloading}
-              className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
+              className="text-xs px-3 py-1.5 max-sm:min-h-10 rounded-lg font-bold transition-all flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
             >
               {t('modelCard.download')}
             </button>
@@ -175,12 +175,12 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
                 <div className="flex flex-col items-end gap-1 animate-in slide-in-from-right-2 duration-200">
                   {/* Only show "Wipe Index" checkbox for fully downloaded models that could have been used */}
                   {m.downloaded && (
-                    <label className="flex items-center gap-1.5 cursor-pointer group/check mb-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer group/check mb-1 max-sm:min-h-10">
                       <input
                         type="checkbox"
                         checked={deleteIndexWithModel}
                         onChange={(e) => setDeleteIndexWithModel(e.target.checked)}
-                        className="w-2.5 h-2.5 rounded border-neutral-700 bg-neutral-800 text-rose-500 focus:ring-rose-500/20"
+                        className="w-2.5 h-2.5 max-sm:w-5 max-sm:h-5 rounded border-neutral-700 bg-neutral-800 text-rose-500 focus:ring-rose-500/20"
                       />
                       <span className="text-[9px] text-neutral-500 group-hover/check:text-neutral-300 transition-colors">{t('modelCard.wipeIndex')}</span>
                     </label>
@@ -189,13 +189,13 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
                     <button
                       onClick={() => handleDeleteModel(m.id)}
                       disabled={isDeletingModel}
-                      className="text-[9px] px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold uppercase transition-colors"
+                      className="text-[9px] max-sm:text-xs px-2 py-1 max-sm:px-4 max-sm:min-h-10 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold uppercase transition-colors"
                     >
                       {isDeletingModel ? "..." : t('modelCard.del')}
                     </button>
                     <button
                       onClick={() => setShowConfirmDeleteModel(null)}
-                      className="text-[9px] px-2 py-1 bg-neutral-700 hover:bg-neutral-600 text-white rounded font-bold uppercase transition-colors"
+                      className="text-[9px] max-sm:text-xs px-2 py-1 max-sm:px-4 max-sm:min-h-10 bg-neutral-700 hover:bg-neutral-600 text-white rounded font-bold uppercase transition-colors"
                     >
                       X
                     </button>
@@ -204,8 +204,9 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
               ) : (
                 <button
                   onClick={() => setShowConfirmDeleteModel(m.id)}
-                  className="p-2 text-neutral-500 hover:text-rose-400 transition-colors"
+                  className="p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-500 hover:text-rose-400 transition-colors"
                   title={m.incomplete ? t('modelCard.deletePartial') : t('modelCard.deleteLocal')}
+                  aria-label={m.incomplete ? t('modelCard.deletePartial') : t('modelCard.deleteLocal')}
                 >
                   <Trash2 className="w-4 h-4 text-rose-500/80 hover:text-rose-500" />
                 </button>

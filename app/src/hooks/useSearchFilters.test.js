@@ -1,7 +1,9 @@
 /* global process */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
 import { act, renderHook } from '@testing-library/react';
 import i18n from '../i18n';
+import { SessionProvider } from '../session/SessionProvider';
 import { useSearchFilters } from './useSearchFilters';
 
 const API = 'http://127.0.0.1:8000';
@@ -265,6 +267,41 @@ describe('useSearchFilters', () => {
       expect(result.current.places).toEqual([]);
       expect(result.current.requestFilters).toBeNull();
       expect(result.current.activeCount).toBe(0);
+    });
+
+    describe('for a viewer', () => {
+      const renderViewer = (places) => {
+        const info = {
+          signed_in: true,
+          role: 'viewer',
+          account: { id: 'v1', name: 'bob' },
+          permissions: { originals: false, image_search: true, places },
+          secure: true
+        };
+        return renderHook(() => useSearchFilters({ setToast: vi.fn() }), {
+          wrapper: ({ children }) => createElement(SessionProvider, { info, onSignOut: () => {} }, children)
+        });
+      };
+
+      it('never sends a place filter without the places permission', () => {
+        const { result } = renderViewer(false);
+        act(() => result.current.togglePlace(japan));
+        expect(result.current.places).toEqual([]);
+        expect(result.current.requestFilters).toBeNull();
+        expect(result.current.activeCount).toBe(0);
+        expect(result.current.chips).toEqual([]);
+        expect(result.current.detailsFilterActive).toBe(false);
+
+        act(() => result.current.setMediaType('image'));
+        expect(result.current.requestFilters).toEqual({ media_type: 'image' });
+      });
+
+      it('sends the chosen places with the permission', () => {
+        const { result } = renderViewer(true);
+        act(() => result.current.togglePlace(japan));
+        expect(result.current.requestFilters).toEqual({ places: ['JP'] });
+        expect(result.current.activeCount).toBe(1);
+      });
     });
 
     it('keeps togglePlace stable across renders', () => {

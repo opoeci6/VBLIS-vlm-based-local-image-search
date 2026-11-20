@@ -33,9 +33,13 @@ import { SearchResultsGrid } from './components/search/SearchResultsGrid';
 import { TerminalResultsModal } from './components/search/TerminalResultsModal';
 import { FolderContentsModal } from './components/folders/FolderContentsModal';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { FolderPickerModal } from './components/folders/FolderPickerModal';
+import { HttpWarningBanner } from './components/status/HttpWarningBanner';
 import { apiFetch } from './utils/api';
+import { useSession } from './session/sessionContext';
 
 function App() {
+  const { mode, isOwner } = useSession();
   const [isClearing, setIsClearing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   // Only the path is kept; the open group is derived from the live videoGroups below so it
@@ -44,6 +48,8 @@ function App() {
   const [isFoldersExpanded, setIsFoldersExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+  // The picker for folders on the server, which is how the owner adds folders from a browser.
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const { theme, setTheme, uiTheme, setUiTheme } = useThemePreferences();
   const { toast, setToast } = useToast();
   const queue = useTaskQueue(API_BASE, setToast);
@@ -51,6 +57,8 @@ function App() {
   const setSelectedVideoGroup = useCallback((group) => {
     setSelectedVideoPath(group ? group.path : null);
   }, []);
+  const closeFolderPicker = useCallback(() => setShowFolderPicker(false), []);
+  const openSettings = useCallback(() => setShowSettings(true), []);
   const handleSearchResultsClosed = useCallback(() => {
     setSelectedImage(null);
     setSelectedVideoPath(null);
@@ -127,6 +135,11 @@ function App() {
   const selectedVideoGroup = useMemo(
     () => (selectedVideoPath ? videoGroups.find(group => group.path === selectedVideoPath) || null : null),
     [selectedVideoPath, videoGroups]
+  );
+  // The pictures the lightbox steps through, in display order: the frames of the open video group, else the images.
+  const lightboxItems = useMemo(
+    () => (selectedVideoGroup ? selectedVideoGroup.frames : imageResults),
+    [selectedVideoGroup, imageResults]
   );
   const { status, setStatus, showErrorAlert, setShowErrorAlert, isCancellingIndexing, handleCancelIndexing } = useBackendStatus({ setToast });
   const {
@@ -221,7 +234,10 @@ function App() {
   const showNoMatches = results.length === 0 && !isSearching && hasSearched && Boolean(models.active_model) && !isSwitchingModel && (query.length > 0 || Boolean(imageSearchContext) || isBrowsing);
 
   const handleOpenFolder = async () => {
-    if (!window.electronAPI) return;
+    if (!window.electronAPI) {
+      if (mode === 'network' && isOwner) setShowFolderPicker(true);
+      return;
+    }
     const paths = await window.electronAPI.openDirectory();
     if (paths && paths.length > 0) {
       await queue.enqueueFolderIndexing(paths);
@@ -252,14 +268,27 @@ function App() {
   return (
     <div
       className={cn(
-        "isolate h-screen w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative pt-8 custom-scrollbar",
+        "isolate h-dvh w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative px-safe custom-scrollbar",
+        // A browser has no title bar, so no room for one; it keeps out of a phone's notch instead.
+        mode === 'network' ? "pt-safe" : "pt-8",
         uiTheme === 'terminal' ? "terminal-theme theme-terminal" : "theme-modern bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100"
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <TitleBar theme={theme} setTheme={setTheme} uiTheme={uiTheme} setUiTheme={setUiTheme} />
+      {/* The window bar of the Windows app (and the dev page). A browser has none: the header has a menu instead. */}
+      {mode !== 'network' && (
+        <TitleBar
+          theme={theme}
+          setTheme={setTheme}
+          uiTheme={uiTheme}
+          setUiTheme={setUiTheme}
+          sharingRunning={Boolean(status.sharing?.running)}
+          sharingProblem={status.sharing?.problem ?? null}
+          onOpenSharing={openSettings}
+        />
+      )}
 
       {/* Drag Overlay */}
       {isDragging && <DragOverlay activeTask={queue.activeTask} pendingCount={queue.pendingCount} />}
@@ -308,13 +337,21 @@ function App() {
         isClearingThumbnails={isClearingThumbnails}
         handleRebuildVideoThumbnails={handleRebuildVideoThumbnails}
         isTriggeringRebuildThumbnails={isTriggeringRebuildThumbnails}
+        setToast={setToast}
       />
+
+      {showFolderPicker && (
+        <FolderPickerModal uiTheme={uiTheme} onClose={closeFolderPicker} onConfirm={queue.enqueueFolderIndexing} />
+      )}
 
       {/* Folder Contents Modal */}
       <FolderContentsModal showFolderContents={showFolderContents} browsingFolder={browsingFolder} folderContents={folderContents} isFetchingFolderContents={isFetchingFolderContents} isCleaningGhostRecords={isCleaningGhostRecords} setIsCleaningGhostRecords={setIsCleaningGhostRecords} folderVisibleLimit={folderVisibleLimit} setFolderVisibleLimit={setFolderVisibleLimit} handleCloseFolderContents={handleCloseFolderContents} handleReindexFolder={handleReindexFolder} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
 
       {/* Header */}
-      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} />
+      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} onPickImage={handleImageDrop} theme={theme} setTheme={setTheme} setUiTheme={setUiTheme} />
+
+      {/* A browser on plain HTTP: its password and pictures are readable on the network */}
+      <HttpWarningBanner />
 
       {/* Search filters panel (floats under the header) */}
       <SearchFiltersPanel filters={searchFilters} indexedFolders={indexedFolders} />
@@ -333,7 +370,7 @@ function App() {
       <VideoGroupModal selectedVideoGroup={selectedVideoGroup} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} onFindMoreFrames={expandVideo} isFindingMoreFrames={Boolean(selectedVideoPath) && expandingVideoPath === selectedVideoPath} canFindMoreFrames={canExpandVideos} />
 
       {/* Lightbox Modal */}
-      <MediaLightbox selectedImage={selectedImage} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
+      <MediaLightbox selectedImage={selectedImage} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} navItems={lightboxItems} />
 
       {/* Global toast notification system */}
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
@@ -363,7 +400,7 @@ function App() {
       )}
 
       {/* Main Content Area */}
-      <main className="w-full max-w-7xl px-6 pb-24 flex-1">
+      <main className="w-full max-w-7xl px-4 sm:px-6 pb-24 flex-1">
         <ImageSearchChip imageSearchContext={imageSearchContext} handleClearImageSearch={handleClearImageSearch} />
 
         {/* In Terminal theme the chips live in the results console while it is open */}
@@ -384,14 +421,16 @@ function App() {
         <TerminalResultsModal showSearchResults={showSearchResults} results={results} uiTheme={uiTheme} handleCloseSearchResults={handleCloseSearchResults} imageSearchContext={imageSearchContext} query={query} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelTerminalRef={sentinelTerminalRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} filterChips={filterChips} onClearFilters={clearFilters} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} isBrowsing={isBrowsing} browseSort={browseSort} onBrowseSortChange={setBrowseSort} browseTotal={browseTotal} showBrowseHint={showBrowseHint} onDismissBrowseHint={dismissBrowseHint} />
       </main>
 
-      {/* Background Task Queue Drawer */}
-      <QueueDrawer
-        isOpen={queue.isDrawerOpen}
-        onClose={() => queue.setIsDrawerOpen(false)}
-        queue={queue}
-        uiTheme={uiTheme}
-        onOpenSettings={() => setShowSettings(true)}
-      />
+      {/* Background Task Queue Drawer (owner only: a viewer has no queue) */}
+      {isOwner && (
+        <QueueDrawer
+          isOpen={queue.isDrawerOpen}
+          onClose={() => queue.setIsDrawerOpen(false)}
+          queue={queue}
+          uiTheme={uiTheme}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+      )}
 
       {/* Model Switch Safeguard Warning Modal */}
       <ModelSwitchWarningModal

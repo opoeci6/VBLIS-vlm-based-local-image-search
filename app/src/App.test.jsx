@@ -343,6 +343,38 @@ describe('App (smoke)', () => {
     fireEvent.click(screen.getAllByTitle(/Active Vision Engine: org\/model-a/)[0]);
     expect(await screen.findByText('Settings')).toBeTruthy();
   });
+
+  describe('the sharing pill', () => {
+    const withSharing = (sharing) => {
+      const original = fetchMock.getMockImplementation();
+      fetchMock.mockImplementation(async (url, init) => (
+        new URL(String(url)).pathname === '/status' ? json({ ...defaultStatus, sharing }) : original(url, init)
+      ));
+    };
+
+    it('shows nothing while the status says sharing is off', async () => {
+      withSharing({ running: false, problem: null });
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      expect(screen.queryByRole('button', { name: 'Sharing' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Not sharing' })).toBeNull();
+    });
+
+    it('shows "Sharing" while it runs, and opens the settings with the sharing section', async () => {
+      withSharing({ running: true, problem: null });
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Sharing' }));
+      expect(await screen.findByText('Settings')).toBeTruthy();
+      expect(await screen.findByRole('heading', { name: 'Network sharing' })).toBeTruthy();
+    });
+
+    it('shows an amber "Not sharing" when sharing should run but cannot', async () => {
+      withSharing({ running: false, problem: 'port_in_use' });
+      render(<App />);
+      expect((await screen.findByRole('button', { name: 'Not sharing' })).className).toContain('amber');
+    });
+  });
+
   describe('search filters', () => {
     const refPayload = {
       results: [{ path: '/photos/cat.jpg', media_type: 'image', score: 0.91, hash: 'h1' }],

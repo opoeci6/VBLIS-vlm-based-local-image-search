@@ -1,11 +1,13 @@
 import { CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
 
 export const Toast = ({ toast, onClose }) => {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
-        "fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] border backdrop-blur-xl px-5 py-3 rounded-2xl flex items-center gap-3 shadow-2xl animate-in slide-in-from-bottom-4 fade-in duration-300 max-w-lg min-w-[320px]",
+        "fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:bottom-8 left-1/2 -translate-x-1/2 z-[100] border backdrop-blur-xl px-4 sm:px-5 py-3 rounded-2xl flex items-center gap-3 shadow-2xl animate-in slide-in-from-bottom-4 fade-in duration-300 w-[calc(100%-2rem)] sm:w-auto max-w-lg sm:min-w-[320px]",
         toast.type === 'success'
           ? "bg-emerald-50 dark:bg-emerald-500/15 border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-200"
           : toast.type === 'info'
@@ -20,9 +22,9 @@ export const Toast = ({ toast, onClose }) => {
       ) : (
         <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0" />
       )}
-      <span className="text-sm font-semibold flex-1">{toast.message}</span>
-      <button onClick={() => onClose()} className={cn(
-        "ml-2 transition-colors flex-shrink-0 p-1 rounded-lg hover:bg-white/10",
+      <span className="text-sm font-semibold flex-1 min-w-0 break-words">{toast.message}</span>
+      <button onClick={() => onClose()} aria-label={t('common:close')} className={cn(
+        "sm:ml-2 -my-2 -mr-2 sm:my-0 sm:mr-0 flex h-10 w-10 sm:h-auto sm:w-auto items-center justify-center transition-colors flex-shrink-0 sm:p-1 rounded-lg hover:bg-white/10",
         toast.type === 'success'
           ? "text-emerald-400 hover:text-emerald-100"
           : toast.type === 'info'

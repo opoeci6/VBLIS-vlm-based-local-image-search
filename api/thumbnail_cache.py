@@ -46,7 +46,9 @@ def is_thumbnail_cached(path) -> bool:
 def save_jpeg_thumbnail(img, fp):
     """Shrink img in place to fit 480x480 and write it to fp in the cache's JPEG format."""
     img.thumbnail(THUMBNAIL_SIZE)
-    img.convert("RGB").save(fp, format="JPEG", quality=THUMBNAIL_JPEG_QUALITY, optimize=True)
+    out = img.convert("RGB")
+    out.info.clear()  # Pillow would copy a JPEG comment across; a thumbnail carries no metadata
+    out.save(fp, format="JPEG", quality=THUMBNAIL_JPEG_QUALITY, optimize=True)
 
 
 def get_or_create_thumbnail(cache_path, render, legacy_path=None) -> pathlib.Path:

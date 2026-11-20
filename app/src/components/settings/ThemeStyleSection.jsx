@@ -8,8 +8,10 @@ export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
     <div className="pt-2">
       <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">{t('theme.title')}</label>
       <div className="grid grid-cols-2 gap-3 mb-2">
+        {/* aria-pressed also gives the chosen style the terminal theme's inverted look (index.css) */}
         <button
           type="button"
+          aria-pressed={uiTheme === 'modern'}
           onClick={() => setUiTheme('modern')}
           className={cn(
             "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
@@ -19,13 +21,14 @@ export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
           )}
         >
           <Sparkles className={cn("w-5 h-5 flex-shrink-0", uiTheme === 'modern' ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-400")} />
-          <div>
+          <div className="min-w-0">
             <div className="text-xs font-bold">{t('theme.modern.name')}</div>
             <div className="text-[10px] text-neutral-400 dark:text-neutral-500">{t('theme.modern.desc')}</div>
           </div>
         </button>
         <button
           type="button"
+          aria-pressed={uiTheme === 'terminal'}
           onClick={() => setUiTheme('terminal')}
           className={cn(
             "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
@@ -35,7 +38,7 @@ export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
           )}
         >
           <Terminal className={cn("w-5 h-5 flex-shrink-0", uiTheme === 'terminal' ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-400")} />
-          <div>
+          <div className="min-w-0">
             <div className="text-xs font-bold">{t('theme.terminal.name')}</div>
             <div className="text-[10px] text-neutral-400 dark:text-neutral-500">{t('theme.terminal.desc')}</div>
           </div>

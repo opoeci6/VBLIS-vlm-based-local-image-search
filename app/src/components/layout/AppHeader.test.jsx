@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { AppHeader } from './AppHeader';
+import { DESKTOP_SESSION, SessionContext } from '../../session/sessionContext';
 
 const makeQueue = () => ({
   activeTask: null,
@@ -83,5 +84,59 @@ describe('AppHeader', () => {
     renderHeader({ showBrowseHint: true });
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Close hint' })).toBeNull();
+  });
+
+  it('names the gear button and keeps the class the tests use to find it', () => {
+    const { container } = renderHeader();
+    const gear = container.querySelector('button.hover\\:rotate-45');
+    expect(gear.getAttribute('aria-label')).toBe('Settings');
+  });
+
+  it('has the header menu only in a browser session', () => {
+    renderHeader();
+    expect(screen.queryByRole('button', { name: 'Account and appearance' })).toBeNull();
+    cleanup();
+    render(
+      <SessionContext.Provider value={{ ...DESKTOP_SESSION, mode: 'network', account: { id: 'a1', name: 'alice' } }}>
+        <AppHeader
+          models={{ active_model: 'org/model-a' }}
+          setShowSettings={vi.fn()}
+          queue={makeQueue()}
+          uiTheme="modern"
+          handleSearch={vi.fn()}
+          isSearching={false}
+          searchInputRef={{ current: null }}
+          query=""
+          setQuery={vi.fn()}
+          theme="light"
+          setTheme={vi.fn()}
+          setUiTheme={vi.fn()}
+        />
+      </SessionContext.Provider>
+    );
+    expect(screen.getByRole('button', { name: 'Account and appearance' })).toBeTruthy();
+  });
+
+  it('lays out three rows on a phone: logo and controls, the search box, then the buttons; one row from md up', () => {
+    const { container } = renderHeader();
+    const header = container.querySelector('header');
+    expect(header.className).toContain('flex-wrap');
+    expect(header.className).toContain('md:flex-nowrap');
+    expect(header.className).toContain('px-4');
+    expect(header.className).toContain('sm:px-6');
+    // No top margin on a phone.
+    expect(header.className).not.toMatch(/(^|\s)mt-4/);
+    const [logo, search, controls] = Array.from(header.children);
+    expect(logo.className).toContain('order-1');
+    expect(controls.className).toContain('order-2');
+    expect(search.className).toContain('order-3');
+    expect(search.className).toContain('basis-full');
+  });
+
+  it('lets the model chip truncate', () => {
+    renderHeader({ models: { active_model: 'org/' + 'm'.repeat(80) } });
+    const chip = screen.getByText('m'.repeat(80));
+    expect(chip.className).toContain('truncate');
+    expect(chip.closest('button').className).toContain('max-w-full');
   });
 });

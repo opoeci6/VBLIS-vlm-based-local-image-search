@@ -42,7 +42,7 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
       }}
     >
       <div className={cn(
-        "relative h-48 overflow-hidden bg-neutral-100 dark:bg-neutral-800",
+        "relative h-44 sm:h-48 overflow-hidden bg-neutral-100 dark:bg-neutral-800",
         !isModern && "border-b border-white"
       )}>
         <img
@@ -52,7 +52,7 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
           loading="lazy"
         />
         <div className={cn(
-          "absolute top-3 left-3 flex items-center gap-1.5 px-3 py-1 text-xs font-bold shadow-lg",
+          "absolute top-2 left-2 sm:top-3 sm:left-3 flex items-center gap-1.5 px-3 py-1 text-xs font-bold shadow-lg",
           isModern ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10" : "bg-black border border-white text-white"
         )}>
           <FolderOpen className="w-4 h-4 text-indigo-400" />
@@ -60,14 +60,14 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
         </div>
         {scored ? (
           <div className={cn(
-            "absolute bottom-3 right-3 px-3 py-1 text-xs font-bold shadow-lg",
+            "absolute bottom-2 right-2 sm:bottom-3 sm:right-3 px-3 py-1 text-xs font-bold shadow-lg",
             isModern ? "bg-black/70 backdrop-blur-md text-emerald-400 rounded-full ring-1 ring-white/10" : "bg-black border border-white text-emerald-400"
           )}>
             {t('videoFolder.best', { percent: formatScorePercent(group.bestScore) })}
           </div>
         ) : takenDate ? (
           <div className={cn(
-            "absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1 text-xs font-bold shadow-lg",
+            "absolute bottom-2 right-2 sm:bottom-3 sm:right-3 flex items-center gap-1.5 px-3 py-1 text-xs font-bold shadow-lg",
             isModern ? "bg-black/70 backdrop-blur-md text-white rounded-full ring-1 ring-white/10" : "bg-black border border-white text-white"
           )}>
             <CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />
@@ -77,11 +77,11 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
       </div>
 
       <div className={cn(
-        "p-4 flex items-center gap-3",
+        "p-3 sm:p-4 flex items-center gap-3",
         isModern ? "bg-white dark:bg-neutral-900 border-t border-gray-100 dark:border-white/5" : "bg-black"
       )}>
         <div className={cn(
-          "flex h-11 w-11 flex-shrink-0 items-center justify-center",
+          "flex h-10 w-10 sm:h-11 sm:w-11 flex-shrink-0 items-center justify-center",
           isModern ? "rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-200 dark:ring-indigo-500/20" : "icon-tile border border-white text-white"
         )}>
           <Video className="w-5 h-5" />

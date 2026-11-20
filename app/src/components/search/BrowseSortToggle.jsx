@@ -16,7 +16,7 @@ export const BrowseSortToggle = ({ sort, onChange, variant = 'modern', className
         aria-pressed={sort === option}
         onClick={() => onChange(option)}
         className={cn(
-          'cursor-pointer px-3 py-1.5 text-xs font-bold transition-all',
+          'min-h-10 cursor-pointer px-3 py-1.5 text-xs font-bold transition-all sm:min-h-0',
           variant === 'modern'
             ? cn(
               'rounded-lg',

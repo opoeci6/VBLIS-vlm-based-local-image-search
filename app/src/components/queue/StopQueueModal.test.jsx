@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { resetEscapeKeyForTests } from '../../hooks/useEscapeKey';
 import { StopQueueModal } from './StopQueueModal';
 
 const renderModal = (overrides = {}) => {
@@ -8,7 +9,18 @@ const renderModal = (overrides = {}) => {
 };
 
 describe('StopQueueModal', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    resetEscapeKeyForTests();
+  });
+
+  it('names its close button and closes with it and with Esc', () => {
+    const { props } = renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(props.onClose).toHaveBeenCalledTimes(2);
+  });
 
   it('renders nothing when closed', () => {
     const { container } = renderModal({ isOpen: false });

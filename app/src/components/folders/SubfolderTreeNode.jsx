@@ -10,6 +10,7 @@ import {
   Eye
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSession } from '../../session/sessionContext';
 
 /**
  * Recursive Subfolder Tree Node Component
@@ -29,6 +30,8 @@ export const SubfolderTreeNode = ({
   rootFolder
 }) => {
   const { t } = useTranslation('folders');
+  // A viewer browses the folders but cannot select, re-sync or remove them.
+  const { isOwner } = useSession();
   const isModern = uiTheme === 'modern';
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = !!expandedNodes[node.path];
@@ -76,7 +79,7 @@ export const SubfolderTreeNode = ({
     <div className="group/subnode select-none">
       <div
         onClick={handleRowClick}
-        className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all duration-150 ${cursorClass} ${
+        className={`p-2.5 rounded-xl border flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2.5 transition-all duration-150 ${cursorClass} ${
           isModern
             ? isSelected || isAllDescendantsSelected
               ? 'bg-cyan-50/90 dark:bg-cyan-950/30 border-cyan-300 dark:border-cyan-500/40 shadow-xs'
@@ -88,39 +91,46 @@ export const SubfolderTreeNode = ({
         title={rowTooltip}
       >
         {/* Left: Checkbox + Expand Button + Folder Icon + Title */}
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="flex items-center gap-0.5 sm:gap-2 min-w-0 flex-1">
           {/* Subfolder Checkbox */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleSelection(node.path, true, node);
-            }}
-            className={`flex items-center justify-center w-4 h-4 rounded-md border transition-all shrink-0 cursor-pointer ${
-              isSelected || isAllDescendantsSelected
-                ? 'bg-cyan-600 border-cyan-600 text-white'
-                : isIndeterminate
-                ? 'bg-cyan-100 dark:bg-cyan-500/20 border-cyan-400 text-cyan-600 dark:text-cyan-400'
-                : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
-            }`}
-            title={isSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
-          >
-            {isIndeterminate ? (
-              <div className="w-2 h-0.5 bg-current rounded-full" />
-            ) : (
-              <svg
-                className="w-3 h-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+          {isOwner && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSelection(node.path, true, node);
+              }}
+              className="flex items-center justify-center shrink-0 cursor-pointer max-sm:h-10 max-sm:w-10 max-sm:-ml-3"
+              title={isSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
+              aria-label={isSelected ? t('tree.deselectFolder') : t('tree.selectFolderAndSubfolders')}
+            >
+              <span
+                className={`flex items-center justify-center w-4 h-4 rounded-md border transition-all ${
+                  isSelected || isAllDescendantsSelected
+                    ? 'bg-cyan-600 border-cyan-600 text-white'
+                    : isIndeterminate
+                    ? 'bg-cyan-100 dark:bg-cyan-500/20 border-cyan-400 text-cyan-600 dark:text-cyan-400'
+                    : 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700 text-transparent'
+                }`}
               >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-          </button>
+                {isIndeterminate ? (
+                  <div className="w-2 h-0.5 bg-current rounded-full" />
+                ) : (
+                  <svg
+                    className="w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </span>
+            </button>
+          )}
 
           {/* Expand/Collapse Chevron (if node has children) */}
           {hasChildren ? (
@@ -130,8 +140,10 @@ export const SubfolderTreeNode = ({
                 e.stopPropagation();
                 onToggleNodeExpand(node.path);
               }}
-              className="p-0.5 text-neutral-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-black/5 dark:hover:bg-white/5 rounded transition-colors shrink-0 cursor-pointer"
+              className="p-0.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-black/5 dark:hover:bg-white/5 rounded transition-colors shrink-0 cursor-pointer"
               title={isExpanded ? t('tree.collapseSubfolders') : t('tree.expandSubfolders')}
+              aria-label={isExpanded ? t('tree.collapseSubfolders') : t('tree.expandSubfolders')}
+              aria-expanded={isExpanded}
             >
               {isExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
@@ -140,7 +152,7 @@ export const SubfolderTreeNode = ({
               )}
             </button>
           ) : (
-            <div className="w-4 shrink-0" />
+            <div className="w-4 shrink-0 max-sm:hidden" />
           )}
 
           {/* Folder Icon Tile */}
@@ -238,8 +250,8 @@ export const SubfolderTreeNode = ({
           </div>
         </div>
 
-        {/* Right: Actions for Subfolder */}
-        <div className="flex items-center gap-0.5 shrink-0">
+        {/* Right: Actions for Subfolder (a row below the name on a phone) */}
+        <div className="flex items-center gap-0.5 max-sm:justify-end sm:shrink-0">
           <button
             type="button"
             onClick={(e) => {
@@ -247,44 +259,51 @@ export const SubfolderTreeNode = ({
               if (node.exists) onBrowse(node);
             }}
             disabled={!node.exists}
-            className="p-1.5 text-neutral-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             title={node.exists ? t('tree.viewGallery') : t('tree.folderMissingOrInaccessible')}
+            aria-label={node.exists ? t('tree.viewGallery') : t('tree.folderMissingOrInaccessible')}
           >
             <Eye className="w-3.5 h-3.5" />
           </button>
 
           {/* Re-sync: Kept enabled so user can re-sync when drive is reconnected */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onReindex(node.path);
-            }}
-            disabled={isIndexing}
-            className="p-1.5 text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors disabled:opacity-30 cursor-pointer"
-            title={node.exists ? t('tree.resyncSub') : t('tree.resyncSubMissing')}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReindex(node.path);
+              }}
+              disabled={isIndexing}
+              className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors disabled:opacity-30 cursor-pointer"
+              title={node.exists ? t('tree.resyncSub') : t('tree.resyncSubMissing')}
+              aria-label={node.exists ? t('tree.resyncSub') : t('tree.resyncSubMissing')}
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(node.path);
-            }}
-            disabled={isIndexing}
-            className="p-1.5 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors disabled:opacity-30 cursor-pointer"
-            title={t('tree.deleteSub')}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(node.path);
+              }}
+              disabled={isIndexing}
+              className="p-1.5 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors disabled:opacity-30 cursor-pointer"
+              title={t('tree.deleteSub')}
+              aria-label={t('tree.deleteSub')}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Recursive Children (Nested Subfolders) */}
       {hasChildren && isExpanded && (
-        <div className="mt-1.5 ml-4 pl-3.5 border-l-2 border-dashed border-gray-200 dark:border-neutral-700/80 space-y-1.5 py-0.5 animate-in slide-in-from-top-1 fade-in duration-150">
+        <div className="mt-1.5 ml-2 pl-2 sm:ml-4 sm:pl-3.5 border-l-2 border-dashed border-gray-200 dark:border-neutral-700/80 space-y-1.5 py-0.5 animate-in slide-in-from-top-1 fade-in duration-150">
           {node.children.map((child) => (
             <SubfolderTreeNode
               key={child.path}

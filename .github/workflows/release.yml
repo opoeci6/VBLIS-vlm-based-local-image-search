@@ -187,13 +187,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The web interface on its own, for a server without Node (install-linux.sh --web-zip, Docker):
+      # the contents of app/dist with index.html at the zip's root. Python's zipfile writes "/" in entry
+      # names on every system, which unzip on Linux needs.
+      - name: Zip the Web Interface
+        working-directory: app
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not (Test-Path dist/index.html)) { Write-Output "::error::app/dist/index.html is missing"; exit 1 }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          @'
+          import pathlib, sys, zipfile
+          source, target = pathlib.Path(sys.argv[1]), sys.argv[2]
+          with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+              for item in sorted(source.rglob("*")):
+                  if item.is_file():
+                      archive.write(item, item.relative_to(source).as_posix())
+              names = archive.namelist()
+          if "index.html" not in names:
+              sys.exit("index.html is not at the zip's root")
+          print(f"{target}: {len(names)} files")
+          '@ | python - dist "dist-built/VBLIS-web-$version.zip"
+
       # GitHub release assets must be under 2 GiB each (v0.2.0: installer 1,852 MiB, 7z 1,554 MiB)
       - name: Check Asset Sizes & Write SHA256SUMS.txt
         working-directory: app/dist-built
         run: |
           $ErrorActionPreference = "Stop"
-          $assets = @(Get-ChildItem -File | Where-Object Extension -in ".exe", ".7z" | Sort-Object Name)
-          foreach ($ext in ".exe", ".7z") {
+          $assets = @(Get-ChildItem -File | Where-Object Extension -in ".exe", ".7z", ".zip" | Sort-Object Name)
+          foreach ($ext in ".exe", ".7z", ".zip") {
             $count = @($assets | Where-Object Extension -eq $ext).Count
             if ($count -ne 1) { Write-Output "::error::Expected one $ext in app/dist-built, found $count"; exit 1 }
           }
@@ -235,6 +258,15 @@ jobs:
             app/dist-built/SHA256SUMS.txt
           retention-days: 30
 
+      - name: Upload Web Interface (.zip)
+        uses: actions/upload-artifact@v7
+        with:
+          name: VBLIS-Web-${{ env.VERSION }}
+          path: |
+            app/dist-built/*.zip
+            app/dist-built/SHA256SUMS.txt
+          retention-days: 30
+
       - name: Create Draft GitHub Release
         if: needs.prepare.outputs.publish == 'true'
         uses: softprops/action-gh-release@v3
@@ -252,6 +284,7 @@ jobs:
           files: |
             app/dist-built/*.exe
             app/dist-built/*.7z
+            app/dist-built/*.zip
             app/dist-built/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { API_BASE } from '../config';
 import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
+import { useSession } from '../session/sessionContext';
 import i18n from '../i18n';
 
 export const useBackendStatus = ({ setToast }) => {
+  const { isOwner } = useSession();
   const [status, setStatus] = useState({
     is_indexing: false,
     percent: 0,
@@ -93,7 +95,7 @@ export const useBackendStatus = ({ setToast }) => {
   }, [status.is_indexing, status.errors, status.last_task_id, status.total_files, status.discovered_video_count, status.indexed_video_frames, setToast]);
 
   const handleCancelIndexing = async () => {
-    if (isCancellingIndexing) return;
+    if (isCancellingIndexing || !isOwner) return;
     setIsCancellingIndexing(true);
     try {
       await apiFetch(`${API_BASE}/index/cancel`, { method: 'POST' });

@@ -9,12 +9,14 @@ import { openInExplorer } from '../../utils/electron';
 export const FolderContentRow = memo(function FolderContentRow({ item, uiTheme, setSelectedImage, setToast }) {
   const { t } = useTranslation('folders');
   const isMissing = item.exists_on_disk === false;
+  // Revealing a file needs the Electron window; a browser cannot open a folder on the server.
+  const canShowInExplorer = Boolean(window.electronAPI?.openInExplorer);
   const mediaTypeLabels = { image: t('contentRow.mediaType.image'), video: t('contentRow.mediaType.video') };
 
   return (
     <div
       className={cn(
-        "flex items-center gap-4 p-3 rounded-2xl border transition-all",
+        "flex flex-wrap items-center gap-x-3 gap-y-2 sm:flex-nowrap sm:gap-4 p-3 rounded-2xl border transition-all",
         isMissing
           ? "border-rose-200 dark:border-rose-500/30 bg-rose-50/40 dark:bg-rose-950/20"
           : uiTheme === 'modern'
@@ -30,7 +32,7 @@ export const FolderContentRow = memo(function FolderContentRow({ item, uiTheme, 
 
       <div
         className={cn(
-          "min-w-0 flex-1",
+          "min-w-0 flex-1 max-sm:basis-0",
           isMissing ? "cursor-not-allowed" : "cursor-pointer"
         )}
         onClick={() => {
@@ -62,7 +64,8 @@ export const FolderContentRow = memo(function FolderContentRow({ item, uiTheme, 
         </p>
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      {/* On a phone the badges and the action sit on a row of their own, so the name keeps its room */}
+      <div className="flex items-center gap-2 max-sm:w-full max-sm:justify-between sm:flex-shrink-0">
         {/* Indexing Status Badges */}
         <div className="flex items-center gap-1.5">
           {isMissing ? (
@@ -94,25 +97,28 @@ export const FolderContentRow = memo(function FolderContentRow({ item, uiTheme, 
           )}
         </div>
 
-        <button
-          type="button"
-          disabled={isMissing}
-          onClick={async (e) => {
-            e.stopPropagation();
-            // null: no Electron bridge (a plain browser), so there is nothing to report.
-            const res = await openInExplorer(item.path);
-            if (res !== null && !res?.success) {
-              setToast({ type: 'error', message: res?.error || t('common:openFileFailed') });
-            }
-          }}
-          className={cn(
-            "p-2 text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
-            uiTheme !== 'modern' && "border border-white text-white"
-          )}
-          title={isMissing ? t('contentRow.fileMissing') : t('common:showInExplorer')}
-        >
-          <FolderOpen className="w-4 h-4" />
-        </button>
+        {canShowInExplorer && (
+          <button
+            type="button"
+            disabled={isMissing}
+            onClick={async (e) => {
+              e.stopPropagation();
+              // null: no Electron bridge (a plain browser), so there is nothing to report.
+              const res = await openInExplorer(item.path);
+              if (res !== null && !res?.success) {
+                setToast({ type: 'error', message: res?.error || t('common:openFileFailed') });
+              }
+            }}
+            className={cn(
+              "p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-indigo-500 hover:bg-indigo-500/10 rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed",
+              uiTheme !== 'modern' && "border border-white text-white"
+            )}
+            title={isMissing ? t('contentRow.fileMissing') : t('common:showInExplorer')}
+            aria-label={isMissing ? t('contentRow.fileMissing') : t('common:showInExplorer')}
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );

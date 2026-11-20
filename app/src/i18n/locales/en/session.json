@@ -1,0 +1,260 @@
+{
+  "connecting": "Connecting to the server...",
+  "connectionError": {
+    "title": "Can't reach the server",
+    "desc": "Check your network connection and that the server is running.",
+    "retry": "Try again"
+  },
+  "signIn": {
+    "title": "Sign in",
+    "name": "Name",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in...",
+    "expired": "Your session ended. Sign in again.",
+    "insecure": "This connection isn't encrypted.",
+    "errors": {
+      "wrongNameOrPassword": "Wrong name or password.",
+      "accountOff": "This account is turned off. Ask the server's owner to turn it on.",
+      "tooManyAttempts_one": "Too many attempts. Try again in {{count}} second.",
+      "tooManyAttempts_other": "Too many attempts. Try again in {{count}} seconds.",
+      "tooManyAttemptsNoWait": "Too many attempts. Try again later.",
+      "busy_one": "The server is busy. Try again in {{count}} second.",
+      "busy_other": "The server is busy. Try again in {{count}} seconds.",
+      "busyNoWait": "The server is busy. Try again later.",
+      "noOwnerAccount": "The server has no owner account yet. Add one on the server: <code>add-account NAME --role owner</code>",
+      "network": "Could not reach the server. Check your connection and try again.",
+      "generic": "Sign-in failed (HTTP {{status}}).",
+      "noAccounts": "No account can sign in yet. Add one in the VBLIS app on the computer that shares."
+    }
+  },
+  "role": {
+    "owner": "Owner",
+    "viewer": "Viewer"
+  },
+  "signedInAs": "Signed in as {{name}} · {{role}}",
+  "signOut": "Sign out",
+  "headerMenu": {
+    "label": "Account and appearance"
+  },
+  "viewer": {
+    "noModelTitle": "The owner hasn't set up a model yet",
+    "noModelDesc": "Search will be available once the owner sets one up on the server."
+  },
+  "overlay": {
+    "searchByImage": "Drop an image to search",
+    "searchByImageHint": "Find similar photos and videos in the library"
+  },
+  "fileDrop": {
+    "useAddFolders": "Folders can't be dropped into a browser. Use the Add Folder(s) button instead."
+  },
+  "passwordRules": {
+    "mismatch": "The two new passwords do not match.",
+    "tooShort": "The password must be at least {{min}} characters.",
+    "tooLong": "The password must be at most {{max}} characters."
+  },
+  "account": {
+    "title": "Your account",
+    "name": "Name",
+    "role": "Role",
+    "password": {
+      "title": "Change your password",
+      "current": "Current password",
+      "new": "New password",
+      "repeat": "Repeat the new password",
+      "submit": "Change password",
+      "submitting": "Saving...",
+      "currentRequired": "Enter your current password.",
+      "changed": "Your password was changed. Your other browsers were signed out."
+    }
+  },
+  "server": {
+    "title": "Server",
+    "loading": "Loading server settings...",
+    "loadFailed": "Could not load the server settings.",
+    "accounts": {
+      "title": "Accounts",
+      "owners_one": "{{count}} owner",
+      "owners_other": "{{count}} owners",
+      "viewers_one": "{{count}} viewer",
+      "viewers_other": "{{count}} viewers",
+      "summary": "{{owners}}, {{viewers}}",
+      "manage": "Manage accounts"
+    },
+    "facts": {
+      "title": "Server facts",
+      "libraryFolders": "Library folders",
+      "noLibraryFolders": "None yet",
+      "port": "Port",
+      "https": "HTTPS",
+      "httpsOff": "Off",
+      "httpsSelfSigned": "On (self-signed certificate)",
+      "httpsFiles": "On (certificate files)",
+      "internet": "Internet access",
+      "internetOn": "Allowed",
+      "internetOff": "Local network only",
+      "fromEnvironment": "Set by environment variables: {{names}}",
+      "hint": "These are changed on the server. See SERVER.md."
+    },
+    "signOutOthers": {
+      "button": "Sign out other browsers",
+      "confirm": "Every other browser signed in to this server will have to sign in again. This browser stays signed in.",
+      "submit": "Sign out other browsers",
+      "done": "Other browsers were signed out.",
+      "failed": "Could not sign out the other browsers."
+    },
+    "errors": {
+      "codes": {
+        "wrong_password": "The current password is wrong.",
+        "confirm_password": "Enter your current password to confirm this change.",
+        "account_changed": "Your account was changed a moment ago. Reload the page and try again.",
+        "empty": "The password can't be empty.",
+        "too_short": "The password is too short.",
+        "too_long": "The password is too long.",
+        "name_taken": "Another account already has this name.",
+        "name_invalid": "A name has 1 to 32 letters or digits, and may use . _ and - but no spaces.",
+        "last_owner": "At least one owner account has to stay, and be turned on.",
+        "own_account": "You can't delete, turn off or demote your own account.",
+        "too_many": "There can be at most 50 accounts.",
+        "no_account": "This account no longer exists.",
+        "config_unreadable": "The server's settings file could not be read, so nothing was changed.",
+        "no_accounts": "No account can sign in yet. Add one first.",
+        "from_environment": "This setting is set by an environment variable, so it can't be changed here.",
+        "invalid_setting": "That setting isn't valid.",
+        "start_failed": "Sharing couldn't start.",
+        "stopped_not_saved": "Sharing stopped, but the setting couldn't be saved, so it starts again with the app.",
+        "port_in_use": "The port is already in use by another program. Choose another port.",
+        "tls_file_missing": "HTTPS with your own files needs a certificate file and a key file, and both must exist.",
+        "tls_invalid": "The certificate file or the key file isn't valid.",
+        "tls_failed": "The self-signed certificate couldn't be created.",
+        "tls_unavailable": "Self-signed HTTPS isn't available in this build.",
+        "config_unwritable": "The settings file can't be written.",
+        "public_needs_https": "Access from the internet needs HTTPS, here or in a trusted proxy in front of VBLIS."
+      },
+      "tooManyAttempts_one": "Too many attempts. Try again in {{count}} second.",
+      "tooManyAttempts_other": "Too many attempts. Try again in {{count}} seconds.",
+      "tooManyAttemptsNoWait": "Too many attempts. Try again later.",
+      "generic": "The server refused the change (HTTP {{status}}).",
+      "network": "Could not reach the server.",
+      "invalidSetting": "That setting isn't valid: {{reason}}"
+    }
+  },
+  "accounts": {
+    "title": "Accounts",
+    "subtitle": "Who can sign in to this server, and what each viewer may do.",
+    "loading": "Loading accounts...",
+    "loadFailed": "Could not load the accounts.",
+    "columns": {
+      "name": "Name",
+      "role": "Role",
+      "originals": "Originals",
+      "imageSearch": "Picture search",
+      "places": "Places",
+      "on": "On",
+      "actions": "Actions"
+    },
+    "switches": {
+      "originals": "Open and download original files",
+      "imageSearch": "Search with a picture",
+      "places": "See places and filter by place",
+      "on": "Account turned on"
+    },
+    "permissionFor": "{{permission}} for {{name}}",
+    "always": "always",
+    "you": "you",
+    "turnedOff": "off",
+    "actionsFor": "More actions for {{name}}",
+    "ownAccount": "You can't do this to your own account.",
+    "locationHint": "Original files still contain their location, even with Places off.",
+    "atLimit": "There can be at most {{max}} accounts.",
+    "menu": {
+      "rename": "Rename",
+      "changeRole": "Change role",
+      "setPassword": "Set password",
+      "signOut": "Sign out everywhere",
+      "delete": "Delete"
+    },
+    "add": {
+      "button": "Add account",
+      "title": "New account",
+      "name": "Name",
+      "nameHint": "1 to {{max}} letters or digits. . _ and - are allowed, spaces are not.",
+      "nameRequired": "Enter a name.",
+      "nameTooLong": "A name can have at most {{max}} characters.",
+      "role": "Role",
+      "password": "Password",
+      "repeat": "Repeat the password",
+      "permissions": "What this viewer may do",
+      "submit": "Add account",
+      "submitting": "Adding..."
+    },
+    "confirm": {
+      "password": "Your current password",
+      "passwordRequired": "Enter your current password to confirm.",
+      "working": "Saving...",
+      "rename": {
+        "title": "Rename {{name}}",
+        "newName": "New name",
+        "submit": "Rename"
+      },
+      "promote": {
+        "title": "Make {{name}} an owner?",
+        "desc": "Owners can change every setting, manage accounts and open every file.",
+        "submit": "Make owner"
+      },
+      "demote": {
+        "title": "Make {{name}} a viewer?",
+        "desc": "{{name}} will only be able to search and view, with the permissions an owner sets.",
+        "submit": "Make viewer"
+      },
+      "setPassword": {
+        "title": "Set a password for {{name}}",
+        "desc": "{{name}} is signed out everywhere and signs in again with the new password.",
+        "descYou": "Your other browsers are signed out. This browser stays signed in.",
+        "new": "New password",
+        "repeat": "Repeat the new password",
+        "submit": "Set password"
+      },
+      "delete": {
+        "title": "Delete {{name}}?",
+        "desc": "{{name}} can no longer sign in. This can't be undone.",
+        "submit": "Delete account"
+      },
+      "turnOff": {
+        "title": "Turn off {{name}}?",
+        "desc": "{{name}} is signed out and can't sign in until the account is turned on again.",
+        "submit": "Turn off"
+      },
+      "turnOn": {
+        "title": "Turn on {{name}}?",
+        "desc": "{{name}} can sign in again.",
+        "submit": "Turn on"
+      },
+      "grant": {
+        "originals": "Let {{name}} open and download original files?",
+        "imageSearch": "Let {{name}} search with a picture?",
+        "places": "Let {{name}} see places and filter by place?",
+        "desc": "This gives {{name}} more access, so it needs your password. Switching it off again doesn't.",
+        "submit": "Allow"
+      },
+      "again": "Enter your password again to confirm."
+    },
+    "done": {
+      "added": "The account {{name}} was added.",
+      "passwordSet": "The password of {{name}} was set.",
+      "signedOut": "{{name}} was signed out everywhere.",
+      "signedOutYou": "Your other browsers were signed out."
+    }
+  },
+  "httpBanner": {
+    "message": "This connection isn't encrypted. Others on this network could see your password and pictures.",
+    "howTo": "How to turn on HTTPS",
+    "hideHowTo": "Hide",
+    "dismiss": "Dismiss",
+    "ownerSelfSigned": "Quickest: run <code>set tls self_signed</code> on the server.",
+    "ownerFiles": "Your own certificate: point the server at your certificate and key files.",
+    "ownerProxy": "Or put the server behind a reverse proxy that provides HTTPS.",
+    "ownerDocs": "See SERVER.md for the steps.",
+    "viewerAsk": "Ask the server's owner to turn on HTTPS."
+  }
+}
