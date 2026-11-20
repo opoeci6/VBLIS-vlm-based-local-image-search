@@ -6,5 +6,14 @@ export const getOriginalUrl = (apiBase, path, { download = false } = {}) => {
   return `${apiBase}/media/original?${params.toString()}`;
 };
 
+// Starts a player from inside the tap on "Play video". iOS plays a video with sound only when playback starts
+// within the tap itself (the `autoPlay` attribute acts later), so the host mounts the player synchronously and
+// calls this at once. A refusal leaves the player's own controls to start it.
+export const startPlayback = (video) => {
+  try {
+    video?.play?.()?.catch?.(() => {});
+  } catch { /* the controls still start it */ }
+};
+
 // Most browsers cannot show HEIC/HEIF, so those originals are only offered as a download.
 export const isHeicPath = (path) => /\.(heic|heif)$/i.test(path || '');

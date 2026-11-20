@@ -40,7 +40,9 @@ _ENV_FIELDS = {
     "ALLOWED_HOSTS": "allowed_hosts",
     "PUBLIC_ACCESS": "public_access",
     "TRUSTED_PROXIES": "trusted_proxies",
+    "LOCAL_NETWORKS": "local_networks",
 }
+MAX_LOCAL_NETWORKS = 64
 _RELOAD_INTERVAL = 1.0
 _LOCK_TIMEOUT = 5.0
 
@@ -61,6 +63,8 @@ class ServerConfig:
     library_roots: tuple = ()
     public_access: bool = False
     trusted_proxies: tuple = ()
+    # Addresses or ranges whose clients count as local besides the private ones (netaddr.parse_local_networks)
+    local_networks: tuple = ()
     accounts: tuple = ()  # of accounts.Account
     session_secret: str = ""
     # Not stored: what loading found
@@ -106,6 +110,7 @@ class ServerConfig:
             "library_roots": list(self.library_roots),
             "public_access": self.public_access,
             "trusted_proxies": list(self.trusted_proxies),
+            "local_networks": list(self.local_networks),
             "accounts": [account.to_json() for account in self.accounts],
             "session_secret": self.session_secret,
         }
@@ -227,6 +232,28 @@ def _parse_proxies(value, problems):
     return tuple(kept)
 
 
+def _parse_local_networks(value, problems):
+    entries = _as_list(value, ",")
+    if entries is None:
+        problems.append("local_networks: expected a list of addresses or ranges")
+        return ()
+    kept, seen = [], set()
+    for entry in entries:
+        try:
+            network = netaddr.parse_local_networks([entry])[0]
+        except ValueError as e:
+            problems.append(f"local_networks: {e}; skipped")
+            continue
+        if network in seen:
+            continue
+        if len(kept) == MAX_LOCAL_NETWORKS:
+            problems.append(f"local_networks: more than {MAX_LOCAL_NETWORKS}; the rest skipped")
+            break
+        seen.add(network)
+        kept.append(str(entry).strip())
+    return tuple(kept)
+
+
 def config_from_json(data) -> ServerConfig:
     """A ServerConfig from the file's JSON. Bad fields fall back to their defaults, which are the
     closed choices, and are listed in problems."""
@@ -253,6 +280,7 @@ def config_from_json(data) -> ServerConfig:
         library_roots=_parse_roots(data.get("library_roots", []), problems),
         public_access=_parse_bool(data.get("public_access", False), "public_access", problems, False),
         trusted_proxies=_parse_proxies(data.get("trusted_proxies", []), problems),
+        local_networks=_parse_local_networks(data.get("local_networks", []), problems),
         accounts=acct.parse_accounts(data.get("accounts"), problems),
         session_secret=secret or "",
     )
@@ -284,8 +312,10 @@ def apply_env(config: ServerConfig, env) -> ServerConfig:
             value = _parse_names(raw, local)
         elif name == "public_access":
             value = _parse_bool(raw, label, local, config.public_access)
-        else:
+        elif name == "trusted_proxies":
             value = _parse_proxies(raw, local)
+        else:
+            value = _parse_local_networks(raw, local)
         if local:
             problems.extend(f"{label}: {message}" for message in local)
             continue
@@ -344,6 +374,7 @@ _JSON_PLACES = {
     "library_roots": ("library_roots",),
     "public_access": ("public_access",),
     "trusted_proxies": ("trusted_proxies",),
+    "local_networks": ("local_networks",),
 }
 
 

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, Images, Loader2, X } from 'lucide-react';
 import { VideoFrameCard } from './VideoFrameCard';
@@ -8,6 +9,8 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useProgressiveList } from '../../hooks/useProgressiveList';
 import { cn } from '../../utils/cn';
 import { OriginalLinks } from '../media/OriginalLinks';
+import { OriginalVideoPlayer } from '../media/OriginalVideoPlayer';
+import { startPlayback } from '../../utils/originals';
 import { formatScorePercent, hasScore, isSimilarityKind } from '../../utils/scoreLabel';
 
 const INITIAL_VISIBLE_FRAMES = 60;
@@ -17,10 +20,14 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
   // A video can have hundreds of matching frames, so the grid grows as the user scrolls.
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_FRAMES);
   const [countPath, setCountPath] = useState(selectedVideoGroup?.path ?? null);
+  // Playing the original video above the frames: 'idle' (Play video offered), 'playing' or 'failed' (a message).
+  const [play, setPlay] = useState('idle');
+  const playerRef = useRef(null);
   const groupPath = selectedVideoGroup?.path ?? null;
   if (groupPath !== countPath) {
     setCountPath(groupPath);
     setVisibleCount(INITIAL_VISIBLE_FRAMES);
+    setPlay('idle');
   }
   const frames = selectedVideoGroup?.frames ?? [];
   const { sentinelRef } = useProgressiveList({ items: frames, visibleCount, setVisibleCount });
@@ -127,6 +134,11 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
                   ? "bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl border border-gray-200 dark:border-neutral-700"
                   : "border border-white text-white"
               )}
+              onPlay={play === 'idle' ? () => {
+                // Mounted within the tap, so it can start with sound there (see startPlayback).
+                flushSync(() => setPlay('playing'));
+                startPlayback(playerRef.current);
+              } : undefined}
             />
           </div>
           <button
@@ -144,6 +156,22 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
         </div>
 
         <div className="custom-scrollbar min-h-0 overflow-y-auto p-3 sm:p-5">
+          {play === 'playing' && (
+            <OriginalVideoPlayer
+              ref={playerRef}
+              path={selectedVideoGroup.path}
+              className={cn("mb-3 sm:mb-5 w-full max-h-[50dvh] bg-black", uiTheme === 'modern' && "rounded-2xl")}
+              onFailed={() => setPlay('failed')}
+            />
+          )}
+          {play === 'failed' && (
+            <p
+              role="status"
+              className={cn("mb-3 text-sm font-medium sm:mb-5", uiTheme === 'modern' ? "text-amber-600 dark:text-amber-300" : "text-amber-300")}
+            >
+              {t('media:originals.cannotPlay')}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-2 sm:gap-5 lg:grid-cols-3">
             {frames.slice(0, visibleCount).map((frame, index) => (
               <VideoFrameCard
@@ -151,6 +179,8 @@ export const VideoGroupModal = ({ selectedVideoGroup, setSelectedVideoGroup, set
                 frame={frame}
                 index={index}
                 onSelect={(f) => {
+                  // The full-size view opens over the modal; the player stays mounted but must not keep playing.
+                  playerRef.current?.pause?.();
                   setSelectedImage(f);
                 }}
                 uiTheme={uiTheme}

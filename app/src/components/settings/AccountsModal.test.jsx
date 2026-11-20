@@ -386,6 +386,100 @@ describe('AccountsModal', () => {
       pick('bob', 'Rename');
       expect(screen.queryByRole('menu')).toBeNull();
     });
+
+    it('sits outside the scrolling list and the window, so a short list cannot cut it off', async () => {
+      await renderModal();
+      openMenu('bob');
+      const menu = screen.getByRole('menu', { name: 'More actions for bob' });
+      const accounts = screen.getByRole('dialog', { name: 'Accounts' });
+      expect(accounts.contains(menu)).toBe(false);
+      expect(menu.parentElement).toBe(accounts.parentElement);
+      expect(screen.getByRole('button', { name: 'More actions for bob' }).getAttribute('aria-controls')).toBe(menu.id);
+      // Picking an action doesn't count as a click on the backdrop
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    describe('placement', () => {
+      let rects;
+      let spies;
+      beforeEach(() => {
+        rects = new Map();
+        const box = ({ top = 0, bottom = 0, right = 0 }) => ({ top, bottom, right, left: 0, height: bottom - top, width: right, x: 0, y: top });
+        spies = [
+          vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function rect() {
+            return box(rects.get(this) ?? {});
+          }),
+          vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function height() {
+            return this.getAttribute('role') === 'menu' ? 180 : 0;
+          }),
+        ];
+      });
+      afterEach(() => spies.forEach((spy) => spy.mockRestore()));
+
+      const openAt = (overlay, button) => {
+        rects.set(screen.getByRole('dialog', { name: 'Accounts' }).parentElement, overlay);
+        rects.set(screen.getByRole('button', { name: 'More actions for bob' }).parentElement, button);
+        openMenu('bob');
+        return screen.getByRole('menu').style;
+      };
+
+      it('opens under its button when there is room', async () => {
+        await renderModal();
+        const style = openAt({ top: 0, bottom: 800, right: 1000 }, { top: 100, bottom: 140, right: 900 });
+        expect([style.top, style.bottom, style.right, style.visibility]).toEqual(['144px', '', '100px', '']);
+      });
+
+      it('opens above its button near the bottom of the window', async () => {
+        await renderModal();
+        const style = openAt({ top: 0, bottom: 300, right: 1000 }, { top: 200, bottom: 240, right: 900 });
+        expect([style.top, style.bottom, style.right]).toEqual(['', '104px', '100px']);
+      });
+
+      it('stays inside a window too short for either side', async () => {
+        await renderModal();
+        const style = openAt({ top: 0, bottom: 150, right: 1000 }, { top: 50, bottom: 90, right: 900 });
+        expect([style.top, style.bottom]).toEqual(['4px', '']);
+      });
+    });
+
+    it('closes when the list scrolls or the window is resized', async () => {
+      await renderModal();
+      openMenu('bob');
+      fireEvent.scroll(screen.getByRole('table').parentElement);
+      expect(screen.queryByRole('menu')).toBeNull();
+      openMenu('bob');
+      fireEvent(window, new Event('resize'));
+      expect(screen.queryByRole('menu')).toBeNull();
+    });
+
+    it('takes the keyboard: the first action, Up and Down over the enabled ones, Esc back to the button', async () => {
+      await renderModal();
+      // A browser ignores focus() on a hidden element, so the menu must be placed (visible) by then
+      const focusOf = HTMLElement.prototype.focus;
+      const visibilityAtFocus = [];
+      const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function focus(...args) {
+        if (this.getAttribute('role') === 'menuitem') visibilityAtFocus.push(this.closest('[role="menu"]').style.visibility);
+        return focusOf.apply(this, args);
+      });
+      openMenu('alice');
+      focusSpy.mockRestore();
+      expect(visibilityAtFocus).toEqual(['']);
+      const item = (name) => screen.getByRole('menuitem', { name });
+      expect(document.activeElement).toBe(item('Rename'));
+      const menu = screen.getByRole('menu');
+      fireEvent.keyDown(menu, { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(item('Set password'));
+      fireEvent.keyDown(menu, { key: 'ArrowDown' });
+      fireEvent.keyDown(menu, { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(item('Rename'));
+      fireEvent.keyDown(menu, { key: 'ArrowUp' });
+      expect(document.activeElement).toBe(item('Sign out everywhere'));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'More actions for alice' }));
+      expect(onClose).not.toHaveBeenCalled();
+    });
   });
 
   describe('rename', () => {

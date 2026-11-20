@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { Loader2, MoreHorizontal, Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FilterToggle } from '../search/filters/FilterToggle';
@@ -17,6 +17,24 @@ const GRID = 'sm:grid sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_repeat(4,minma
 const DEFAULT_NEW_PERMISSIONS = { originals: false, image_search: true, places: true };
 
 const badgeClass = 'px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider border flex-shrink-0';
+
+const MENU_ID = 'accounts-row-menu';
+const MENU_GAP = 4;
+
+// Where a row's open menu goes, in the overlay's coordinates: under its button, or above it when there is no
+// room below. The menu lives outside the scrolling list, so a short list (one account) can't cut it off.
+function placeMenu(anchor, overlay, menu) {
+  const a = anchor.getBoundingClientRect();
+  const o = overlay.getBoundingClientRect();
+  const height = menu.offsetHeight;
+  const right = Math.max(MENU_GAP, o.right - a.right);
+  const fitsBelow = a.bottom + MENU_GAP + height <= o.bottom - MENU_GAP;
+  const fitsAbove = a.top - MENU_GAP - height >= o.top + MENU_GAP;
+  if (fitsBelow || !fitsAbove) {
+    return { top: fitsBelow ? a.bottom - o.top + MENU_GAP : Math.max(MENU_GAP, o.height - height - MENU_GAP), right };
+  }
+  return { bottom: o.bottom - a.top + MENU_GAP, right };
+}
 
 // "Original files still contain their location" applies to a viewer who may open files but not see places.
 const showsLocationHint = (role, permissions) => role === 'viewer' && Boolean(permissions?.originals) && !permissions?.places;
@@ -242,7 +260,56 @@ function AddAccountCard({ limits, passwordFor, onAdd, onClose, uiTheme }) {
 }
 
 // One account: a stacked card on a narrow screen, a row of the grid from 640 px up.
-function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, uiTheme, onPermission, onTurn, onToggleMenu, onMenuAction }) {
+// The actions of one account. Rendered by the window at its top level (see `placeMenu`), not in the row.
+function RowMenu({ account, isYou, placement, panelRef, onMenuAction }) {
+  const { t } = useTranslation('session');
+  // Up and Down move between the actions that can be picked
+  const onKeyDown = (event) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const items = [...event.currentTarget.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+    if (items.length === 0) return;
+    const at = items.indexOf(document.activeElement);
+    const down = event.key === 'ArrowDown';
+    const next = at === -1 ? (down ? 0 : items.length - 1) : (at + (down ? 1 : -1) + items.length) % items.length;
+    items[next].focus();
+  };
+
+  return (
+    <div
+      id={MENU_ID}
+      ref={panelRef}
+      role="menu"
+      aria-label={t('accounts.actionsFor', { name: account.name })}
+      onKeyDown={onKeyDown}
+      // Measured hidden first, then placed before the browser paints
+      style={placement ?? { top: 0, right: 0, visibility: 'hidden' }}
+      className="absolute z-10 min-w-[11rem] max-h-[calc(100%-8px)] overflow-y-auto py-1 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl"
+    >
+      {[
+        { action: 'rename', text: t('accounts.menu.rename'), ownDisabled: false },
+        { action: 'changeRole', text: t('accounts.menu.changeRole'), ownDisabled: true },
+        { action: 'setPassword', text: t('accounts.menu.setPassword'), ownDisabled: false },
+        { action: 'signOut', text: t('accounts.menu.signOut'), ownDisabled: false },
+        { action: 'delete', text: t('accounts.menu.delete'), ownDisabled: true }
+      ].map(({ action, text, ownDisabled }) => (
+        <button
+          key={action}
+          type="button"
+          role="menuitem"
+          disabled={isYou && ownDisabled}
+          title={isYou && ownDisabled ? t('accounts.ownAccount') : undefined}
+          onClick={() => onMenuAction(account, action)}
+          className="block w-full text-left px-3 py-2 max-sm:py-3 max-sm:text-sm text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 focus:bg-gray-100 dark:focus:bg-neutral-800 outline-none disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, uiTheme, onPermission, onTurn, onToggleMenu }) {
   const { t } = useTranslation('session');
   const { id, name, role, disabled } = account;
   const isOwner = role === 'owner';
@@ -316,36 +383,11 @@ function AccountRow({ account, isYou, pendingKey, error, isMenuOpen, menuRef, ui
           aria-label={t('accounts.actionsFor', { name })}
           aria-haspopup="menu"
           aria-expanded={isMenuOpen}
+          aria-controls={isMenuOpen ? MENU_ID : undefined}
           className="p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all disabled:opacity-40 cursor-pointer"
         >
           {isBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <MoreHorizontal className="w-4 h-4" aria-hidden="true" />}
         </button>
-        {isMenuOpen && (
-          <div
-            role="menu"
-            className="absolute right-0 top-full mt-1 z-20 min-w-[11rem] py-1 bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-xl"
-          >
-            {[
-              { action: 'rename', text: t('accounts.menu.rename'), ownDisabled: false },
-              { action: 'changeRole', text: t('accounts.menu.changeRole'), ownDisabled: true },
-              { action: 'setPassword', text: t('accounts.menu.setPassword'), ownDisabled: false },
-              { action: 'signOut', text: t('accounts.menu.signOut'), ownDisabled: false },
-              { action: 'delete', text: t('accounts.menu.delete'), ownDisabled: true }
-            ].map(({ action, text, ownDisabled }) => (
-              <button
-                key={action}
-                type="button"
-                role="menuitem"
-                disabled={isYou && ownDisabled}
-                title={isYou && ownDisabled ? t('accounts.ownAccount') : undefined}
-                onClick={() => onMenuAction(account, action)}
-                className="block w-full text-left px-3 py-2 max-sm:py-3 max-sm:text-sm text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-gray-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                {text}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       {(showsLocationHint(role, account.permissions) || error) && (
@@ -379,7 +421,12 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
   // What each row is doing now, { [id]: 'originals' | 'on' | ... }, and the last refusal of an inline action.
   const [pending, setPending] = useState({});
   const [rowErrors, setRowErrors] = useState({});
+  // The open row's actions cell (the menu's anchor), the menu itself, the overlay it is placed in, the list.
   const menuRef = useRef(null);
+  const menuPanelRef = useRef(null);
+  const overlayRef = useRef(null);
+  const listRef = useRef(null);
+  const [menuPlacement, setMenuPlacement] = useState(null);
 
   const modern = uiTheme === 'modern';
   const atLimit = accounts.length >= limits.max_accounts;
@@ -389,24 +436,49 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
     setIsStepBusy(false);
   }, []);
 
-  // Esc closes the innermost thing: the menu, then the confirm step, then the dialog.
+  // Esc closes the innermost thing: the menu (back to its button), then the confirm step, then the dialog.
   useEscapeKey(true, () => {
-    if (menuFor) setMenuFor(null);
-    else if (step) {
+    if (menuFor) {
+      menuRef.current?.querySelector('button')?.focus();
+      setMenuFor(null);
+    } else if (step) {
       if (!isStepBusy) closeStep();
     } else onClose();
   });
   // On a phone Back closes the window (the confirm step has its own entry above it).
   useBackToClose(true, onClose);
 
+  // A press anywhere but the menu or its button closes it, and so does scrolling the list or resizing the
+  // window, which would move the button away from the menu.
   useEffect(() => {
     if (!menuFor) return undefined;
+    const close = () => setMenuFor(null);
     const onMouseDown = (event) => {
-      if (!menuRef.current?.contains(event.target)) setMenuFor(null);
+      if (!menuRef.current?.contains(event.target) && !menuPanelRef.current?.contains(event.target)) close();
     };
+    const list = listRef.current;
     document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
+    list?.addEventListener('scroll', close);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      list?.removeEventListener('scroll', close);
+      window.removeEventListener('resize', close);
+    };
   }, [menuFor]);
+
+  // Place the menu next to its button before the browser paints.
+  useLayoutEffect(() => {
+    const anchor = menuRef.current;
+    const overlay = overlayRef.current;
+    const panel = menuPanelRef.current;
+    setMenuPlacement(menuFor && anchor && overlay && panel ? placeMenu(anchor, overlay, panel) : null);
+  }, [menuFor]);
+
+  // Once it is placed (a hidden element can't take focus), the keyboard goes to its first action.
+  useEffect(() => {
+    if (menuPlacement) menuPanelRef.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+  }, [menuPlacement]);
 
   const openAdd = () => {
     if (isDesktop) setAddPasswordFor('never');
@@ -517,11 +589,13 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
   };
 
   const stepAccount = step ? accounts.find((item) => item.id === step.id) : null;
+  const menuAccount = menuFor ? accounts.find((item) => item.id === menuFor) : null;
 
   // The window opens from inside a Settings section, whose `space-y-*` would give this overlay a top margin
   // (a fixed element keeps its margin): on a phone it then started 16 px down and lost its bottom 16 px. `!m-0`.
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 !m-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
       {...backdropDismiss}
     >
@@ -565,7 +639,7 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+        <div ref={listRef} className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {isAdding && (
             <AddAccountCard limits={limits} passwordFor={addPasswordFor} onAdd={handleAdd} onClose={() => setIsAdding(false)} uiTheme={uiTheme} />
           )}
@@ -607,13 +681,23 @@ export function AccountsModal({ onClose, uiTheme = 'modern', setToast, mode: mod
                   onPermission={handlePermission}
                   onTurn={handleTurn}
                   onToggleMenu={(id) => setMenuFor((prev) => (prev === id ? null : id))}
-                  onMenuAction={handleMenuAction}
                 />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {menuAccount && (
+        <RowMenu
+          key={menuAccount.id}
+          account={menuAccount}
+          isYou={menuAccount.id === you}
+          placement={menuPlacement}
+          panelRef={menuPanelRef}
+          onMenuAction={handleMenuAction}
+        />
+      )}
 
       {step && stepAccount && (
         <ConfirmStep

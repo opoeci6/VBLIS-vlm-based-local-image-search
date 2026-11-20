@@ -77,12 +77,13 @@ def check_password(net: NetRequest, password: str, find, signed_in_as: Optional[
     the client's), for a request that costs more hashing after it (a new password): a signed-in viewer
     can't repeat it without limit, and this browser's sign-ins aren't affected."""
     shared = signed_in_as is None
-    wait = net.limiter.begin(net.client, shared=shared, account=signed_in_as)
+    wait = net.limiter.begin(net.client, shared=shared, account=signed_in_as, group=net.sign_in_group)
     if wait > 0:
         raise HTTPException(status_code=429, detail="Too many attempts. Wait a moment and try again.",
                             headers={"Retry-After": str(math.ceil(wait))})
     if not _hashing.acquire(timeout=10):
-        net.limiter.succeeded(net.client, shared=shared, account=signed_in_as)  # not tried, so not counted
+        net.limiter.succeeded(net.client, shared=shared, account=signed_in_as,
+                              group=net.sign_in_group)  # not tried, so not counted
         raise HTTPException(status_code=503, detail="The server is busy. Try again in a moment.",
                             headers={"Retry-After": "5"})
     try:
@@ -93,7 +94,7 @@ def check_password(net: NetRequest, password: str, find, signed_in_as: Optional[
     if not correct:
         return None
     net.limiter.succeeded(net.client, shared=shared, clear=account.is_owner and account.can_sign_in,
-                          account=signed_in_as if refund else None)
+                          account=signed_in_as if refund else None, group=net.sign_in_group)
     return account
 
 

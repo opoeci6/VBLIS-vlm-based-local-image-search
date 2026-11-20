@@ -444,6 +444,93 @@ describe('SharingSection', () => {
     });
   });
 
+  describe('the other local networks', () => {
+    const NETWORKS = ['199.255.218.213', '203.0.113.0/24'];
+    const NONE_TEXT = 'None. Home and office networks, VPNs such as Tailscale, and this PC always count as local.';
+    const field = () => screen.getByLabelText('Address or range');
+    const addButton = () => screen.getByRole('button', { name: 'Add' });
+
+    it('lists the entries, with a Remove button for each, and the hint', async () => {
+      await renderSection({ ...VIEW, local_networks: NETWORKS });
+      expect(screen.getByRole('heading', { name: 'Other local networks' })).toBeTruthy();
+      expect(screen.getByText('199.255.218.213').className).toContain('font-mono');
+      expect(screen.getByText('203.0.113.0/24')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Remove 199.255.218.213' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Remove 203.0.113.0/24' })).toBeTruthy();
+      expect(screen.queryByText(NONE_TEXT)).toBeNull();
+      expect(screen.getByText(/Devices with these addresses can open VBLIS/)).toBeTruthy();
+      expect(field().id).toBe('sharing-local-network');
+    });
+
+    it('says so when the list is empty, or missing from the answer', async () => {
+      await renderSection({ ...VIEW, local_networks: [] });
+      expect(screen.getByText(NONE_TEXT)).toBeTruthy();
+      cleanup();
+      await renderSection(VIEW);
+      expect(screen.getByText(NONE_TEXT)).toBeTruthy();
+      expect(field()).toBeTruthy();
+    });
+
+    it('adds one by sending the whole list with the trimmed address, then clears the field', async () => {
+      routes['POST /sharing'] = () => reply({ ...VIEW, local_networks: [...NETWORKS, '198.51.100.7'] });
+      await renderSection({ ...VIEW, local_networks: NETWORKS });
+      fireEvent.change(field(), { target: { value: '  198.51.100.7  ' } });
+      fireEvent.click(addButton());
+      await waitFor(() => expect(requests('POST /sharing')).toHaveLength(1));
+      expect(requests('POST /sharing')[0].body).toEqual({ local_networks: [...NETWORKS, '198.51.100.7'] });
+      await waitFor(() => expect(field().value).toBe(''));
+      expect(await screen.findByText('198.51.100.7')).toBeTruthy();
+      expect(setToast).toHaveBeenCalledWith({ message: 'Saved.', type: 'success' });
+    });
+
+    it('sends nothing for an entry that is already there, and clears the field', async () => {
+      await renderSection({ ...VIEW, local_networks: NETWORKS });
+      fireEvent.change(field(), { target: { value: ' 203.0.113.0/24 ' } });
+      fireEvent.click(addButton());
+      await waitFor(() => expect(field().value).toBe(''));
+      expect(requests('POST /sharing')).toHaveLength(0);
+    });
+
+    it('keeps Add disabled while the field is empty or only spaces', async () => {
+      await renderSection({ ...VIEW, local_networks: NETWORKS });
+      expect(addButton().disabled).toBe(true);
+      fireEvent.change(field(), { target: { value: '   ' } });
+      expect(addButton().disabled).toBe(true);
+      fireEvent.change(field(), { target: { value: '10.1.1.1' } });
+      expect(addButton().disabled).toBe(false);
+    });
+
+    it('removes one by sending the list without it', async () => {
+      routes['POST /sharing'] = () => reply({ ...VIEW, local_networks: ['199.255.218.213'] });
+      await renderSection({ ...VIEW, local_networks: NETWORKS });
+      fireEvent.click(screen.getByRole('button', { name: 'Remove 203.0.113.0/24' }));
+      await waitFor(() => expect(requests('POST /sharing')).toHaveLength(1));
+      expect(requests('POST /sharing')[0].body).toEqual({ local_networks: ['199.255.218.213'] });
+      await waitFor(() => expect(screen.queryByText('203.0.113.0/24')).toBeNull());
+    });
+
+    it('locks the field, Add and Remove when an environment variable sets the list', async () => {
+      await renderSection({ ...VIEW, local_networks: NETWORKS, from_environment: ['local_networks'] });
+      expect(field().disabled).toBe(true);
+      expect(addButton().disabled).toBe(true);
+      expect(screen.getByRole('button', { name: 'Remove 199.255.218.213' }).disabled).toBe(true);
+      expect(screen.getByRole('button', { name: 'Remove 203.0.113.0/24' }).disabled).toBe(true);
+      // Other cards stay usable.
+      expect(screen.getByLabelText('Port').disabled).toBe(false);
+    });
+
+    it('shows the refusal and keeps the typed value', async () => {
+      routes['POST /sharing'] = () => reply({ detail: "local_networks: '0.0.0.0/0' is too wide; use a narrower range", code: 'invalid_setting', problems: [] }, 400);
+      await renderSection({ ...VIEW, local_networks: NETWORKS });
+      fireEvent.change(field(), { target: { value: '0.0.0.0/0' } });
+      fireEvent.click(addButton());
+      expect((await screen.findByRole('alert')).textContent)
+        .toBe("That setting isn't valid: local_networks: '0.0.0.0/0' is too wide; use a narrower range");
+      expect(field().value).toBe('0.0.0.0/0');
+      expect(setToast).not.toHaveBeenCalled();
+    });
+  });
+
   describe('accounts', () => {
     it('opens the accounts window in desktop mode, with no password field, and reads the counts again on close', async () => {
       routes['GET /sharing/accounts'] = () => reply(ACCOUNTS);

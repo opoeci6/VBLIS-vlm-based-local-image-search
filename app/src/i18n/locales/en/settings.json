@@ -221,6 +221,15 @@
       "removeFor": "Remove {{path}}",
       "remove": "Remove"
     },
+    "localNetworks": {
+      "title": "Other local networks",
+      "none": "None. Home and office networks, VPNs such as Tailscale, and this PC always count as local.",
+      "hint": "Devices with these addresses can open VBLIS like devices on your home network. Add one when a device on your network is refused: the refusal names its address. For example 203.0.113.7, or 203.0.113.0/24 for a range.",
+      "field": "Address or range",
+      "add": "Add",
+      "removeFor": "Remove {{network}}",
+      "remove": "Remove"
+    },
     "accounts": {
       "warning": "No account can sign in yet: add one before sharing."
     },
