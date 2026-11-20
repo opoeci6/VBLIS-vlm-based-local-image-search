@@ -2,6 +2,7 @@ import io
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
+from PIL import Image
 from pydantic import BaseModel
 import app_state
 import paths
@@ -21,7 +22,9 @@ router = APIRouter()
 # A network client warms at most this many frames per request (a search result brings up to 50)
 NETWORK_MAX_PREWARM_FRAMES = 100
 # A viewer the owner hasn't allowed originals gets a re-encoded picture of at most this size,
-# without the file's metadata (GPS included)
+# without the file's metadata (GPS included). It is also the screen-sized tier a browser asks for
+# with size=preview: owners and viewers with originals get it too, but only as a smaller stand-in
+# (a small enough picture is still the file itself); /media/original keeps serving the file.
 PREVIEW_MAX_SIDE = 2560
 
 
@@ -44,6 +47,18 @@ def _preview_response(path: str):
         return _jpeg_response(img, PREVIEW_MAX_SIDE)
     finally:
         img.close()
+
+
+def _fits_preview(path: str) -> bool:
+    """True when the file is a picture a browser can show as is at screen size: not HEIC/HEIF and no
+    side above PREVIEW_MAX_SIDE. The size comes from the header; nothing is decoded."""
+    if os.path.splitext(path)[1].lower() in (".heic", ".heif"):
+        return False
+    try:
+        with Image.open(path) as img:
+            return max(img.size) <= PREVIEW_MAX_SIDE
+    except Exception:
+        return False
 
 
 def _jpeg_response(img, max_side=None, quality=88):
@@ -106,7 +121,8 @@ def serve_image(
     auth: Auth = Depends(current_auth),
 ):
     """Serve a local image file by absolute path. Transcodes HEIC to JPEG.
-    Supports size='thumbnail' for faster loading in the UI grid.
+    Supports size='thumbnail' for faster loading in the UI grid, and size='preview' for a picture of at
+    most PREVIEW_MAX_SIDE (the file itself when it already fits).
     Thumbnails are cached on disk in segregated 'cache/images' and 'cache/videos' directories.
     """
     require_indexed_path(path, IMAGE_EXTENSIONS | VIDEO_EXTENSIONS, auth=auth)
@@ -133,7 +149,7 @@ def serve_image(
                 return FileResponse(get_or_create_thumbnail(cache_path, render_frame_thumbnail))
 
             frame = extract_video_frame(path, timestamp)
-            if _restricted(auth):
+            if _restricted(auth) or size == "preview":
                 try:
                     return _jpeg_response(frame, PREVIEW_MAX_SIDE)
                 finally:
@@ -163,6 +179,15 @@ def serve_image(
             pass
 
     if _restricted(auth):
+        try:
+            return _preview_response(path)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to prepare the picture")
+
+    if size == "preview":
+        # A browser's screen-sized picture: the file itself when it is small enough, else a re-encoded copy
+        if _fits_preview(path):
+            return FileResponse(path)
         try:
             return _preview_response(path)
         except Exception:

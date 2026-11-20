@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { setNetworkModeForTests } from '../config';
 import { getFileName, getMediaPreviewUrl, prewarmVideoGroup } from './media';
 
 const API = 'http://127.0.0.1:8000';
@@ -27,6 +28,87 @@ describe('getMediaPreviewUrl', () => {
   it('keeps timestamp 0 for a video frame at the start', () => {
     const url = getMediaPreviewUrl(API, { path: '/v/a.mp4', media_type: 'video', timestamp_seconds: 0 }, 'full');
     expect(url).toBe(`${API}/image?path=%2Fv%2Fa.mp4&size=full&timestamp=0`);
+  });
+
+  describe('screen-sized picture in network mode', () => {
+    const image = { path: '/x/a.jpg', media_type: 'image' };
+    const urlFor = (it = image, size = 'full') => getMediaPreviewUrl(API, it, size);
+    const setScreen = (width, height, ratio) => {
+      vi.stubGlobal('screen', { width, height });
+      vi.stubGlobal('devicePixelRatio', ratio);
+    };
+
+    beforeEach(() => {
+      setNetworkModeForTests(true);
+    });
+
+    afterEach(() => {
+      setNetworkModeForTests(false);
+      vi.unstubAllGlobals();
+    });
+
+    it('asks for size=preview on a phone screen (390x844 at 3 = 2532)', () => {
+      setScreen(390, 844, 3);
+      expect(urlFor()).toBe(`${API}/image?path=%2Fx%2Fa.jpg&size=preview`);
+    });
+
+    it('asks for the picture itself on a 4K screen', () => {
+      setScreen(3840, 2160, 1);
+      expect(urlFor()).toBe(`${API}/image?path=%2Fx%2Fa.jpg&size=full`);
+    });
+
+    it('counts device pixels (1440x900 at 2 = 2880)', () => {
+      setScreen(1440, 900, 2);
+      expect(urlFor()).toBe(`${API}/image?path=%2Fx%2Fa.jpg&size=full`);
+    });
+
+    it('takes the longer side, whichever way the screen is turned', () => {
+      setScreen(844, 390, 3);
+      expect(urlFor()).toContain('size=preview');
+    });
+
+    it('treats exactly the cap as fitting and one pixel more as not', () => {
+      setScreen(2560, 1440, 1);
+      expect(urlFor()).toContain('size=preview');
+      setScreen(2561, 1440, 1);
+      expect(urlFor()).toContain('size=full');
+    });
+
+    it('reads the screen on every call', () => {
+      setScreen(390, 844, 3);
+      expect(urlFor()).toContain('size=preview');
+      setScreen(3840, 2160, 1);
+      expect(urlFor()).toContain('size=full');
+    });
+
+    it('keeps the full size when the screen is unknown (jsdom default is 0x0)', () => {
+      expect(urlFor()).toContain('size=full');
+      setScreen(undefined, undefined, undefined);
+      expect(urlFor()).toContain('size=full');
+    });
+
+    it('treats a missing pixel ratio as 1', () => {
+      setScreen(1920, 1080, 0);
+      expect(urlFor()).toContain('size=preview');
+    });
+
+    it('never changes a thumbnail', () => {
+      setScreen(390, 844, 3);
+      expect(urlFor(image, 'thumbnail')).toBe(`${API}/image?path=%2Fx%2Fa.jpg&size=thumbnail`);
+      expect(getMediaPreviewUrl(API, image)).toBe(`${API}/image?path=%2Fx%2Fa.jpg&size=thumbnail`);
+    });
+
+    it('keeps the timestamp of a video frame', () => {
+      setScreen(390, 844, 3);
+      const video = { path: '/v/a.mp4', media_type: 'video', timestamp_seconds: 12.5 };
+      expect(urlFor(video)).toBe(`${API}/image?path=%2Fv%2Fa.mp4&size=preview&timestamp=12.5`);
+    });
+
+    it('does not change on the desktop (not network mode)', () => {
+      setNetworkModeForTests(false);
+      setScreen(390, 844, 3);
+      expect(urlFor()).toBe(`${API}/image?path=%2Fx%2Fa.jpg&size=full`);
+    });
   });
 
   describe('with an API token', () => {

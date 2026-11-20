@@ -31,7 +31,7 @@ A browser can only index folders inside the **library folders** you list in the 
 1. Open **Settings → Network sharing** in the VBLIS app.
 2. Add at least one account with **Manage accounts**. A viewer account is enough, because the app itself acts as the owner. On the desktop this window never asks for your password.
 3. Turn on **Share on my network**. Windows asks once whether to let VBLIS through the firewall: allow it on private networks.
-4. On another device on the same network, open one of the addresses listed under **Addresses to open** and sign in.
+4. On another device on the same network, open one of the addresses listed under **Addresses to open** (the most likely one first) and sign in.
 
 The same section sets the port (8080 by default), HTTPS (off, self-signed or your own certificate files; see [HTTPS](#https)) and the library folders, and has **Sign out every browser**. While sharing runs, the title bar shows a **Sharing** badge; it turns amber when sharing should be on but isn't running. Click it to open the settings.
 
@@ -157,7 +157,7 @@ For Docker or systemd, these environment variables override the file: `VBLIS_SER
 
 Over plain HTTP, anyone on the same network can read the password and the pictures as they travel. That is acceptable on a home network you trust; the interface shows a warning. Otherwise choose one of these:
 
-1. **Self-signed certificate** (`set tls self_signed`). The server makes its own certificate on the first start, for its host name and current network addresses, and prints its SHA-256 fingerprint. Each browser shows a warning once; compare the fingerprint in the certificate details with the one the server printed, then continue. The certificate is kept, so the warning doesn't return, until it renews itself after about a year or the server gets a new network address.
+1. **Self-signed certificate** (`set tls self_signed`). The server makes its own certificate on the first start, for its host name and current network addresses (on Linux, container and VM bridges such as `docker0` are left out), and prints its SHA-256 fingerprint. Each browser shows a warning once; compare the fingerprint in the certificate details with the one the server printed, then continue. The certificate is kept, so the warning doesn't return, until it renews itself after about a year or the server gets a new network address.
 2. **Your own certificate** (`set tls files`, `set cert-file /path/fullchain.pem`, `set key-file /path/privkey.pem`), for example from Let's Encrypt. Restart the server after renewing it.
 3. **A reverse proxy** that handles HTTPS, such as Caddy. Let VBLIS listen on the proxy's machine only and trust it:
 

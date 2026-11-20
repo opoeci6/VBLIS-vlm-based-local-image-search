@@ -929,14 +929,34 @@ describe('SearchFiltersPanel', () => {
     it('has the sheet classes: full width at the bottom, rounded top, 85dvh with its own scroll', async () => {
       await renderPanel();
       const classes = screen.getByRole('dialog').className;
-      ['fixed', 'inset-x-0', 'bottom-0', 'rounded-t-2xl', 'max-h-[85dvh]', 'overflow-y-auto'].forEach(name => {
+      ['fixed', 'inset-x-0', 'bottom-0', 'rounded-t-2xl', 'max-h-[85dvh]', 'overflow-y-auto', 'pb-0'].forEach(name => {
         expect(classes.split(/\s+/)).toContain(name);
       });
-      expect(classes).toContain('env(safe-area-inset-bottom');
+      // The pinned buttons row keeps clear of the home bar instead (see below).
+      expect(classes).not.toContain('env(safe-area-inset-bottom');
       // From sm up it floats under the header as before.
       ['sm:top-24', 'sm:left-1/2', 'sm:max-h-[70dvh]', 'sm:rounded-2xl'].forEach(name => {
         expect(classes.split(/\s+/)).toContain(name);
       });
+    });
+
+    it('pins Clear all and Done to the bottom of the sheet, clear of the home bar, and not from sm up', async () => {
+      await renderPanel();
+      const dialog = screen.getByRole('dialog');
+      const footer = dialog.querySelector('[data-filters-footer]');
+      // A sticky element can't leave its parent: the row must sit right in the scrolling sheet.
+      expect(footer.parentElement).toBe(dialog);
+      expect(footer.nextElementSibling).toBeNull();
+      const classes = footer.className.split(/\s+/);
+      ['sticky', 'bottom-0', 'bg-white', 'dark:bg-neutral-900', 'sm:static', 'sm:p-0'].forEach(name => {
+        expect(classes).toContain(name);
+      });
+      expect(footer.className).toContain('env(safe-area-inset-bottom');
+      expect(within(footer).getByRole('button', { name: 'Clear all' })).toBeTruthy();
+      expect(within(footer).getByRole('button', { name: 'Done' })).toBeTruthy();
+      expect(within(footer).getByRole('button', { name: 'Read details now' })).toBeTruthy();
+      // The coverage line stays in the scrolling part.
+      expect(footer.contains(screen.getByTestId('filters-coverage'))).toBe(false);
     });
 
     it('has a header row with the title and a Close button that closes the sheet', async () => {
