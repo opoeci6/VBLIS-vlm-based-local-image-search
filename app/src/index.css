@@ -5,17 +5,43 @@
 body {
   margin: 0;
   padding: 0;
-  width: 100vw;
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: #ffffff;
   color: #0f172a;
   -webkit-user-drag: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Padding that keeps content out of a phone's notch and home bar (viewport-fit=cover). 0 where there is none. */
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .px-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
 }
 
 .dark body {
   background-color: #0d1117;
   color: #ffffff;
+}
+
+/* A blurred overlay (`app-overlay`: Settings, Accounts, the full-size view...) is blurred again on every frame in
+   which anything under it moves. An endless pulse in the page behind it then kept an integrated GPU at about 50%
+   (74% with a second overlay on top) while the page sat still. So while one is open, the page's endless animations
+   pause; the ones inside an overlay keep running. */
+body:has(.app-overlay) :is(.animate-pulse, .animate-ping, .animate-spin, .animate-bounce):not(.app-overlay *) {
+  animation-play-state: paused;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -218,10 +244,8 @@ body {
 }
 
 /* Terminal Button Hover & Active States: Pure high-contrast color inversion. Buttons that are disabled or
-   aria-disabled (blocked filter rows) do not react. */
-.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover,
-.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover *,
-.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover [class*="text-"],
+   aria-disabled (blocked filter rows) do not react. The :hover rules sit inside (hover: hover) so a tap on a
+   touch screen, which leaves :hover stuck on the button, does not keep it inverted; :active always applies. */
 .terminal-theme button:not(:disabled):not([aria-disabled="true"]):active,
 .terminal-theme button:not(:disabled):not([aria-disabled="true"]):active *,
 .terminal-theme button:not(:disabled):not([aria-disabled="true"]):active [class*="text-"] {
@@ -230,23 +254,44 @@ body {
   border-color: var(--terminal-foreground) !important;
 }
 
-.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover,
 .terminal-theme button:not(:disabled):not([aria-disabled="true"]):active {
   background-color: var(--terminal-foreground) !important;
   background: var(--terminal-foreground) !important;
 }
 
-.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover *,
-.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover [class*="bg-"],
 .terminal-theme button:not(:disabled):not([aria-disabled="true"]):active *,
 .terminal-theme button:not(:disabled):not([aria-disabled="true"]):active [class*="bg-"] {
   background-color: transparent !important;
   background: transparent !important;
 }
 
-.terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover svg,
 .terminal-theme button:not(:disabled):not([aria-disabled="true"]):active svg {
   stroke: var(--terminal-background) !important;
+}
+
+@media (hover: hover) {
+  .terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover,
+  .terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover *,
+  .terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover [class*="text-"] {
+    color: var(--terminal-background) !important;
+    -webkit-text-fill-color: var(--terminal-background) !important;
+    border-color: var(--terminal-foreground) !important;
+  }
+
+  .terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover {
+    background-color: var(--terminal-foreground) !important;
+    background: var(--terminal-foreground) !important;
+  }
+
+  .terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover *,
+  .terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover [class*="bg-"] {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+
+  .terminal-theme button:not(:disabled):not([aria-disabled="true"]):hover svg {
+    stroke: var(--terminal-background) !important;
+  }
 }
 
 /* Pressed toggles (filter options): inverted, and still readable when hovered. The selector needs

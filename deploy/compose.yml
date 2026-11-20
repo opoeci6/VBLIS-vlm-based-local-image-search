@@ -1,0 +1,48 @@
+# VBLIS as a Docker Compose service. See SERVER.md ("Docker").
+#
+# First run, in this folder (deploy/):
+#   1. mkdir vblis-data
+#      and make it belong to user 1000 (sudo chown 1000:1000 vblis-data), or run the container as
+#      you instead: export VBLIS_UID=$(id -u) VBLIS_GID=$(id -g)
+#   2. docker compose build
+#   3. docker compose run --rm vblis add-account NAME --role owner       (asks for the password twice)
+#   4. docker compose up -d
+#   5. Open http://<this machine's address>:8080, sign in, and download a model in Settings.
+#
+# Set VBLIS_PHOTOS to the folder with your pictures (default ./photos). It is mounted read-only
+# at /photos and is the only library folder the browser may index.
+#
+# Update: docker compose build && docker compose up -d
+# Stopping takes up to 30 seconds (the server unloads the model and stops its queue).
+
+services:
+  vblis:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: vblis:local
+
+    # Host networking: the server sees the real address of each client, and the machine's own host
+    # name and network addresses (they go into the HTTPS certificate and the links it prints).
+    # The port is the one in the server settings (8080 by default).
+    network_mode: host
+    # Bridge networking instead: delete the line above, remove the # from the "ports" lines and from
+    # the ALLOWED_HOSTS line below. Inside the container the host name is the container id, so list
+    # the names and addresses browsers use. The server then sees Docker's gateway address instead of
+    # each client, so it can't tell your home network from the internet: don't open the port to the
+    # internet.
+    # ports:
+    #   - "8080:8080"
+
+    volumes:
+      - ./vblis-data:/data
+      - ${VBLIS_PHOTOS:-./photos}:/photos:ro
+    environment:
+      # Folders a browser may index (several: separate them with a colon)
+      VBLIS_SERVER_LIBRARY_ROOTS: /photos
+      # VBLIS_SERVER_ALLOWED_HOSTS: "nas.lan,192.168.1.20"
+
+    user: "${VBLIS_UID:-1000}:${VBLIS_GID:-1000}"
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped

@@ -27,4 +27,16 @@ describe('ThemeStyleSection', () => {
     expect(active.className).toContain('ring-2');
     expect(inactive.className).not.toContain('ring-2');
   });
+
+  // The terminal theme replaces the colours above and shows a chosen toggle by aria-pressed (index.css)
+  it('marks the active theme as pressed', () => {
+    const { rerender } = render(<ThemeStyleSection uiTheme="terminal" setUiTheme={vi.fn()} />);
+    const terminal = () => screen.getByRole('button', { name: /Retro Terminal/ });
+    const modern = () => screen.getByRole('button', { name: /Modern Rounded/ });
+    expect(terminal().getAttribute('aria-pressed')).toBe('true');
+    expect(modern().getAttribute('aria-pressed')).toBe('false');
+    rerender(<ThemeStyleSection uiTheme="modern" setUiTheme={vi.fn()} />);
+    expect(terminal().getAttribute('aria-pressed')).toBe('false');
+    expect(modern().getAttribute('aria-pressed')).toBe('true');
+  });
 });

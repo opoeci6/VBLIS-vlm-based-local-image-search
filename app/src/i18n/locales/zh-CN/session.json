@@ -7,48 +7,75 @@
   },
   "signIn": {
     "title": "登录",
+    "name": "账户名",
     "password": "密码",
     "submit": "登录",
     "submitting": "正在登录……",
     "expired": "登录已失效，请重新登录。",
     "insecure": "此连接未加密。",
     "errors": {
-      "wrongPassword": "密码不正确。",
+      "wrongNameOrPassword": "账户名或密码不正确。",
+      "accountOff": "此账户已停用。请联系服务器的所有者启用。",
       "tooManyAttempts_other": "尝试次数过多，请在 {{count}} 秒后重试。",
       "tooManyAttemptsNoWait": "尝试次数过多，请稍后重试。",
       "busy_other": "服务器正忙，请在 {{count}} 秒后重试。",
       "busyNoWait": "服务器正忙，请稍后重试。",
-      "noOwnerPassword": "服务器尚未设置所有者密码。请在服务器上执行：<code>set-password owner</code>",
+      "noOwnerAccount": "服务器尚未添加所有者账户。请在服务器上执行：<code>add-account NAME --role owner</code>",
       "network": "无法连接到服务器。请检查网络连接后重试。",
-      "generic": "登录失败（HTTP {{status}}）。"
+      "generic": "登录失败（HTTP {{status}}）。",
+      "noAccounts": "目前没有可以登录的账户。请在共享的电脑上的 VBLIS 应用中添加账户。"
     }
   },
   "role": {
     "owner": "所有者",
     "viewer": "查看者"
   },
-  "signedInAs": "登录身份：{{role}}",
+  "signedInAs": "登录身份：{{name}} · {{role}}",
   "signOut": "退出登录",
+  "headerMenu": {
+    "label": "账户与外观"
+  },
   "viewer": {
     "noModelTitle": "所有者尚未设置模型",
     "noModelDesc": "所有者在服务器上设置模型后即可搜索。"
   },
   "overlay": {
-    "searchByImage": "松开以按图片搜索",
+    "searchByImage": "松开即可以图搜图",
     "searchByImageHint": "在媒体库中查找相似的图片和视频"
   },
   "fileDrop": {
     "useAddFolders": "无法将文件夹拖入浏览器。请改用“添加文件夹”按钮。"
   },
+  "passwordRules": {
+    "mismatch": "两次输入的新密码不一致。",
+    "tooShort": "密码至少需要 {{min}} 个字符。",
+    "tooLong": "密码最多 {{max}} 个字符。"
+  },
+  "account": {
+    "title": "我的账户",
+    "name": "名称",
+    "role": "角色",
+    "password": {
+      "title": "修改密码",
+      "current": "当前密码",
+      "new": "新密码",
+      "repeat": "再次输入新密码",
+      "submit": "修改密码",
+      "submitting": "正在保存……",
+      "currentRequired": "请输入当前密码。",
+      "changed": "密码已修改。其他浏览器已退出登录。"
+    }
+  },
   "server": {
     "title": "服务器",
     "loading": "正在加载服务器设置……",
     "loadFailed": "无法加载服务器设置。",
-    "viewers": {
-      "title": "查看者可以做什么",
-      "originals": "打开和下载原始文件",
-      "imageSearch": "以图片搜索",
-      "saveFailed": "无法保存查看者权限。"
+    "accounts": {
+      "title": "账户",
+      "owners_other": "{{count}} 个所有者",
+      "viewers_other": "{{count}} 个查看者",
+      "summary": "{{owners}}，{{viewers}}",
+      "manage": "管理账户"
     },
     "facts": {
       "title": "服务器信息",
@@ -65,31 +92,6 @@
       "fromEnvironment": "由环境变量设置：{{names}}",
       "hint": "这些设置需在服务器上修改。详见 SERVER.md。"
     },
-    "password": {
-      "title": "修改密码",
-      "role": "修改哪个密码",
-      "roleOwner": "所有者",
-      "roleViewer": "查看者",
-      "new": "新密码",
-      "repeat": "再次输入新密码",
-      "current": "当前所有者密码",
-      "submit": "修改密码",
-      "submitting": "正在保存……",
-      "changedOwner": "所有者密码已修改。",
-      "changedViewer": "查看者密码已修改。",
-      "errors": {
-        "mismatch": "两次输入的新密码不一致。",
-        "tooShort": "密码至少需要 8 个字符。",
-        "tooLong": "密码最多 256 个字符。",
-        "currentRequired": "请输入当前所有者密码。"
-      }
-    },
-    "removeViewer": {
-      "button": "移除查看者密码",
-      "confirm": "移除后，查看者将无法登录。请输入当前所有者密码以继续。",
-      "submit": "移除密码",
-      "removed": "查看者密码已移除。"
-    },
     "signOutOthers": {
       "button": "让其他浏览器退出登录",
       "confirm": "登录此服务器的其他所有浏览器都需要重新登录。当前浏览器保持登录。",
@@ -100,16 +102,143 @@
     "errors": {
       "codes": {
         "wrong_password": "当前密码不正确。",
-        "empty": "新密码不能为空。",
-        "too_short": "新密码太短。",
-        "too_long": "新密码太长。",
-        "same_as_other": "所有者密码和查看者密码不能相同。",
-        "config_unreadable": "无法读取服务器的设置文件，未做任何更改。"
+        "confirm_password": "请输入当前账户的密码以确认此更改。",
+        "account_changed": "当前账户刚刚被更改。请刷新页面后重试。",
+        "empty": "密码不能为空。",
+        "too_short": "密码太短。",
+        "too_long": "密码太长。",
+        "name_taken": "已有其他账户使用此名称。",
+        "name_invalid": "名称须为 1 至 32 个字母或数字，可使用 . _ 和 -，不能有空格。",
+        "last_owner": "必须至少保留一个已启用的所有者账户。",
+        "own_account": "不能删除、停用或降级自己的账户。",
+        "too_many": "最多只能有 50 个账户。",
+        "no_account": "此账户已不存在。",
+        "config_unreadable": "无法读取服务器的设置文件，未做任何更改。",
+        "no_accounts": "尚无账户可以登录。请先添加账户。",
+        "from_environment": "此设置由环境变量指定，无法在此更改。",
+        "invalid_setting": "此设置无效。",
+        "start_failed": "共享无法启动。",
+        "stopped_not_saved": "共享已停止，但无法保存此设置，因此下次启动应用时会再次开启共享。",
+        "port_in_use": "该端口已被其他程序占用。请换一个端口。",
+        "tls_file_missing": "使用自有证书文件的 HTTPS 需要证书文件和密钥文件，且两者都必须存在。",
+        "tls_invalid": "证书文件或密钥文件无效。",
+        "tls_failed": "无法创建自签名证书。",
+        "tls_unavailable": "此版本无法使用自签名 HTTPS。",
+        "config_unwritable": "无法写入设置文件。",
+        "public_needs_https": "允许从互联网访问需要 HTTPS，可由 VBLIS 自身提供，也可由其前方受信任的代理提供。"
       },
       "tooManyAttempts_other": "尝试次数过多，请在 {{count}} 秒后重试。",
       "tooManyAttemptsNoWait": "尝试次数过多，请稍后重试。",
       "generic": "服务器拒绝了此更改（HTTP {{status}}）。",
-      "network": "无法连接到服务器。"
+      "network": "无法连接到服务器。",
+      "invalidSetting": "此设置无效：{{reason}}"
+    }
+  },
+  "accounts": {
+    "title": "账户",
+    "subtitle": "哪些账户可以登录此服务器，以及每个查看者可以做什么。",
+    "loading": "正在加载账户……",
+    "loadFailed": "无法加载账户。",
+    "columns": {
+      "name": "名称",
+      "role": "角色",
+      "originals": "原始文件",
+      "imageSearch": "以图搜图",
+      "places": "图片位置信息",
+      "on": "启用",
+      "actions": "操作"
+    },
+    "switches": {
+      "originals": "打开和下载原始文件",
+      "imageSearch": "以图搜图",
+      "places": "查看图片位置信息并按地点筛选",
+      "on": "启用此账户"
+    },
+    "permissionFor": "{{name}}：{{permission}}",
+    "always": "始终",
+    "you": "本人",
+    "turnedOff": "已停用",
+    "actionsFor": "{{name}} 的更多操作",
+    "ownAccount": "不能对自己的账户执行此操作。",
+    "locationHint": "即使关闭了“图片位置信息”，原始文件中仍包含拍摄位置。",
+    "atLimit": "最多只能有 {{max}} 个账户。",
+    "menu": {
+      "rename": "重命名",
+      "changeRole": "更改角色",
+      "setPassword": "设置密码",
+      "signOut": "在所有浏览器中退出登录",
+      "delete": "删除"
+    },
+    "add": {
+      "button": "添加账户",
+      "title": "新账户",
+      "name": "名称",
+      "nameHint": "1 至 {{max}} 个字母或数字，可使用 . _ 和 -，不能有空格。",
+      "nameRequired": "请输入名称。",
+      "nameTooLong": "名称最多 {{max}} 个字符。",
+      "role": "角色",
+      "password": "密码",
+      "repeat": "再次输入密码",
+      "permissions": "此查看者可以做什么",
+      "submit": "添加账户",
+      "submitting": "正在添加……"
+    },
+    "confirm": {
+      "password": "当前账户的密码",
+      "passwordRequired": "请输入当前账户的密码以确认。",
+      "working": "正在保存……",
+      "rename": {
+        "title": "重命名 {{name}}",
+        "newName": "新名称",
+        "submit": "重命名"
+      },
+      "promote": {
+        "title": "将 {{name}} 设为所有者？",
+        "desc": "所有者可以更改所有设置、管理账户并打开所有文件。",
+        "submit": "设为所有者"
+      },
+      "demote": {
+        "title": "将 {{name}} 设为查看者？",
+        "desc": "{{name}} 将只能搜索和浏览，权限由所有者设置。",
+        "submit": "设为查看者"
+      },
+      "setPassword": {
+        "title": "为 {{name}} 设置密码",
+        "desc": "{{name}} 将在所有浏览器中退出登录，需使用新密码重新登录。",
+        "descYou": "其他浏览器将退出登录，当前浏览器保持登录。",
+        "new": "新密码",
+        "repeat": "再次输入新密码",
+        "submit": "设置密码"
+      },
+      "delete": {
+        "title": "删除 {{name}}？",
+        "desc": "{{name}} 将无法再登录。此操作无法撤销。",
+        "submit": "删除账户"
+      },
+      "turnOff": {
+        "title": "停用 {{name}}？",
+        "desc": "{{name}} 将退出登录，在账户重新启用前无法登录。",
+        "submit": "停用"
+      },
+      "turnOn": {
+        "title": "启用 {{name}}？",
+        "desc": "{{name}} 将可以再次登录。",
+        "submit": "启用"
+      },
+      "grant": {
+        "originals": "允许 {{name}} 打开和下载原始文件？",
+        "imageSearch": "允许 {{name}} 以图搜图？",
+        "places": "允许 {{name}} 查看图片位置信息并按地点筛选？",
+        "desc": "这会扩大 {{name}} 的访问权限，因此需要输入当前账户的密码。之后再关闭则不需要。",
+        "submit": "允许"
+      },
+      "again": "请再次输入当前账户的密码以确认。"
+    },
+    "done": {
+      "added": "已添加账户 {{name}}。",
+      "passwordSet": "已设置 {{name}} 的密码。",
+      "signedOut": "{{name}} 已在所有浏览器中退出登录。",
+      "signedOutYou": "其他浏览器已退出登录。"
     }
   },
   "httpBanner": {

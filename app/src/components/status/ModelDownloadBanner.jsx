@@ -10,10 +10,10 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
   if (!(status.is_downloading)) return null;
 
   return (
-    <div className="w-full max-w-7xl px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
+    <div className="w-full max-w-7xl px-4 sm:px-6 mb-6 animate-in slide-in-from-top-4 duration-500">
       <div className="bg-gradient-to-r from-emerald-500/5 to-transparent dark:from-emerald-500/10 dark:to-transparent border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-4 flex flex-col gap-2 relative text-emerald-700 dark:text-emerald-300">
-        <div className="flex justify-between items-center text-sm font-bold">
-          <span className="flex items-center gap-2">
+        <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1 text-sm font-bold">
+          <span className="flex min-w-0 items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
             <span>
               {status.is_loading_model
@@ -28,7 +28,7 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
               <button
                 onClick={handleCancelDownload}
                 className={cn(
-                  "text-[10px] px-2 py-0.5 rounded border transition-all font-bold uppercase",
+                  "min-h-[40px] sm:min-h-0 text-[10px] px-3 sm:px-2 py-0.5 rounded border transition-all font-bold uppercase",
                   status.cancel_download
                     ? "bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-500 animate-pulse cursor-default font-extrabold"
                     : "bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 border-gray-200 dark:border-neutral-700 shadow-sm dark:shadow-none"
@@ -62,8 +62,8 @@ export const ModelDownloadBanner = ({ status, pendingModel, handleCancelDownload
         </div>
 
         {!status.is_loading_model && (
-          <div className="flex justify-between items-center mt-1">
-            <div className="flex gap-4">
+          <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1 mt-1">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
               <span className="text-[10px] uppercase tracking-wider font-bold opacity-70">
                 {t('download.size', { current: formatBytes(status.download_current_bytes), total: formatBytes(status.download_total_bytes) })}
               </span>

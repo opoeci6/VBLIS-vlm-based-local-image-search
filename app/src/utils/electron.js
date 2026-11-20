@@ -12,6 +12,12 @@ export const getPathForFile = (file) => (
   window.electronAPI?.getPathForFile ? window.electronAPI.getPathForFile(file) : file.path
 );
 
+// Asks for one certificate or key file ('certificate' | 'key') with the native dialog. Resolves to the path,
+// or to null when the dialog is cancelled or there is no Electron bridge (a plain browser).
+export const pickFile = async (kind) => (
+  window.electronAPI?.openFile ? (await window.electronAPI.openFile(kind)) ?? null : null
+);
+
 export const isDirectory = async (path) => (
   window.electronAPI?.isDirectory ? window.electronAPI.isDirectory(path) : false
 );

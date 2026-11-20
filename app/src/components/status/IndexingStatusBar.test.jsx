@@ -252,4 +252,15 @@ describe('IndexingStatusBar', () => {
     fireEvent.click(screen.getByText('View in Task Queue →'));
     expect(props.queue.setIsDrawerOpen).toHaveBeenCalledWith(true);
   });
+
+  it('wraps the owner buttons under the title on a phone and keeps the padding small', () => {
+    const { container } = renderBar();
+    expect(container.firstChild.className).toContain('px-4');
+    expect(container.firstChild.className).toContain('sm:px-6');
+    const titleRow = screen.getByText('Indexing holiday photos').closest('.flex-col');
+    expect(titleRow.className).toContain('sm:flex-row');
+    const pause = screen.getByRole('button', { name: /^Pause$/ });
+    expect(pause.parentElement.className).toContain('flex-wrap');
+    expect(pause.className).toContain('min-h-[40px]');
+  });
 });

@@ -80,6 +80,32 @@ def parse_networks(entries) -> tuple:
     return tuple(networks)
 
 
+# "Other local networks" are for a network that shows a device to the server with an address outside the
+# private ranges (a phone on a building's Wi-Fi seen as a public address). A wider range than these is a
+# slice of the internet, which is what public access (HTTPS only) is for.
+MIN_LOCAL_PREFIX = {4: 8, 6: 32}
+_IPV4_MAPPED = ipaddress.ip_network("::ffff:0:0/96")
+
+
+def _unmapped(network):
+    """An IPv4-mapped IPv6 range (::ffff:203.0.113.9, as a server listening on :: shows an IPv4 client) as
+    the IPv4 range it carries: clients are compared in their IPv4 form (parse_ip)."""
+    if network.version == 6 and network.prefixlen >= 96 and network.subnet_of(_IPV4_MAPPED):
+        return ipaddress.IPv4Network((int(network.network_address) & 0xFFFFFFFF, network.prefixlen - 96))
+    return network
+
+
+def parse_local_networks(entries) -> tuple:
+    """Networks for the extra local networks. Raises ValueError naming an entry that isn't an address or a
+    range, or a range wider than /8 (IPv4) or /32 (IPv6)."""
+    networks = tuple(_unmapped(network) for network in parse_networks(entries))
+    for entry, network in zip(entries, networks):
+        if network.prefixlen < MIN_LOCAL_PREFIX[network.version]:
+            raise ValueError(f"{str(entry).strip()!r} is too wide (at most /{MIN_LOCAL_PREFIX[network.version]}); "
+                             "for clients from anywhere, turn on public access with HTTPS")
+    return networks
+
+
 def in_networks(host, networks) -> bool:
     address = parse_ip(host)
     return address is not None and _in_any(address, networks)

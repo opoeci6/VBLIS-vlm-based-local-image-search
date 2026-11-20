@@ -58,6 +58,16 @@ describe('SearchResultsGrid', () => {
     expect(screen.queryByText('Image Results')).toBeNull();
   });
 
+  it('shows two square thumbnails per row on a phone, and one video folder per row', () => {
+    const { container } = render(<SearchResultsGrid {...makeProps({ videoGroups: [makeGroup('a.mp4')] })} />);
+    const grids = [...container.querySelectorAll('.grid')];
+    const imageGrid = grids.find(grid => grid.querySelector('img[alt="Result"]'));
+    const videoGrid = grids.find(grid => !grid.querySelector('img[alt="Result"]'));
+    expect(imageGrid.className.split(/\s+/)).toContain('grid-cols-2');
+    expect(imageGrid.className.split(/\s+/)).toContain('lg:grid-cols-4');
+    expect(videoGrid.className.split(/\s+/)).toContain('grid-cols-1');
+  });
+
   it('renders only the video header when there are only videos', () => {
     render(<SearchResultsGrid {...makeProps({
       imageResults: [], visibleImageResults: [], videoGroups: [makeGroup('a.mp4')],

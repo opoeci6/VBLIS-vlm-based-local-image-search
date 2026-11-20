@@ -17,6 +17,8 @@ class Auth(NamedTuple):
     channel: str
     grants: frozenset = frozenset()
     client: Optional[str] = None
+    account_id: Optional[str] = None  # the signed-in network account; None for the desktop app
+    account_name: Optional[str] = None
 
     @property
     def is_network(self) -> bool:
@@ -44,6 +46,13 @@ class NetRequest(NamedTuple):
     cookie_name: str
     store: object  # server_config.ServerConfigStore
     limiter: object  # ratelimit.AttemptLimiter
+    # False when the desktop app shares: it is the owner, so viewer accounts alone are enough
+    require_owner: bool = True
+    session: object = None  # the verified sessions.Session, or None
+    confirmations: object = None  # confirm_memory.RecentConfirmations of this listener
+    # The client's sign-in group (ratelimit.PRIVATE, LOCAL_NETWORKS or PUBLIC), as the gate placed it; None:
+    # from the address alone
+    sign_in_group: Optional[str] = None
 
 
 def current_auth(request: Request) -> Auth:
@@ -63,3 +72,13 @@ def net_request(request: Request) -> NetRequest:
     if not isinstance(net, NetRequest):
         raise HTTPException(status_code=404, detail="Not Found")
     return net
+
+
+def local_owner(request: Request) -> Auth:
+    """The desktop app itself (it holds the token), never a network request: 404 otherwise. For the
+    routes that only the desktop app may call, such as turning sharing on."""
+    auth = request.scope.get(SCOPE_KEY)
+    if (request.scope.get(NET_SCOPE_KEY) is not None or not isinstance(auth, Auth)
+            or auth.channel != LOCAL or not auth.is_owner):
+        raise HTTPException(status_code=404, detail="Not Found")
+    return auth

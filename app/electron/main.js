@@ -274,6 +274,12 @@ function startPythonBackend() {
   // this process crashes. Otherwise it would keep port 8000 with a token no new window knows.
   const env = { ...process.env, VBLIS_API_TOKEN: apiToken, VBLIS_EXIT_WITH_PARENT: '1' };
   if (dataDir) env.VBLIS_DATA_DIR = dataDir;
+  // The web interface the backend serves to other devices (network sharing) sits next to it in a packaged
+  // build, outside app.asar, which the backend cannot read.
+  if (isProd) {
+    const webDir = path.join(process.resourcesPath, 'web');
+    if (fs.existsSync(path.join(webDir, 'index.html'))) env.VBLIS_WEB_DIR = webDir;
+  }
 
   console.log('Starting Python backend...', pythonPath, args, 'cwd:', cwd, 'data:', dataDir || '(api folder)');
   pythonProcess = spawn(pythonPath, args, {
@@ -378,6 +384,23 @@ app.whenReady().then(async () => {
       lastDialogDirectory = path.dirname(filePaths[0]);
       return filePaths;
     }
+  });
+
+  // One certificate or key file for HTTPS in network sharing. `kind` picks the filters; anything else is refused.
+  const FILE_DIALOG_FILTERS = {
+    certificate: [{ name: 'Certificates', extensions: ['pem', 'crt', 'cer'] }, { name: 'All files', extensions: ['*'] }],
+    key: [{ name: 'Private keys', extensions: ['pem', 'key'] }, { name: 'All files', extensions: ['*'] }]
+  };
+  handleTrusted('dialog:openFile', async (event, kind) => {
+    if (typeof kind !== 'string' || !Object.hasOwn(FILE_DIALOG_FILTERS, kind)) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      defaultPath: lastDialogDirectory || app.getPath('documents'),
+      properties: ['openFile'],
+      filters: FILE_DIALOG_FILTERS[kind]
+    });
+    if (canceled || filePaths.length === 0) return null;
+    lastDialogDirectory = path.dirname(filePaths[0]);
+    return filePaths[0];
   });
 
   handleTrusted('shell:openInExplorer', (event, filePath) => {

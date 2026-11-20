@@ -1,5 +1,9 @@
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { setNetworkModeForTests } from '../../config';
+import { resetBackToCloseForTests } from '../../hooks/useBackToClose';
+import { resetEscapeKeyForTests, useEscapeKey } from '../../hooks/useEscapeKey';
 import { TerminalResultsModal } from './TerminalResultsModal';
 
 const makeImages = (n) => Array.from({ length: n }, (_, i) => ({
@@ -301,5 +305,112 @@ describe('TerminalResultsModal while browsing the library', () => {
     render(<TerminalResultsModal {...makeProps({ videoGroups: [makeGroup('a.mp4')] })} />);
     expect(screen.queryByRole('button', { name: 'Newest first' })).toBeNull();
     expect(screen.getByText('SORTED BY BEST MATCH')).toBeTruthy();
+  });
+});
+
+describe('TerminalResultsModal: Esc, Back and the close button', () => {
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+  const pressEscape = () => fireEvent.keyDown(document.body, { key: 'Escape' });
+
+  const Over = ({ onEscape }) => {
+    useEscapeKey(true, onEscape);
+    return null;
+  };
+
+  let pushState;
+  let go;
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+    window.history.replaceState(null, '');
+    pushState = vi.spyOn(window.history, 'pushState');
+    go = vi.spyOn(window.history, 'go');
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await settle();
+    resetBackToCloseForTests();
+    resetEscapeKeyForTests();
+    setNetworkModeForTests(false);
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    window.history.replaceState(null, '');
+  });
+
+  it('names the close button and keeps it a 40 px target', () => {
+    render(<TerminalResultsModal {...makeProps()} />);
+    const close = screen.getByRole('button', { name: 'Close search results' });
+    expect(close.className).toContain('h-10');
+    expect(close.className).toContain('w-10');
+  });
+
+  it('closes with Esc', () => {
+    const props = makeProps();
+    render(<TerminalResultsModal {...props} />);
+    pressEscape();
+    expect(props.handleCloseSearchResults).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['search results are hidden', { showSearchResults: false }],
+    ['there are no results', { results: [], imageResults: [], visibleImageResults: [] }],
+    ['the theme is modern', { uiTheme: 'modern' }],
+  ])('does not listen for Esc when %s', (_label, overrides) => {
+    const props = makeProps(overrides);
+    render(<TerminalResultsModal {...props} />);
+    pressEscape();
+    expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+  });
+
+  it('lets a view opened later (a video group, the filters panel) take Esc first', () => {
+    const props = makeProps();
+    const over = vi.fn();
+    const { rerender } = render(<TerminalResultsModal {...props} />);
+    rerender(<><TerminalResultsModal {...props} /><Over onEscape={over} /></>);
+    pressEscape();
+    expect(over).toHaveBeenCalledTimes(1);
+    expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+
+    rerender(<TerminalResultsModal {...props} />);
+    pressEscape();
+    expect(props.handleCloseSearchResults).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes no history calls outside network mode', async () => {
+    const props = makeProps();
+    const { rerender } = render(<TerminalResultsModal {...props} />);
+    await settle();
+    rerender(<TerminalResultsModal {...makeProps({ showSearchResults: false })} />);
+    await settle();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(go).not.toHaveBeenCalled();
+  });
+
+  describe('in network mode', () => {
+    beforeEach(() => setNetworkModeForTests(true));
+
+    it('adds one history entry while the console shows and closes the search on Back', async () => {
+      const props = makeProps();
+      const { rerender } = render(<StrictMode><TerminalResultsModal {...props} /></StrictMode>);
+      await settle();
+      expect(pushState).toHaveBeenCalledTimes(1);
+
+      // The real handler clears the search, which hides the console.
+      props.handleCloseSearchResults.mockImplementation(() => {
+        rerender(<StrictMode><TerminalResultsModal {...props} showSearchResults={false} /></StrictMode>);
+      });
+      await act(async () => { window.history.back(); });
+      await settle();
+      expect(props.handleCloseSearchResults).toHaveBeenCalledTimes(1);
+      expect(screen.queryByLabelText('Close search results')).toBeNull();
+      expect(window.history.state?.vblisBack ?? 0).toBe(0);
+    });
+
+    it('adds no history entry while the console is not showing', async () => {
+      render(<TerminalResultsModal {...makeProps({ showSearchResults: false })} />);
+      await settle();
+      expect(pushState).not.toHaveBeenCalled();
+    });
   });
 });

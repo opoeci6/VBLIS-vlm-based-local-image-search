@@ -1,0 +1,41 @@
+# What "docker build -f deploy/Dockerfile ." sends to Docker. An allow-list: everything is left out
+# first, then only what the image needs is let back in. The repository folder holds gigabytes the
+# image must never see (caches, virtual environments, node_modules, the data folders and model
+# files of a source checkout). Rules: the last matching line wins; ! lets a path back in.
+*
+
+# The program: the Python modules, the routers and the bundled place data, with the package lists
+!api/*.py
+!api/requirements.txt
+!api/constraints.txt
+!api/routers
+!api/place_data
+
+# The web interface sources (built inside the image)
+!app
+
+# The shared install script
+!scripts/linux-deps.sh
+
+# Left out again, below the allow-list
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.sqlite3
+**/.env
+**/.backend.lock
+api/tests
+api/tools
+api/.venv
+api/build
+api/dist
+api/cache
+api/chroma_data
+api/data
+api/models
+api/*.spec
+**/node_modules
+app/dist
+app/dist-electron
+app/dist-built
+app/release

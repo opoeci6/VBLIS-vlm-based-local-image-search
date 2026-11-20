@@ -150,10 +150,10 @@ describe('useFileDrop', () => {
     const sessionInfo = (role, imageSearch = true) => ({
       signed_in: true,
       role,
-      permissions: { originals: role === 'owner', image_search: imageSearch },
+      account: { id: 'a1', name: 'alice' },
+      permissions: { originals: role === 'owner', image_search: imageSearch, places: true },
       secure: true,
       case_sensitive_paths: true,
-      viewer_enabled: true,
     });
 
     const renderIn = (info) => renderHook(

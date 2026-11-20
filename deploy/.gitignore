@@ -1,0 +1,3 @@
+# The Docker setup's data folder (SERVER.md: mkdir vblis-data here). It holds the accounts' password hashes,
+# the sign-in secret, the HTTPS key, .env, the index and the models: never commit it.
+vblis-data/

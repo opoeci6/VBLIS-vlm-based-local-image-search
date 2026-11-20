@@ -1,5 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { setNetworkModeForTests } from '../../config';
+import { resetBackToCloseForTests } from '../../hooks/useBackToClose';
+import { resetEscapeKeyForTests } from '../../hooks/useEscapeKey';
 import { FolderContentsModal } from './FolderContentsModal';
 
 const makeItems = (n) => Array.from({ length: n }, (_, i) => ({
@@ -200,5 +203,67 @@ describe('FolderContentsModal', () => {
   it.each(['modern', 'terminal'])('renders in the %s theme', (uiTheme) => {
     renderModal({ uiTheme });
     expect(screen.getByText('Folder Contents')).toBeTruthy();
+  });
+});
+
+// jsdom runs history traversals asynchronously and fires popstate, like a browser: wait for them to land.
+const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+const back = async () => {
+  await act(async () => { window.history.back(); });
+  await settle();
+};
+
+describe('FolderContentsModal on a phone', () => {
+  let pushState;
+  let go;
+
+  beforeEach(() => {
+    window.history.replaceState(null, '');
+    pushState = vi.spyOn(window.history, 'pushState');
+    go = vi.spyOn(window.history, 'go');
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await settle();
+    resetBackToCloseForTests();
+    resetEscapeKeyForTests();
+    setNetworkModeForTests(false);
+    vi.restoreAllMocks();
+    window.history.replaceState(null, '');
+  });
+
+  it('names its close button, and closes with Esc and the button', () => {
+    const { props } = renderModal();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(props.handleCloseFolderContents).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(props.handleCloseFolderContents).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not listen for Esc while closed', () => {
+    const { props } = renderModal({ showFolderContents: false });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(props.handleCloseFolderContents).not.toHaveBeenCalled();
+  });
+
+  it('makes no history calls outside network mode', async () => {
+    renderModal();
+    await settle();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(go).not.toHaveBeenCalled();
+  });
+
+  it('pushes one history entry when it opens and closes with Back in network mode', async () => {
+    setNetworkModeForTests(true);
+    const props = makeProps({ showFolderContents: false });
+    const { rerender } = render(<FolderContentsModal {...props} />);
+    await settle();
+    expect(pushState).not.toHaveBeenCalled();
+
+    await act(async () => { rerender(<FolderContentsModal {...props} showFolderContents />); });
+    expect(pushState).toHaveBeenCalledTimes(1);
+    await back();
+    expect(props.handleCloseFolderContents).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,10 +7,10 @@ export const BrowseHint = ({ onDismiss, className = '' }) => {
   return (
   <div
     role="status"
-    className={`flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/80 px-3 py-1.5 text-xs font-medium text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 ${className}`.trim()}
+    className={`flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/80 py-0 pl-3 pr-1 text-xs sm:px-3 sm:py-1.5 font-medium text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-300 ${className}`.trim()}
   >
     <Library className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
-    <span className="min-w-0 flex-1">
+    <span className="min-w-0 flex-1 py-1.5 sm:py-0">
       {t('browse.hint.text')}
     </span>
     <button
@@ -18,7 +18,7 @@ export const BrowseHint = ({ onDismiss, className = '' }) => {
       onClick={onDismiss}
       aria-label={t('browse.hint.close')}
       title={t('browse.hint.close')}
-      className="flex-shrink-0 cursor-pointer rounded-md p-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-500/20"
+      className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-md hover:bg-indigo-100 sm:h-auto sm:w-auto sm:p-0.5 dark:hover:bg-indigo-500/20"
     >
       <X className="h-3.5 w-3.5" />
     </button>

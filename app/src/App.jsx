@@ -58,6 +58,7 @@ function App() {
     setSelectedVideoPath(group ? group.path : null);
   }, []);
   const closeFolderPicker = useCallback(() => setShowFolderPicker(false), []);
+  const openSettings = useCallback(() => setShowSettings(true), []);
   const handleSearchResultsClosed = useCallback(() => {
     setSelectedImage(null);
     setSelectedVideoPath(null);
@@ -134,6 +135,11 @@ function App() {
   const selectedVideoGroup = useMemo(
     () => (selectedVideoPath ? videoGroups.find(group => group.path === selectedVideoPath) || null : null),
     [selectedVideoPath, videoGroups]
+  );
+  // The pictures the lightbox steps through, in display order: the frames of the open video group, else the images.
+  const lightboxItems = useMemo(
+    () => (selectedVideoGroup ? selectedVideoGroup.frames : imageResults),
+    [selectedVideoGroup, imageResults]
   );
   const { status, setStatus, showErrorAlert, setShowErrorAlert, isCancellingIndexing, handleCancelIndexing } = useBackendStatus({ setToast });
   const {
@@ -262,14 +268,27 @@ function App() {
   return (
     <div
       className={cn(
-        "isolate h-screen w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative pt-8 custom-scrollbar",
+        "isolate h-dvh w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative px-safe custom-scrollbar",
+        // A browser has no title bar, so no room for one; it keeps out of a phone's notch instead.
+        mode === 'network' ? "pt-safe" : "pt-8",
         uiTheme === 'terminal' ? "terminal-theme theme-terminal" : "theme-modern bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100"
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <TitleBar theme={theme} setTheme={setTheme} uiTheme={uiTheme} setUiTheme={setUiTheme} />
+      {/* The window bar of the Windows app (and the dev page). A browser has none: the header has a menu instead. */}
+      {mode !== 'network' && (
+        <TitleBar
+          theme={theme}
+          setTheme={setTheme}
+          uiTheme={uiTheme}
+          setUiTheme={setUiTheme}
+          sharingRunning={Boolean(status.sharing?.running)}
+          sharingProblem={status.sharing?.problem ?? null}
+          onOpenSharing={openSettings}
+        />
+      )}
 
       {/* Drag Overlay */}
       {isDragging && <DragOverlay activeTask={queue.activeTask} pendingCount={queue.pendingCount} />}
@@ -329,7 +348,7 @@ function App() {
       <FolderContentsModal showFolderContents={showFolderContents} browsingFolder={browsingFolder} folderContents={folderContents} isFetchingFolderContents={isFetchingFolderContents} isCleaningGhostRecords={isCleaningGhostRecords} setIsCleaningGhostRecords={setIsCleaningGhostRecords} folderVisibleLimit={folderVisibleLimit} setFolderVisibleLimit={setFolderVisibleLimit} handleCloseFolderContents={handleCloseFolderContents} handleReindexFolder={handleReindexFolder} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
 
       {/* Header */}
-      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} onPickImage={handleImageDrop} />
+      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} onPickImage={handleImageDrop} theme={theme} setTheme={setTheme} setUiTheme={setUiTheme} />
 
       {/* A browser on plain HTTP: its password and pictures are readable on the network */}
       <HttpWarningBanner />
@@ -351,7 +370,7 @@ function App() {
       <VideoGroupModal selectedVideoGroup={selectedVideoGroup} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} onFindMoreFrames={expandVideo} isFindingMoreFrames={Boolean(selectedVideoPath) && expandingVideoPath === selectedVideoPath} canFindMoreFrames={canExpandVideos} />
 
       {/* Lightbox Modal */}
-      <MediaLightbox selectedImage={selectedImage} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
+      <MediaLightbox selectedImage={selectedImage} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} navItems={lightboxItems} />
 
       {/* Global toast notification system */}
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
@@ -381,7 +400,7 @@ function App() {
       )}
 
       {/* Main Content Area */}
-      <main className="w-full max-w-7xl px-6 pb-24 flex-1">
+      <main className="w-full max-w-7xl px-4 sm:px-6 pb-24 flex-1">
         <ImageSearchChip imageSearchContext={imageSearchContext} handleClearImageSearch={handleClearImageSearch} />
 
         {/* In Terminal theme the chips live in the results console while it is open */}

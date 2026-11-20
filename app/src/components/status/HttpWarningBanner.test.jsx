@@ -6,10 +6,10 @@ import { SessionProvider } from '../../session/SessionProvider';
 const info = (role, secure) => ({
   signed_in: true,
   role,
-  permissions: { originals: true, image_search: true },
+  account: { id: 'a1', name: 'alice' },
+  permissions: { originals: true, image_search: true, places: true },
   secure,
   case_sensitive_paths: true,
-  viewer_enabled: true,
 });
 
 const inSession = (session) => render(
@@ -73,5 +73,12 @@ describe('HttpWarningBanner', () => {
 
   it('uses the key http_warning_dismissed', () => {
     expect(HTTP_WARNING_DISMISSED_KEY).toBe('http_warning_dismissed');
+  });
+
+  it('uses the small phone padding and a 40 px dismiss target', () => {
+    const { container } = inSession(info('owner', false));
+    expect(container.firstChild.className).toContain('px-4');
+    expect(container.firstChild.className).toContain('sm:px-6');
+    expect(screen.getByRole('button', { name: 'Dismiss' }).className).toContain('p-3');
   });
 });

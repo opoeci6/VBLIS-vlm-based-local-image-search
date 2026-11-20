@@ -47,6 +47,14 @@ const addOutside = (tag = 'div') => {
 };
 
 describe('IndexedFoldersPanel', () => {
+  it('names the expand button', () => {
+    renderPanel();
+    expect(screen.getByRole('button', { name: 'Expand folders' }).getAttribute('aria-expanded')).toBe('false');
+    cleanup();
+    renderPanel({ isFoldersExpanded: true });
+    expect(screen.getByRole('button', { name: 'Collapse folders' }).getAttribute('aria-expanded')).toBe('true');
+  });
+
   afterEach(() => {
     cleanup();
     document.body.innerHTML = '';

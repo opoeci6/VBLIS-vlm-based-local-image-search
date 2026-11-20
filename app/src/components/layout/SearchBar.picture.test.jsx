@@ -6,10 +6,10 @@ import { SessionProvider } from '../../session/SessionProvider';
 const info = (role, imageSearch) => ({
   signed_in: true,
   role,
-  permissions: { originals: false, image_search: imageSearch },
+  account: { id: 'a1', name: 'alice' },
+  permissions: { originals: false, image_search: imageSearch, places: true },
   secure: true,
   case_sensitive_paths: true,
-  viewer_enabled: true,
 });
 
 const bar = (onPickImage) => (
@@ -58,5 +58,31 @@ describe('SearchBar picture button', () => {
     render(bar(vi.fn()));
     expect(screen.queryByTestId('picture-input')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Search with a picture' })).toBeNull();
+  });
+
+  it('puts the buttons in a row of their own on a phone, each at least 44 px tall and sharing the width', () => {
+    inSession(info('owner', true), bar(vi.fn()));
+    const submit = screen.getByRole('button', { name: 'Search' });
+    const row = submit.parentElement;
+    expect(row.className).toContain('flex');
+    expect(row.className).toContain('sm:contents');
+    ['Search filters', 'Search with a picture', 'Search'].forEach(name => {
+      const button = screen.getByRole('button', { name });
+      expect(button.parentElement).toBe(row);
+      expect(button.className).toContain('min-h-[44px]');
+      expect(button.className).toContain('flex-1');
+    });
+  });
+
+  it('shows a text label on the picture button on a phone only', () => {
+    inSession(info('owner', true), bar(vi.fn()));
+    const label = screen.getByText('Picture');
+    expect(label.className).toContain('sm:hidden');
+    expect(label.closest('button').getAttribute('aria-label')).toBe('Search with a picture');
+  });
+
+  it('keeps the search box text at 16 px on a phone', () => {
+    inSession(info('owner', true), bar(vi.fn()));
+    expect(screen.getByPlaceholderText(/Search images/).className).toContain('text-base');
   });
 });

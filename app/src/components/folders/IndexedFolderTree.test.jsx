@@ -59,6 +59,16 @@ describe('IndexedFolderTree', () => {
     expect(screen.getByText('alpha')).toBeTruthy();
   });
 
+  it('names the icon buttons of the root and of a subfolder', () => {
+    renderTree();
+    // Subfolders show the same actions as the root, so each name appears for the root and for both subfolders.
+    expect(screen.getAllByRole('button', { name: 'Select folder and subfolders' })).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Collapse subfolders' }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('button', { name: 'View media gallery & contents' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Re-sync only this subfolder' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: 'Delete only this subfolder from index' }).length).toBeGreaterThan(0);
+  });
+
   it('renders in the terminal theme', () => {
     renderTree({ uiTheme: 'terminal' });
     expect(screen.getByText('root')).toBeTruthy();

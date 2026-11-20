@@ -4,6 +4,8 @@ import { Trans, useTranslation } from 'react-i18next';
 import { API_BASE } from '../../config';
 import { apiFetch } from '../../utils/api';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { useBackToClose } from '../../hooks/useBackToClose';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { cn } from '../../utils/cn';
 
 const sepOf = (path) => (path.includes('\\') && !path.includes('/') ? '\\' : '/');
@@ -33,14 +35,18 @@ function Checkbox({ checked, disabled, label, onToggle }) {
       title={label}
       disabled={disabled}
       onClick={onToggle}
-      className={cn(
-        'flex items-center justify-center w-5 h-5 rounded-lg border transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed',
-        checked
-          ? 'bg-indigo-600 border-indigo-600 text-white'
-          : 'bg-white dark:bg-neutral-800 border-gray-300 dark:border-neutral-600'
-      )}
+      className="flex items-center justify-center shrink-0 max-sm:h-10 max-sm:w-10 max-sm:-m-2.5 cursor-pointer disabled:cursor-not-allowed"
     >
-      {checked && <Check className="w-3.5 h-3.5" strokeWidth={3.5} aria-hidden="true" />}
+      <span
+        className={cn(
+          'flex items-center justify-center w-5 h-5 rounded-lg border transition-all',
+          checked
+            ? 'bg-indigo-600 border-indigo-600 text-white'
+            : 'bg-white dark:bg-neutral-800 border-gray-300 dark:border-neutral-600'
+        )}
+      >
+        {checked && <Check className="w-3.5 h-3.5" strokeWidth={3.5} aria-hidden="true" />}
+      </span>
     </button>
   );
 }
@@ -85,13 +91,9 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
     return () => { cancelled = true; };
   }, [location]);
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  // Only mounted while open: Esc and, on a phone, the Back button close it.
+  useEscapeKey(true, onClose);
+  useBackToClose(true, onClose);
 
   const isLoading = !result || result.location !== location;
   const listing = !isLoading ? result.listing : null;
@@ -168,7 +170,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="app-overlay fixed inset-0 z-[70] flex items-stretch justify-center bg-black/50 dark:bg-black/75 backdrop-blur-md sm:items-center sm:p-4 animate-in fade-in duration-200"
       {...backdropDismiss}
     >
       <div
@@ -176,14 +178,14 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
         aria-modal="true"
         aria-label={t('picker.title')}
         className={cn(
-          'w-[640px] max-w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200',
+          'w-full sm:w-[640px] max-w-full h-dvh sm:h-auto sm:max-h-[85dvh] pt-safe pb-safe px-safe sm:p-0 flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200',
           modern
-            ? 'bg-white dark:bg-neutral-900 border border-gray-200 dark:border-neutral-800 rounded-3xl'
-            : 'bg-white dark:bg-black border border-black dark:border-white'
+            ? 'bg-white dark:bg-neutral-900 sm:border border-gray-200 dark:border-neutral-800 sm:rounded-3xl'
+            : 'bg-white dark:bg-black sm:border border-black dark:border-white'
         )}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="p-5 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between gap-4 bg-gray-50/50 dark:bg-neutral-900/50">
+        <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between gap-4 bg-gray-50/50 dark:bg-neutral-900/50">
           <div className="min-w-0">
             <h2 className="text-xl font-bold text-neutral-900 dark:text-white">{t('picker.title')}</h2>
             <p className="text-xs text-neutral-500 mt-1">{t('picker.subtitle')}</p>
@@ -193,7 +195,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
             onClick={onClose}
             aria-label={t('common:close')}
             title={t('common:close')}
-            className="p-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all flex-shrink-0 cursor-pointer"
+            className="p-2 max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:items-center max-sm:justify-center text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-xl transition-all flex-shrink-0 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -201,13 +203,13 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
 
         <nav
           aria-label={t('picker.roots')}
-          className="px-5 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-1.5 flex-wrap text-xs"
+          className="px-4 sm:px-5 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-1.5 flex-wrap text-xs"
         >
           <button
             type="button"
             onClick={goUp}
             disabled={location === null}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="inline-flex items-center gap-1 px-2 py-1 max-sm:min-h-10 rounded-lg border border-gray-200 dark:border-neutral-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             <ArrowUp className="w-3.5 h-3.5" aria-hidden="true" />
             {t('picker.up')}
@@ -216,17 +218,17 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
             type="button"
             onClick={() => setLocation(null)}
             disabled={location === null}
-            className="px-1.5 py-1 font-bold cursor-pointer disabled:cursor-default"
+            className="px-1.5 py-1 max-sm:min-h-10 font-bold cursor-pointer disabled:cursor-default"
           >
             {t('picker.roots')}
           </button>
           {crumbs.map((crumb, index) => (
-            <span key={crumb.path} className="inline-flex items-center gap-1.5 min-w-0">
+            <span key={crumb.path} className="inline-flex items-center gap-1 sm:gap-1.5 min-w-0">
               <ChevronRight className="w-3 h-3 text-neutral-400 flex-shrink-0" aria-hidden="true" />
               {index === crumbs.length - 1 ? (
-                <span className="px-1.5 py-1 font-bold truncate" aria-current="location">{crumb.name}</span>
+                <span className="px-1.5 py-1 max-sm:py-2.5 font-bold truncate" aria-current="location">{crumb.name}</span>
               ) : (
-                <button type="button" onClick={() => setLocation(crumb.path)} className="px-1.5 py-1 font-semibold truncate cursor-pointer">
+                <button type="button" onClick={() => setLocation(crumb.path)} className="px-1.5 py-1 max-sm:min-h-10 font-semibold truncate cursor-pointer">
                   {crumb.name}
                 </button>
               )}
@@ -234,7 +236,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
           ))}
         </nav>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 custom-scrollbar">
           {isLoading ? (
             <div className="flex items-center justify-center gap-3 py-16 text-neutral-500" role="status">
               <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" aria-hidden="true" />
@@ -295,11 +297,11 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
           )}
         </div>
 
-        <div className="p-4 border-t border-gray-100 dark:border-neutral-800 flex items-center justify-end gap-2 bg-gray-50/50 dark:bg-neutral-900/50">
+        <div className="p-3 sm:p-4 border-t border-gray-100 dark:border-neutral-800 flex items-center justify-end gap-2 bg-gray-50/50 dark:bg-neutral-900/50">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 cursor-pointer"
+            className="px-4 py-2 max-sm:min-h-10 max-sm:flex-1 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 cursor-pointer"
           >
             {t('common:cancel')}
           </button>
@@ -307,7 +309,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
             type="button"
             onClick={confirm}
             disabled={selected.length === 0 || isAdding}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 max-sm:min-h-10 max-sm:flex-1 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {isAdding && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
             {isAdding ? t('picker.adding') : t('picker.add', { count: selected.length })}
