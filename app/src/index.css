@@ -36,6 +36,14 @@ body {
   color: #ffffff;
 }
 
+/* A blurred overlay (`app-overlay`: Settings, Accounts, the full-size view...) is blurred again on every frame in
+   which anything under it moves. An endless pulse in the page behind it then kept an integrated GPU at about 50%
+   (74% with a second overlay on top) while the page sat still. So while one is open, the page's endless animations
+   pause; the ones inside an overlay keep running. */
+body:has(.app-overlay) :is(.animate-pulse, .animate-ping, .animate-spin, .animate-bounce):not(.app-overlay *) {
+  animation-play-state: paused;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 10px;
 }

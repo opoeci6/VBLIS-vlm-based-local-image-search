@@ -421,6 +421,31 @@ describe('MediaLightbox navigation', () => {
     });
   });
 
+  describe('screen-sized pictures (network mode on a phone)', () => {
+
+    afterEach(async () => {
+      cleanup();
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+      resetBackToCloseForTests();
+      setNetworkModeForTests(false);
+      vi.unstubAllGlobals();
+      window.history.replaceState(null, '');
+    });
+
+    it('uses size=preview for the shown picture and the preloaded next one', () => {
+      window.history.replaceState(null, '');
+      setNetworkModeForTests(true);
+      vi.stubGlobal('screen', { width: 390, height: 844 });
+      vi.stubGlobal('devicePixelRatio', 3);
+      const sources = [];
+      vi.stubGlobal('Image', class { set src(value) { sources.push(value); } });
+      renderAt(0);
+      expect(screen.getByAltText('Full size result').getAttribute('src'))
+        .toBe(`${API}/image?path=%2Fpics%2Fa.jpg&size=preview`);
+      expect(sources).toEqual([`${API}/image?path=%2Fpics%2Fb.jpg&size=preview`]);
+    });
+  });
+
   describe('keyboard', () => {
     it('moves with the arrow keys', () => {
       const { props } = renderAt(1);

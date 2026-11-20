@@ -10,9 +10,11 @@ uvicorn needs three adjustments for that:
 import asyncio
 import contextlib
 import hashlib
+import ipaddress
 import os
 import socket
 import ssl
+import sys
 
 import uvicorn
 from uvicorn.config import LOGGING_CONFIG
@@ -56,22 +58,82 @@ def bind_socket(host: str, port: int) -> socket.socket:
     return sock
 
 
-def lan_addresses() -> list:
-    """This machine's addresses on private networks, for the URLs to show."""
-    found = set()
+# Interfaces of containers and virtual machines on a Linux host, by name prefix
+_BRIDGE_PREFIXES = ("docker", "br-", "veth", "virbr", "cni", "flannel", "cali", "podman", "lxcbr", "lxdbr")
+_LINK_LOCAL = ipaddress.ip_network("169.254.0.0/16")
+
+
+def _hostname_addresses() -> list:
+    """The IPv4 addresses the host name resolves to. On a Linux host with host networking
+    (nss-myhostname) that is every interface, Docker's bridges included."""
     try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            found.add(info[4][0])
+        return [info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)]
     except OSError:
-        pass
+        return []
+
+
+def _default_route_address():
+    """The address of the interface the default route leaves by, or None without a route."""
     try:
         # A UDP "connect" sends nothing; it only picks the address of the default route
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("192.0.2.1", 9))
-            found.add(probe.getsockname()[0])
+            return probe.getsockname()[0]
     except OSError:
-        pass
-    return sorted(a for a in found if netaddr.is_private_client(a) and not netaddr.is_loopback_client(a))
+        return None
+
+
+def _linux_interface_addresses() -> list:
+    """[(interface name, IPv4 address)] on Linux, [] anywhere else or when the lookup fails."""
+    try:
+        import fcntl
+        import struct
+        names = [name for _, name in socket.if_nameindex()]
+        found = []
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            for name in names:
+                try:
+                    # SIOCGIFADDR; bytes 20:24 of the answer hold the IPv4 address
+                    reply = fcntl.ioctl(sock.fileno(), 0x8915, struct.pack("256s", name[:15].encode()))
+                except OSError:  # an interface without an IPv4 address
+                    continue
+                found.append((name, socket.inet_ntoa(reply[20:24])))
+        return found
+    except (ImportError, OSError, AttributeError, ValueError, UnicodeError):
+        return []
+
+
+def _is_link_local(address: str) -> bool:
+    try:
+        return ipaddress.ip_address(address) in _LINK_LOCAL
+    except ValueError:
+        return False
+
+
+def lan_addresses() -> list:
+    """This machine's addresses on private networks, for the URLs to show and the certificate.
+
+    The default-route address comes first, so the first URL shown is the most likely right one, then
+    the others sorted. Link-local addresses (169.254.x.x) are left out. On a Linux Docker host with
+    host networking the host name resolves to every interface, so on Linux the addresses of container
+    and VM bridges (docker0, br-<id>, veth..., virbr0 and the like) are left out too, by interface
+    name; the default-route address always stays. Elsewhere nothing is left out by interface name
+    (VPN tunnels and virtual machine adapters can be what someone uses). If the interface lookup
+    fails, nothing is left out by name."""
+    route = _default_route_address()
+    found = set(_hostname_addresses())
+    if route:
+        found.add(route)
+    bridges = set()
+    if sys.platform.startswith("linux"):
+        bridges = {a for name, a in _linux_interface_addresses() if name.startswith(_BRIDGE_PREFIXES)}
+
+    def keep(a):
+        return (netaddr.is_private_client(a) and not netaddr.is_loopback_client(a)
+                and not _is_link_local(a) and (a == route or a not in bridges))
+
+    rest = sorted(a for a in found if a != route and keep(a))
+    return ([route] if route and keep(route) else []) + rest
 
 
 def _url_host(host: str) -> str:

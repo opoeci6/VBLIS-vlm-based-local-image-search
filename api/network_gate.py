@@ -9,7 +9,8 @@ In order, for every request:
 4. Anything outside /api is a file of the built interface, served from a fixed list.
 5. Under /api: changes need an Origin equal to this site and a declared body size; then the
    session cookie gives the role, and the route table decides. A route with no entry is refused.
-Security headers are added to every answer."""
+Security headers are added to every answer. A refusal or an API error is JSON for the interface, and a page
+(error_pages) when the browser loaded the address by itself."""
 import asyncio
 import os
 import socket
@@ -18,6 +19,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Match
 
+import error_pages
 import netaddr
 import ratelimit
 import sessions
@@ -75,12 +77,6 @@ API_CSP = "sandbox; default-src 'none'; frame-ancestors 'none'"
 # cookie and Cross-Origin-Resource-Policy refuses the answer: videos never played. These answers are always
 # an image or video type with nosniff, so a browser never runs them as a page; scripts stay off.
 MEDIA_CSP = "default-src 'none'; media-src 'self'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'"
-
-_NOT_BUILT = (
-    "<!doctype html><meta charset=utf-8><title>VBLIS</title>"
-    "<p>The VBLIS server is running, but the web interface isn't installed. "
-    "See SERVER.md for how to build it.</p>"
-)
 
 
 def scan_web_dir(web_dir) -> dict:
@@ -166,8 +162,16 @@ class NetworkGate:
 
         return wrapped
 
-    async def _refuse(self, scope, receive, send, status, detail, headers=None):
-        await JSONResponse({"detail": detail}, status_code=status, headers=headers)(scope, receive, send)
+    async def _refuse(self, scope, receive, send, status, detail, headers=None, page=None, address=None):
+        """JSON with `detail` for the interface; the error page `page` (an error_pages kind) when the browser
+        loaded this address by itself."""
+        request_headers = Headers(scope=scope)
+        if page is not None and error_pages.wants_page(request_headers):
+            response = error_pages.page_response(page, status, request_headers.get("accept-language"),
+                                                 address=address, headers=headers)
+        else:
+            response = JSONResponse({"detail": detail}, status_code=status, headers=headers)
+        await response(scope, receive, send)
 
     # ---------------------------------------------------------------- the request
 
@@ -197,7 +201,8 @@ class NetworkGate:
                 self.log(f"[Network] Refused {peer}: proxy headers from an address not in trusted_proxies")
                 await self._refuse(scope, receive, send, 400,
                                    "This request came through a proxy that VBLIS doesn't trust. "
-                                   "Add the proxy's address to trusted_proxies in the server settings.")
+                                   "Add the proxy's address to trusted_proxies in the server settings.",
+                                   page="untrusted_proxy")
                 return
             # Every header line counts: some proxies add their own line instead of appending to the
             # client's, and the client controls the first one
@@ -213,7 +218,8 @@ class NetworkGate:
         if not netaddr.host_allowed(headers.get("host"), names):
             self.log(f"[Network] Refused {client}: unknown host name {headers.get('host')!r}")
             await self._refuse(scope, receive, send, 400,
-                               "Unknown host name. Use the server's address, or add the name to allowed_hosts.")
+                               "Unknown host name. Use the server's address, or add the name to allowed_hosts.",
+                               page="unknown_host")
             return
 
         # 3. Where the client is
@@ -223,16 +229,19 @@ class NetworkGate:
                 # The address is the client's own, in the form to add (an IPv4 client of a server on :: is
                 # shown as IPv4): it tells the owner what to add when the network shows a device on it with
                 # an address outside the private ranges
-                seen = netaddr.parse_ip(client)
-                seen = str(seen) if seen is not None else "an unknown address"
+                address = netaddr.parse_ip(client)
+                address = str(address) if address is not None else None
+                seen = address or "an unknown address"
                 self.log(f"[Network] Refused {seen}: access from outside the local network is off "
                          "(a device on your network? add its address to local_networks)")
                 await self._refuse(scope, receive, send, 403,
                                    "Access from outside the local network is turned off. "
-                                   f"This server sees your device as {seen}.")
+                                   f"This server sees your device as {seen}.",
+                                   page="outside_network", address=address)
                 return
             if scheme != "https":
-                await self._refuse(scope, receive, send, 403, "Access from the internet needs HTTPS.")
+                await self._refuse(scope, receive, send, 403, "Access from the internet needs HTTPS.",
+                                   page="needs_https")
                 return
 
         if not is_api:
@@ -241,15 +250,23 @@ class NetworkGate:
         await self._serve_api(scope, receive, send, headers, config, client, scheme, locality or ratelimit.PUBLIC)
 
     async def _serve_static(self, scope, receive, send):
+        request_headers = Headers(scope=scope)
+        language = request_headers.get("accept-language")
+        page = error_pages.wants_page(request_headers)
         if scope["method"] not in ("GET", "HEAD"):
-            await PlainTextResponse("Method Not Allowed", status_code=405)(scope, receive, send)
+            if page:
+                response = error_pages.page_response("method", 405, language)
+            else:
+                response = PlainTextResponse("Method Not Allowed", status_code=405)
+            await response(scope, receive, send)
             return
         path = scope["path"]
         target = self.static.get(path)
         if target is None:
             if path == "/" and not self.static:
-                response = PlainTextResponse(_NOT_BUILT, media_type="text/html; charset=utf-8",
-                                             headers={"content-security-policy": PAGE_CSP})
+                response = error_pages.page_response("not_built", 200, language)
+            elif page:
+                response = error_pages.page_response("not_found", 404, language)
             else:
                 response = PlainTextResponse("Not Found", status_code=404)
             await response(scope, receive, send)
@@ -313,22 +330,27 @@ class NetworkGate:
         route_path, requirement = self.requirement(child)
         if route_path is not None:
             if requirement is None:
-                await self._refuse(scope, receive, send, 403, "This isn't available over the network.")
+                await self._refuse(scope, receive, send, 403, "This isn't available over the network.",
+                                   page="not_on_network")
                 return
             if requirement != PUBLIC:
                 if auth is None:
-                    await self._refuse(scope, receive, send, 401, "Sign in first.")
+                    await self._refuse(scope, receive, send, 401, "Sign in first.", page="sign_in")
                     return
                 level, _, permission = requirement.partition(":")
                 if level == OWNER_ROUTE and not auth.is_owner:
-                    await self._refuse(scope, receive, send, 403, "Only the owner can do this.")
+                    await self._refuse(scope, receive, send, 403, "Only the owner can do this.", page="owner_only")
                     return
                 if permission and not auth.may(permission):
-                    await self._refuse(scope, receive, send, 403, "The owner hasn't allowed this.")
+                    await self._refuse(scope, receive, send, 403, "The owner hasn't allowed this.",
+                                       page="not_permitted")
                     return
 
         cache = "private, max-age=600" if sub_path in MEDIA_PATHS else "no-store"
         send = self._secured(send, (("cache-control", cache),))
+        if error_pages.wants_page(headers):
+            # A picture or video opened in a tab of its own, or an address typed by hand: an error shows as a page
+            send = error_pages.html_errors(send, headers.get("accept-language"))
         if self._api_slots is None:
             self._api_slots = asyncio.Semaphore(MAX_PARALLEL_API)
         if sub_path in UPLOAD_PATHS and method == "POST":

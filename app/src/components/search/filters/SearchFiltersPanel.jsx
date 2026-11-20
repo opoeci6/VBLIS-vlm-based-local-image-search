@@ -176,7 +176,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
       role="dialog"
       aria-modal="false"
       aria-label={t('panel.label')}
-      className="fixed z-[60] inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto overscroll-contain custom-scrollbar rounded-t-2xl border-t border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 pt-0 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl text-neutral-900 dark:text-neutral-100 animate-in fade-in slide-in-from-bottom-4 duration-150 sm:inset-x-auto sm:bottom-auto sm:top-24 sm:left-1/2 sm:-translate-x-1/2 sm:w-[min(42rem,calc(100vw-2rem))] sm:max-h-[70dvh] sm:rounded-2xl sm:border sm:p-5"
+      className="fixed z-[60] inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto overscroll-contain custom-scrollbar rounded-t-2xl border-t border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 pt-0 pb-0 shadow-2xl text-neutral-900 dark:text-neutral-100 animate-in fade-in slide-in-from-bottom-4 duration-150 sm:inset-x-auto sm:bottom-auto sm:top-24 sm:left-1/2 sm:-translate-x-1/2 sm:w-[min(42rem,calc(100vw-2rem))] sm:max-h-[70dvh] sm:rounded-2xl sm:border sm:p-5"
     >
       <div className="sticky top-0 z-10 -mx-5 mb-4 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-3 dark:border-neutral-800 dark:bg-neutral-900 sm:static sm:mx-0 sm:border-b-0 sm:p-0">
         <h2 className="text-base font-bold">{t('panel.title')}</h2>
@@ -328,39 +328,46 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
           scanActive={scanActive}
           missingDetails={missingDetails}
         />
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {options?.registry_available !== false && (
-            <button
-              type="button"
-              onClick={readDetailsNow}
-              disabled={isStartingScan || scanActive}
-              className={cn(
-                'min-h-[40px] sm:min-h-0 px-3 py-1.5 rounded-xl border text-xs font-semibold disabled:opacity-50 cursor-pointer',
-                missingDetails > 0
-                  ? 'border-indigo-600 bg-indigo-600 hover:bg-indigo-500 text-white'
-                  : 'border-gray-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800'
-              )}
-            >
-              {t('common:readDetailsNow')}
-            </button>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={clearAll}
-              disabled={activeCount === 0}
-              className="min-h-[40px] sm:min-h-0 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
-            >
-              {t('panel.clearAll')}
-            </button>
-            <button
-              type="button"
-              onClick={close}
-              className="min-h-[40px] sm:min-h-0 px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
-            >
-              {t('panel.done')}
-            </button>
-          </div>
+      </div>
+
+      {/* On a phone the buttons stay at the bottom of the sheet while it scrolls (about 1,600 px on a real library).
+          A sticky element can't leave its parent, so this row is a child of the scrolling sheet itself; it also
+          keeps clear of the home bar, which is why the sheet has no bottom padding of its own on a phone. */}
+      <div
+        data-filters-footer="true"
+        className="sticky bottom-0 z-10 -mx-5 mt-3 flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] dark:border-neutral-800 dark:bg-neutral-900 sm:static sm:z-auto sm:mx-0 sm:border-t-0 sm:p-0"
+      >
+        {options?.registry_available !== false && (
+          <button
+            type="button"
+            onClick={readDetailsNow}
+            disabled={isStartingScan || scanActive}
+            className={cn(
+              'min-h-[40px] sm:min-h-0 px-3 py-1.5 rounded-xl border text-xs font-semibold disabled:opacity-50 cursor-pointer',
+              missingDetails > 0
+                ? 'border-indigo-600 bg-indigo-600 hover:bg-indigo-500 text-white'
+                : 'border-gray-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800'
+            )}
+          >
+            {t('common:readDetailsNow')}
+          </button>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={clearAll}
+            disabled={activeCount === 0}
+            className="min-h-[40px] sm:min-h-0 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-gray-50 dark:hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+          >
+            {t('panel.clearAll')}
+          </button>
+          <button
+            type="button"
+            onClick={close}
+            className="min-h-[40px] sm:min-h-0 px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
+          >
+            {t('panel.done')}
+          </button>
         </div>
       </div>
     </div>

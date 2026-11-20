@@ -191,7 +191,9 @@ export const MediaLightbox = ({ selectedImage, setSelectedImage, setToast, uiThe
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[80] flex flex-col items-center justify-start sm:justify-center bg-black/90 backdrop-blur-md px-safe pb-safe sm:p-6 sm:py-8 overflow-y-auto touch-pan-y touch-pinch-zoom animate-in fade-in duration-200 custom-scrollbar",
+        "app-overlay fixed inset-0 z-[80] flex flex-col items-center justify-start sm:justify-center bg-black/90 px-safe pb-safe sm:p-6 sm:py-8 overflow-y-auto touch-pan-y touch-pinch-zoom animate-in fade-in duration-200 custom-scrollbar",
+        // A playing video would make the page behind be blurred again on every frame.
+        play !== 'playing' && "backdrop-blur-md",
         hasNav && "sm:px-16"
       )}
       {...backdropDismiss}
