@@ -69,6 +69,12 @@ PAGE_CSP = (
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 API_CSP = "sandbox; default-src 'none'; frame-ancestors 'none'"
+# A picture or video opened in a tab of its own: the browser wraps it in a page of its own (a <video> or <img>
+# pointing at the same URL), which this policy also governs. API_CSP would stop that page loading its own
+# video (default-src 'none'), and `sandbox` would give it an opaque origin, so the browser sends no sign-in
+# cookie and Cross-Origin-Resource-Policy refuses the answer: videos never played. These answers are always
+# an image or video type with nosniff, so a browser never runs them as a page; scripts stay off.
+MEDIA_CSP = "default-src 'none'; media-src 'self'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'"
 
 _NOT_BUILT = (
     "<!doctype html><meta charset=utf-8><title>VBLIS</title>"
@@ -178,7 +184,11 @@ class NetworkGate:
         peer = (scope.get("client") or (None,))[0]
         scheme = scope.get("scheme", "http")
         is_api = scope["path"] == API_PREFIX or scope["path"].startswith(API_PREFIX + "/")
-        send = self._secured(send, (("content-security-policy", API_CSP),) if is_api else ())
+        if is_api:
+            csp = MEDIA_CSP if scope["path"][len(API_PREFIX):] in MEDIA_PATHS else API_CSP
+            send = self._secured(send, (("content-security-policy", csp),))
+        else:
+            send = self._secured(send, ())
 
         # 1. Proxies
         if any(name in headers for name in netaddr.FORWARDED_HEADERS):
