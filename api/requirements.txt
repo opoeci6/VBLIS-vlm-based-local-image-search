@@ -1,5 +1,5 @@
-# PyTorch CUDA 12.4 index
---extra-index-url https://download.pytorch.org/whl/cu124
+# PyTorch CUDA 13.0 index (GTX 16 / RTX 20 and newer, NVIDIA driver 580 or newer)
+--extra-index-url https://download.pytorch.org/whl/cu130
 
 # Core framework & API
 fastapi
@@ -17,7 +17,7 @@ opencv-python-headless>=4.10
 av>=14.0.0
 
 # Deep learning & embeddings
-torch>=2.6.0
+torch>=2.14.1
 transformers
 safetensors
 sentencepiece

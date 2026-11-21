@@ -9,8 +9,9 @@
 #
 # Build argument:
 #   TORCH=cpu    PyTorch without a GPU (the default; the only choice on ARM64)
-#   TORCH=cuda   PyTorch with NVIDIA CUDA 12.4. x86-64 only. UNTESTED. It also needs the NVIDIA
-#                container toolkit and a GPU passed to the container.
+#   TORCH=cuda   PyTorch with NVIDIA CUDA 13.0. x86-64 only. UNTESTED. It also needs the NVIDIA
+#                container toolkit, a GPU passed to the container (GTX 16 / RTX 20 or newer) and
+#                NVIDIA driver 580 or newer on the host.
 
 # Stage 1: build the web interface
 FROM node:22-slim AS web

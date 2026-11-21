@@ -5,7 +5,8 @@
 #   scripts/install-linux.sh [--torch cpu|cuda] [--data-dir DIR] [--python PYTHON] [--web-zip FILE] [--no-service]
 #
 #   --torch cpu    PyTorch without a GPU (the default; the only choice on ARM64)
-#   --torch cuda   PyTorch with NVIDIA CUDA 12.4 (x86-64 only; about 3 GB more to download)
+#   --torch cuda   PyTorch with NVIDIA CUDA 13.0 (x86-64 only; GTX 16 / RTX 20 or newer, driver 580 or
+#                  newer; a few GB more to download)
 #   --data-dir     where models, the index and the settings live (default ~/.local/share/vblis)
 #   --python       the Python to build the environment with (3.11 to 3.13; default python3)
 #   --web-zip      the web interface from a release (VBLIS-web-<version>.zip), unpacked into app/dist;

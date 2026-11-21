@@ -1,8 +1,9 @@
 from typing import Literal
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import torch
 import app_state
+import gpu_support
 import settings_store
 
 router = APIRouter()
@@ -12,11 +13,20 @@ class GPUSettingsRequest(BaseModel):
     batch_size: int = 0
     precision_mode: Literal["auto", "fp16", "fp32"] = "auto"
 
+def _gpu_problem(check):
+    """Why a present NVIDIA GPU isn't used (Settings explains it), or None."""
+    if check.code is None:
+        return None
+    return {"code": check.code, "gpu_name": check.gpu_name, "capability": check.capability}
+
 @router.get("/settings/gpu")
 def get_gpu_settings():
+    check = gpu_support.check_cuda()
     return {
         "use_gpu": app_state.model_manager.use_gpu,
-        "cuda_available": torch.cuda.is_available(),
+        # False also for a card or driver this PyTorch build can't run; gpu_problem then says why
+        "cuda_available": check.usable,
+        "gpu_problem": _gpu_problem(check),
         "device": app_state.model_manager.device,
         "batch_size": app_state.model_manager.batch_size,
         "effective_batch_size": app_state.model_manager.get_effective_batch_size(),
@@ -31,6 +41,12 @@ def get_gpu_settings():
 @router.post("/settings/gpu")
 def set_gpu_settings(req: GPUSettingsRequest):
     print(f"Set GPU settings requested: GPU={req.use_gpu}, Batch={req.batch_size}, Precision={req.precision_mode}")
+    if req.use_gpu:
+        check = gpu_support.check_cuda(probe=True)
+        if not check.usable and check.code:
+            # Nothing changes: the GPU stays off and the settings are not saved
+            return JSONResponse({"detail": f"The GPU can't be used ({check.code}): {check.detail}",
+                                 "code": check.code}, status_code=409)
     # Set before set_device, so a device switch already reloads the model with the new precision
     app_state.model_manager.precision_mode = req.precision_mode.lower()
     result = app_state.model_manager.set_device(req.use_gpu)

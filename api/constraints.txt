@@ -1,7 +1,7 @@
 # Exact package versions for the release build: release.yml installs with `-c constraints.txt`.
-# This is `pip freeze` of the dev venv the release was tested with. After upgrading a package there,
-# regenerate it from the repo root in Git Bash (keeps these 5 header lines):
-#   { head -5 api/constraints.txt; api/.venv/Scripts/python.exe -m pip freeze --disable-pip-version-check; } > api/constraints.new && mv api/constraints.new api/constraints.txt
+# This is `pip freeze --all` (setuptools included, pip left out) of the venv the release was tested with. After
+# upgrading a package there, regenerate it from the repo root in Git Bash (keeps these 5 header lines):
+#   { head -5 api/constraints.txt; api/.venv/Scripts/python.exe -m pip freeze --all --exclude pip --disable-pip-version-check; } > api/constraints.new && mv api/constraints.new api/constraints.txt
 # The release workflow fails if it installs any package that has no pin here.
 altgraph==0.17.5
 annotated-doc==0.0.4
@@ -51,7 +51,6 @@ opencv-python-headless==5.0.0.93
 opentelemetry-api==1.40.0
 opentelemetry-exporter-otlp-proto-common==1.40.0
 opentelemetry-exporter-otlp-proto-grpc==1.40.0
-opentelemetry-instrumentation==0.61b0
 opentelemetry-proto==1.40.0
 opentelemetry-sdk==1.40.0
 opentelemetry-semantic-conventions==0.61b0
@@ -85,24 +84,22 @@ rich==14.3.3
 rpds-py==0.30.0
 safetensors==0.7.0
 sentencepiece==0.2.1
+setuptools==84.2.1
 shellingham==1.5.4
 six==1.17.0
 starlette==0.52.1
-sympy==1.13.1
+sympy==1.14.0
 tenacity==9.1.4
 tokenizers==0.22.2
-torch==2.6.0+cu124
-torchvision==0.21.0+cu124
+torch==2.14.1+cu130
 tqdm==4.67.3
 transformers==5.3.0
 typer==0.24.1
 typing-inspection==0.4.2
 typing_extensions==4.15.0
-tzdata==2025.3
 urllib3==2.6.3
 uvicorn==0.41.0
 watchfiles==1.1.1
 websocket-client==1.9.0
 websockets==16.0
-wrapt==1.17.3
 zipp==3.23.0

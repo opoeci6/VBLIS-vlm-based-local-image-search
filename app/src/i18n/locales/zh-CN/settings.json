@@ -100,6 +100,14 @@
     "gpuUsingCuda": "正在使用 CUDA",
     "gpuDirects": "将任务交给 GPU 处理",
     "gpuNotDetected": "未检测到 NVIDIA GPU",
+    "gpuUnusable": "无法使用 {{name}}",
+    "gpuUnusableUnnamed": "无法使用 NVIDIA GPU",
+    "problem": {
+      "unsupportedGpu": "此版本的 VBLIS 不支持 {{name}}（{{capability}}），因此使用 CPU 运行。GPU 加速需要 GeForce GTX 16 或 RTX 20 系列及更新的显卡。",
+      "unsupportedGpuUnnamed": "此版本的 VBLIS 不支持这块 NVIDIA GPU，因此使用 CPU 运行。GPU 加速需要 GeForce GTX 16 或 RTX 20 系列及更新的显卡。",
+      "driverTooOld": "请将 NVIDIA 驱动程序更新到 580 或更高版本以使用 GPU。在此之前，VBLIS 使用 CPU 运行。",
+      "cudaFailed": "无法启动 NVIDIA GPU，因此 VBLIS 使用 CPU 运行。更新 NVIDIA 驱动程序可能会有帮助。"
+    },
     "gpuDisable": "停用 NVIDIA GPU 支持",
     "gpuEnable": "启用 NVIDIA GPU 支持",
     "cudaRequired": "GPU 加速需要支持 CUDA 的 GPU。",

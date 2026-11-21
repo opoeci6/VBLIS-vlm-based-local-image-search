@@ -102,6 +102,14 @@
     "gpuUsingCuda": "Currently using CUDA",
     "gpuDirects": "Directs tasks to GPU",
     "gpuNotDetected": "No NVIDIA GPU detected",
+    "gpuUnusable": "{{name}} can't be used",
+    "gpuUnusableUnnamed": "The NVIDIA GPU can't be used",
+    "problem": {
+      "unsupportedGpu": "{{name}} ({{capability}}) isn't supported by this version of VBLIS, so it runs on the CPU. GPU acceleration needs a GeForce GTX 16 or RTX 20-series card or newer.",
+      "unsupportedGpuUnnamed": "This NVIDIA GPU isn't supported by this version of VBLIS, so it runs on the CPU. GPU acceleration needs a GeForce GTX 16 or RTX 20-series card or newer.",
+      "driverTooOld": "Update the NVIDIA driver to version 580 or newer to use the GPU. Until then VBLIS runs on the CPU.",
+      "cudaFailed": "The NVIDIA GPU couldn't be started, so VBLIS runs on the CPU. Updating the NVIDIA driver may help."
+    },
     "gpuDisable": "Disable NVIDIA GPU support",
     "gpuEnable": "Enable NVIDIA GPU support",
     "cudaRequired": "CUDA-capable GPU is required for GPU acceleration.",

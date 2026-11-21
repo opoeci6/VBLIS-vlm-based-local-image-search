@@ -39,7 +39,7 @@ Sharing lasts while the app is open and starts again the next time you open it. 
 
 ## Install on Linux
 
-Requirements: a 64-bit Linux (x86-64 or ARM64) with Python 3.11 to 3.13 and `python3-venv` (on Debian or Ubuntu: `sudo apt install python3-venv python3-pip`), about 3 GB of disk for the program, plus the models (0.6 to 4.3 GB each) and the index. An NVIDIA GPU is optional.
+Requirements: a 64-bit Linux (x86-64 or ARM64) with Python 3.11 to 3.13 and `python3-venv` (on Debian or Ubuntu: `sudo apt install python3-venv python3-pip`), about 3 GB of disk for the program, plus the models (0.6 to 4.3 GB each) and the index. An NVIDIA GPU is optional (x86-64 only; a GeForce GTX 16 or RTX 20-series card or newer, with NVIDIA driver 580 or newer).
 
 ```bash
 git clone https://github.com/opoeci6/VBLIS-vlm-based-local-image-search.git vblis
