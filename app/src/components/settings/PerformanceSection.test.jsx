@@ -56,6 +56,36 @@ describe('PerformanceSection', () => {
     });
   });
 
+  describe('a GPU this build cannot use', () => {
+    const unusable = (gpu_problem) => makeGpu({ cuda_available: false, gpu_problem });
+
+    it.each(['modern', 'terminal'])('names an unsupported card and says what is needed (%s)', (uiTheme) => {
+      const gpuSettings = unusable({ code: 'unsupported_gpu', gpu_name: 'NVIDIA GeForce GTX 1060', capability: 'sm_61' });
+      render(<PerformanceSection {...makeProps({ uiTheme, gpuSettings })} />);
+      expect(screen.getByText("NVIDIA GeForce GTX 1060 can't be used")).toBeTruthy();
+      expect(screen.getByRole('status').textContent.trim()).toBe(
+        "NVIDIA GeForce GTX 1060 (sm_61) isn't supported by this version of VBLIS, so it runs on the CPU. "
+        + 'GPU acceleration needs a GeForce GTX 16 or RTX 20-series card or newer.',
+      );
+      expect(screen.queryByText(/CUDA-capable GPU is required/)).toBeNull();
+      expect(screen.getByLabelText('Enable NVIDIA GPU support').disabled).toBe(true);
+    });
+
+    it('asks for a newer driver', () => {
+      render(<PerformanceSection {...makeProps({ gpuSettings: unusable({ code: 'driver_too_old', gpu_name: null, capability: null }) })} />);
+      expect(screen.getByText("The NVIDIA GPU can't be used")).toBeTruthy();
+      expect(screen.getByRole('status').textContent).toMatch(/Update the NVIDIA driver to version 580 or newer/);
+    });
+
+    it.each([
+      ['a failed start', { code: 'cuda_failed', gpu_name: 'RTX 5090', capability: 'sm_120' }, /couldn't be started/],
+      ['an unsupported card without a name', { code: 'unsupported_gpu', gpu_name: null, capability: null }, /This NVIDIA GPU isn't supported/],
+    ])('explains %s', (_label, problem, text) => {
+      render(<PerformanceSection {...makeProps({ gpuSettings: unusable(problem) })} />);
+      expect(screen.getByRole('status').textContent).toMatch(text);
+    });
+  });
+
   describe('batch size and precision', () => {
     it('uses the custom select in the modern theme', () => {
       const props = makeProps();

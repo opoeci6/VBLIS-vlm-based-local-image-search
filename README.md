@@ -31,8 +31,8 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 
 - Windows 10 or 11, 64-bit.
 - Server mode also runs on a 64-bit Linux (x86-64 or ARM64) with Python 3.11 to 3.13, or in Docker. See [SERVER.md](SERVER.md).
-- An NVIDIA GPU is optional: VBLIS uses it through CUDA when one is available and runs on the CPU otherwise (indexing is slower).
-- Disk space: about 4.5 GB for the app, plus 0.6–4.3 GB for each downloaded model, plus the index and the thumbnail cache.
+- An NVIDIA GPU is optional: VBLIS uses it through CUDA when one is available (a GeForce GTX 16 or RTX 20-series card or newer, with NVIDIA driver 580 or newer) and runs on the CPU otherwise (indexing is slower). Older cards, such as the GTX 10 series, run on the CPU, and Settings says why.
+- Disk space: about 3.7 GB for the app, plus 0.6–4.3 GB for each downloaded model, plus the index and the thumbnail cache.
 
 ## Supported Formats
 

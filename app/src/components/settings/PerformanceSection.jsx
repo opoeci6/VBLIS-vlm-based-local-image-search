@@ -3,8 +3,20 @@ import { useTranslation } from 'react-i18next';
 import { SettingsSelect } from '../common/SettingsSelect';
 import { cn } from '../../utils/cn';
 
+// Why a present NVIDIA GPU isn't used: a card or driver this PyTorch build can't run (api/gpu_support.py)
+const gpuProblemText = (t, problem) => {
+  if (problem.code === 'unsupported_gpu') {
+    return problem.gpu_name
+      ? t('performance.problem.unsupportedGpu', { name: problem.gpu_name, capability: problem.capability || '?' })
+      : t('performance.problem.unsupportedGpuUnnamed');
+  }
+  if (problem.code === 'driver_too_old') return t('performance.problem.driverTooOld');
+  return t('performance.problem.cudaFailed');
+};
+
 export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGpu, handleToggleGpu, handleUpdatePerformanceSettings }) => {
   const { t } = useTranslation('settings');
+  const gpuProblem = gpuSettings.gpu_problem || null;
   const autoPrecisionLabel = t('performance.precision.auto', { precision: gpuSettings.active_precision ? gpuSettings.active_precision.toUpperCase() : 'FP32' });
   return (
     <div className="pt-2">
@@ -24,7 +36,9 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
               ? (gpuSettings.use_gpu 
                   ? (gpuSettings.gpu_name ? t('performance.gpuUsing', { name: gpuSettings.gpu_name }) : t('performance.gpuUsingCuda')) 
                   : t('performance.gpuDirects')) 
-              : t('performance.gpuNotDetected')}
+              : gpuProblem
+                ? (gpuProblem.gpu_name ? t('performance.gpuUnusable', { name: gpuProblem.gpu_name }) : t('performance.gpuUnusableUnnamed'))
+                : t('performance.gpuNotDetected')}
           </span>
         </div>
         {uiTheme === 'modern' ? (
@@ -66,8 +80,8 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
       </div>
 
       {!gpuSettings.cuda_available && (
-        <p className="text-[10px] text-amber-500 font-medium mt-1 mb-3 px-1 flex items-center gap-1">
-          <AlertTriangle className="w-3 h-3" /> {t('performance.cudaRequired')}
+        <p className="text-[10px] text-amber-500 font-medium mt-1 mb-3 px-1 flex items-start gap-1" role={gpuProblem ? 'status' : undefined}>
+          <AlertTriangle className="w-3 h-3 mt-px flex-shrink-0" /> {gpuProblem ? gpuProblemText(t, gpuProblem) : t('performance.cudaRequired')}
         </p>
       )}
 

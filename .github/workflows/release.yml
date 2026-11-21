@@ -130,8 +130,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
 
       # Every package is pinned by api/constraints.txt (pip freeze of the tested dev venv). The
-      # torch==2.6.0+cu124 pin takes the CUDA wheel from the cu124 index that requirements.txt adds.
-      - name: Install Python Dependencies (CUDA 12.4 PyTorch) & PyInstaller
+      # torch==2.14.1+cu130 pin takes the CUDA wheel from the cu130 index that requirements.txt adds.
+      - name: Install Python Dependencies (CUDA 13.0 PyTorch) & PyInstaller
         working-directory: api
         run: |
           $ErrorActionPreference = "Stop"
