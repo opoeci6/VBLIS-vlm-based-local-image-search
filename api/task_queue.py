@@ -86,6 +86,9 @@ class Task:
         self.cancel_requested: bool = False
         self._pause_event: threading.Event = threading.Event()
         self._pause_event.set()  # set means running, clear means paused
+        # Guards the progress fields that update_progress / add_error write and to_dict reads (the worker writes,
+        # request threads read). Taken after the queue lock, and never held while calling into the queue or indexer.
+        self._progress_lock: threading.Lock = threading.Lock()
 
     # app/src/utils/taskTitle.js parses these strings, so a change here needs a change there.
     @staticmethod
@@ -141,21 +144,27 @@ class Task:
         return not self.cancel_requested
 
     def update_progress(self, processed: int, total: int, current_item: str = ""):
-        self.processed_count = processed
-        self.total_count = total
-        if total > 0:
-            self.progress = round(min(100.0, max(0.0, (processed / total) * 100.0)), 1)
-        else:
-            self.progress = 0.0
-        if current_item:
-            self.current_item = current_item
+        with self._progress_lock:
+            self.processed_count = processed
+            self.total_count = total
+            if total > 0:
+                self.progress = round(min(100.0, max(0.0, (processed / total) * 100.0)), 1)
+            else:
+                self.progress = 0.0
+            if current_item:
+                self.current_item = current_item
 
     def add_error(self, error_msg: str):
-        self.error_count += 1
-        if len(self.errors) < 50:
-            self.errors.append(error_msg)
+        with self._progress_lock:
+            self.error_count += 1
+            if len(self.errors) < 50:
+                self.errors.append(error_msg)
 
     def to_dict(self) -> Dict[str, Any]:
+        with self._progress_lock:
+            return self._to_dict_locked()
+
+    def _to_dict_locked(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "type": self.type.value if hasattr(self.type, "value") else str(self.type),
@@ -168,7 +177,7 @@ class Task:
             "processed_count": self.processed_count,
             "total_count": self.total_count,
             "error_count": self.error_count,
-            "errors": self.errors,
+            "errors": list(self.errors),
             "created_at": self.created_at,
             "started_at": self.started_at,
             "completed_at": self.completed_at,

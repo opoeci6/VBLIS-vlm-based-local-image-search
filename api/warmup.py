@@ -1,7 +1,8 @@
 """Background warm-up of what the first library view, Filters panel and filtered search would otherwise build
 while the user waits: the cached metadata scan, the media registry snapshot, the place map and the exact-copy
-level. The look-alike level is only rebuilt here, never built for the first time, so it costs nothing until the
-"Visual duplicates" filter was used with this collection.
+level. The look-alike level is only brought up to date here (read back from disk after a start, or updated after
+indexing), never built for the first time, so it costs nothing until the "Visual duplicates" filter was used with
+this collection.
 
 One daemon thread, started by the first request. It only reads, through the same caches the requests use, so a
 request never waits for it and a write that lands meanwhile still wins (each cache checks its own version). It
