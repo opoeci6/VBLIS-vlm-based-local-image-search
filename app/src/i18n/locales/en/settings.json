@@ -61,7 +61,40 @@
   },
   "settingsModal": {
     "title": "Settings",
-    "closeTooltip": "Close settings"
+    "closeTooltip": "Close settings",
+    "groupsLabel": "Settings groups",
+    "back": "Back to all settings",
+    "groups": {
+      "appearance": {
+        "title": "Appearance",
+        "description": "Theme style and language"
+      },
+      "search": {
+        "title": "Search",
+        "description": "Match scores and how many results to show"
+      },
+      "models": {
+        "title": "Models and GPU",
+        "description": "Models, GPU acceleration and batching"
+      },
+      "library": {
+        "title": "Library",
+        "description": "Thumbnails and the index",
+        "descriptionDesktop": "Thumbnails, export and the index"
+      },
+      "sharing": {
+        "title": "Network sharing",
+        "description": "Let browsers on your network open the library"
+      },
+      "server": {
+        "title": "Server",
+        "description": "Addresses, accounts and sign-ins"
+      },
+      "account": {
+        "title": "Your account",
+        "description": "Change your password or sign out"
+      }
+    }
   },
   "dangerZone": {
     "confirm": "Are you sure? This cannot be undone.",

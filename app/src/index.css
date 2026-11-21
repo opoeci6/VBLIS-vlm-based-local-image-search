@@ -313,6 +313,22 @@ body:has(.app-overlay) :is(.animate-pulse, .animate-ping, .animate-spin, .animat
   stroke: var(--terminal-background) !important;
 }
 
+/* The selected tab of the Settings window: inverted like a pressed toggle (same specificity reasoning). */
+.terminal-theme button[type="button"][role="tab"][aria-selected="true"],
+.terminal-theme button[type="button"][role="tab"][aria-selected="true"] * {
+  color: var(--terminal-background) !important;
+  -webkit-text-fill-color: var(--terminal-background) !important;
+}
+
+.terminal-theme button[type="button"][role="tab"][aria-selected="true"] {
+  background-color: var(--terminal-foreground) !important;
+  background: var(--terminal-foreground) !important;
+}
+
+.terminal-theme button[type="button"][role="tab"][aria-selected="true"] svg {
+  stroke: var(--terminal-background) !important;
+}
+
 .terminal-theme input::placeholder {
   color: var(--terminal-foreground) !important;
   opacity: 1 !important;

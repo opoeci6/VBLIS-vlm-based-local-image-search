@@ -7,6 +7,7 @@ import { pickSavePath } from '../../utils/electron';
 import { formatNumber } from '../../utils/formatters';
 import { requestJson } from '../../utils/serverRequest';
 import { cn } from '../../utils/cn';
+import { SectionTitle } from './SectionTitle';
 
 // The error codes of POST /index/export that have a translation here; any other refusal shows the
 // message requestJson makes from the backend's `detail`.
@@ -85,8 +86,8 @@ export function ExportSection({ uiTheme, setToast }) {
   const modelOptions = collections.map((item) => ({ value: item.model_id, label: item.model_id }));
 
   return (
-    <div className="pt-4 mt-2 border-t border-gray-100 dark:border-neutral-800 space-y-4">
-      <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">{t('export.title')}</h4>
+    <div className="space-y-4">
+      <SectionTitle>{t('export.title')}</SectionTitle>
       <p className={subtleClass}>{t('export.intro')}</p>
 
       {!data ? (

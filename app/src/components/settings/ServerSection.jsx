@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useServerSettings } from '../../hooks/useServerSettings';
 import { cn } from '../../utils/cn';
 import { AccountsModal } from './AccountsModal';
+import { SectionTitle } from './SectionTitle';
 import { Fact, cardClass, dangerButton, errorClass, secondaryButton } from './serverUi';
 
 function SignOutOthers({ onSignOutOthers }) {
@@ -42,7 +43,8 @@ function SignOutOthers({ onSignOutOthers }) {
 const HTTPS_LABELS = { off: 'server.facts.httpsOff', self_signed: 'server.facts.httpsSelfSigned', files: 'server.facts.httpsFiles' };
 
 // Settings of the network server, for the owner signed in from a browser.
-export function ServerSection({ uiTheme, setToast }) {
+// `showTitle` is false when the page it sits on already carries the title.
+export function ServerSection({ uiTheme, setToast, showTitle = true }) {
   const { t } = useTranslation('session');
   const { settings, loadFailed, reload, signOutOtherBrowsers } = useServerSettings({ setToast });
   const [isManaging, setIsManaging] = useState(false);
@@ -59,8 +61,8 @@ export function ServerSection({ uiTheme, setToast }) {
   };
 
   return (
-    <div className="pt-4 mt-2 border-t border-gray-100 dark:border-neutral-800 space-y-4">
-      <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">{t('server.title')}</h4>
+    <div className="space-y-4">
+      {showTitle && <SectionTitle>{t('server.title')}</SectionTitle>}
 
       {!settings ? (
         loadFailed ? (

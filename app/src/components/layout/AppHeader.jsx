@@ -7,7 +7,7 @@ import { useSession } from '../../session/sessionContext';
 
 // On a phone (below md) the header has three rows: the logo with the model chip on the left and the queue badge,
 // the menu and the gear on the right; the search box; the Filters, picture and Search buttons. From md up it is one row.
-export const AppHeader = ({ models, setShowSettings, queue, uiTheme, handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount, filtersOpen, onToggleFilters, hasSearchResults = false, onClearSearch, onPickImage, theme, setTheme, setUiTheme }) => {
+export const AppHeader = ({ models, openSettings, queue, uiTheme, handleSearch, isSearching, searchInputRef, query, setQuery, activeFilterCount, filtersOpen, onToggleFilters, hasSearchResults = false, onClearSearch, onPickImage, theme, setTheme, setUiTheme }) => {
   const { t } = useTranslation('search');
   const { isOwner, mode } = useSession();
   return (
@@ -23,7 +23,7 @@ export const AppHeader = ({ models, setShowSettings, queue, uiTheme, handleSearc
           {models.active_model ? (
             <div className="mt-0.5 flex min-w-0">
               <button
-                onClick={() => setShowSettings(true)}
+                onClick={() => openSettings('models')}
                 className="inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-0.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-indigo-600 dark:text-indigo-300 cursor-pointer shadow-sm"
                 title={t('header.activeModelTitle', { model: models.active_model })}
               >
@@ -34,7 +34,7 @@ export const AppHeader = ({ models, setShowSettings, queue, uiTheme, handleSearc
           ) : (
             <div className="mt-0.5 flex min-w-0">
               <button
-                onClick={() => setShowSettings(true)}
+                onClick={() => openSettings('models')}
                 className="inline-flex min-w-0 max-w-full items-center gap-1.5 px-2 py-0.5 bg-amber-50/80 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 border border-amber-200/80 dark:border-amber-500/20 rounded-lg transition-all hover:scale-105 active:scale-95 text-[10px] font-bold text-amber-600 dark:text-amber-400 cursor-pointer shadow-sm"
                 title={t('header.noModelTitle')}
               >
@@ -54,7 +54,7 @@ export const AppHeader = ({ models, setShowSettings, queue, uiTheme, handleSearc
         {isOwner && <QueueStatusBadge queue={queue} uiTheme={uiTheme} />}
         {mode === 'network' && <HeaderMenu theme={theme} setTheme={setTheme} uiTheme={uiTheme} setUiTheme={setUiTheme} />}
         <button
-          onClick={() => setShowSettings(true)}
+          onClick={() => openSettings()}
           aria-label={t('settings:settingsModal.title')}
           title={t('settings:settingsModal.title')}
           className="p-2.5 sm:p-3 bg-white dark:bg-neutral-900/80 hover:bg-gray-50 dark:hover:bg-neutral-800 border border-gray-200 dark:border-neutral-800 rounded-xl transition-all hover:rotate-45 active:scale-95 text-neutral-500 hover:text-neutral-900 dark:hover:text-white shadow-sm dark:shadow-none"
