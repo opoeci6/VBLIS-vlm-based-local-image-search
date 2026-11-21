@@ -11,6 +11,8 @@ from typing import Mapping, NamedTuple, Optional
 SCHEMA_VERSION = 1
 WRITE_CHUNK = 500
 READ_CHUNK = 500  # keys per SELECT ... IN (...), under SQLite's variable limit
+# The `error` of a row whose file the OS refused to open (media_sync writes it) starts with this
+ACCESS_ERROR_PREFIX = "PermissionError:"
 
 COLUMNS = (
     "key", "path", "media_type", "ext", "size", "mtime_ns", "width", "height", "orientation", "rotation",
@@ -221,13 +223,18 @@ class MediaRegistry:
     # ------------------------------------------------------------------ reads
 
     def stat_index(self) -> dict:
-        """{key: (path, size, mtime_ns, probe_version)} for every row, in one read."""
+        """{key: (path, size, mtime_ns, probe_version, access_error)} for every row, in one read.
+        access_error is True when the row records a file the OS refused to open (its error starts with
+        ACCESS_ERROR_PREFIX)."""
         with self._lock:
             conn = self._connection()
             if conn is None:
                 return {}
-            rows = conn.execute("SELECT key, path, size, mtime_ns, probe_version FROM media").fetchall()
-        return {key: (path, size, mtime_ns, probe_version) for key, path, size, mtime_ns, probe_version in rows}
+            rows = conn.execute("SELECT key, path, size, mtime_ns, probe_version, error FROM media").fetchall()
+        return {
+            key: (path, size, mtime_ns, probe_version, bool(error) and error.startswith(ACCESS_ERROR_PREFIX))
+            for key, path, size, mtime_ns, probe_version, error in rows
+        }
 
     def count(self) -> int:
         with self._lock:

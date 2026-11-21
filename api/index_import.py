@@ -505,7 +505,7 @@ def _import_records(export, temp, batch, maps, flavor, host, progress) -> _Recor
 def _read_registry(export, maps, flavor, host):
     """The media details to write, checked and mapped, before anything changes. Returns (rows, {local path
     key: rotation} of the videos)."""
-    from media_registry import MediaRegistry
+    from media_registry import ACCESS_ERROR_PREFIX, MediaRegistry
 
     rows, rotations = [], {}
     if "registry.jsonl" not in export.zip.namelist():
@@ -522,6 +522,9 @@ def _read_registry(export, maps, flavor, host):
                 or not isinstance(clean["media_type"], str) or not isinstance(clean["ext"], str)):
             continue
         if not isinstance(clean.get("probe_version"), int):
+            clean["probe_version"] = 0
+        # The other computer could not open that file (its permissions or a lock there): this one reads it again
+        if isinstance(clean.get("error"), str) and clean["error"].startswith(ACCESS_ERROR_PREFIX):
             clean["probe_version"] = 0
         if not isinstance(clean.get("rotation"), (int, type(None))):
             clean["rotation"] = None
