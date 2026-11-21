@@ -127,7 +127,7 @@ Only one VBLIS backend can use a data folder at a time. Pointing the server at t
 
 A small machine (an Orange Pi or another single-board computer, a NAS, a server elsewhere) can search a library that the Windows app has indexed, without indexing anything itself. The PC writes its index into one file; the other machine imports it and serves it read-only.
 
-1. **On the PC:** in **Settings**, choose **Export for another device** and pick where to save the file. It holds the index, the media details (dates, sizes, places), the list of indexed folders and, if you leave the box ticked, the thumbnails. It also holds the full paths of your files and where your photos were taken, so keep it private. With the app closed, `main.py export-index FILE` does the same.
+1. **On the PC:** in **Settings** → **Library**, choose **Export for another device** and pick where to save the file. It holds the index, the media details (dates, sizes, places), the list of indexed folders and, if you leave the box ticked, the thumbnails. It also holds the full paths of your files and where your photos were taken, so keep it private. With the app closed, `main.py export-index FILE` does the same.
 2. **Put the pictures on the other machine** with the same folders below each indexed folder: a copy (`rsync -a` keeps the file times), an external drive, or a network share.
 3. **Import, with the server stopped.** Give one `--map` for each indexed folder of the PC, from its path on the PC to where it is now (`vblis` as in [Install on Linux](#install-on-linux)):
 
