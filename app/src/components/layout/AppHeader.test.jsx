@@ -14,7 +14,7 @@ const makeQueue = () => ({
 const renderHeader = (props = {}) => render(
   <AppHeader
     models={{ active_model: 'org/model-a' }}
-    setShowSettings={vi.fn()}
+    openSettings={vi.fn()}
     queue={makeQueue()}
     uiTheme="modern"
     handleSearch={vi.fn((e) => e.preventDefault())}
@@ -30,28 +30,30 @@ describe('AppHeader', () => {
   afterEach(cleanup);
 
   it('shows the active model basename and opens settings on click', () => {
-    const setShowSettings = vi.fn();
-    renderHeader({ setShowSettings });
+    const openSettings = vi.fn();
+    renderHeader({ openSettings });
     const pill = screen.getByText('model-a');
     expect(screen.getByText('VBLIS')).toBeTruthy();
     fireEvent.click(pill);
-    expect(setShowSettings).toHaveBeenCalledWith(true);
+    expect(openSettings).toHaveBeenCalledWith('models');
   });
 
   it('shows "No Model Loaded" when no model is active and still opens settings', () => {
-    const setShowSettings = vi.fn();
-    renderHeader({ models: { active_model: '' }, setShowSettings });
+    const openSettings = vi.fn();
+    renderHeader({ models: { active_model: '' }, openSettings });
     fireEvent.click(screen.getByText('No Model Loaded'));
-    expect(setShowSettings).toHaveBeenCalledWith(true);
+    expect(openSettings).toHaveBeenCalledWith('models');
   });
 
   it('opens settings from the gear button', () => {
-    const setShowSettings = vi.fn();
-    const { container } = renderHeader({ setShowSettings });
+    const openSettings = vi.fn();
+    const { container } = renderHeader({ openSettings });
     const gear = container.querySelector('button.hover\\:rotate-45');
     expect(gear).toBeTruthy();
     fireEvent.click(gear);
-    expect(setShowSettings).toHaveBeenCalledWith(true);
+    // The gear names no group: Settings opens on the one used last.
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(openSettings).toHaveBeenCalledWith();
   });
 
   it('passes the search props through to the search bar', () => {
@@ -100,7 +102,7 @@ describe('AppHeader', () => {
       <SessionContext.Provider value={{ ...DESKTOP_SESSION, mode: 'network', account: { id: 'a1', name: 'alice' } }}>
         <AppHeader
           models={{ active_model: 'org/model-a' }}
-          setShowSettings={vi.fn()}
+          openSettings={vi.fn()}
           queue={makeQueue()}
           uiTheme="modern"
           handleSearch={vi.fn()}

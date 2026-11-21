@@ -65,7 +65,15 @@ function App() {
     setSelectedVideoPath(group ? group.path : null);
   }, []);
   const closeFolderPicker = useCallback(() => setShowFolderPicker(false), []);
-  const openSettings = useCallback(() => setShowSettings(true), []);
+  // Opens Settings, on a group when one is named (an id from settingsGroups.js); a click event or nothing opens it
+  // on the group used last. Every call makes a new request object, so the window tells a new request even for the
+  // same group.
+  const [settingsRequest, setSettingsRequest] = useState(null);
+  const openSettings = useCallback((group) => {
+    setSettingsRequest({ group: typeof group === 'string' ? group : null });
+    setShowSettings(true);
+  }, []);
+  const openSharingSettings = useCallback(() => openSettings('sharing'), [openSettings]);
   const handleSearchResultsClosed = useCallback(() => {
     setSelectedImage(null);
     setSelectedVideoPath(null);
@@ -303,7 +311,7 @@ function App() {
           setUiTheme={setUiTheme}
           sharingRunning={Boolean(status.sharing?.running)}
           sharingProblem={status.sharing?.problem ?? null}
-          onOpenSharing={openSettings}
+          onOpenSharing={openSharingSettings}
         />
       )}
 
@@ -314,6 +322,7 @@ function App() {
       <SettingsModal
         showSettings={showSettings}
         setShowSettings={setShowSettings}
+        openRequest={settingsRequest}
         uiTheme={uiTheme}
         setUiTheme={setUiTheme}
         gpuSettings={gpuSettings}
@@ -365,7 +374,7 @@ function App() {
       <FolderContentsModal showFolderContents={showFolderContents} browsingFolder={browsingFolder} folderContents={folderContents} isFetchingFolderContents={isFetchingFolderContents} isCleaningGhostRecords={isCleaningGhostRecords} setIsCleaningGhostRecords={setIsCleaningGhostRecords} folderVisibleLimit={folderVisibleLimit} setFolderVisibleLimit={setFolderVisibleLimit} handleCloseFolderContents={handleCloseFolderContents} handleReindexFolder={handleReindexFolder} setSelectedImage={setSelectedImage} setToast={setToast} uiTheme={uiTheme} />
 
       {/* Header */}
-      <AppHeader models={models} setShowSettings={setShowSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} onPickImage={handleImageDrop} theme={theme} setTheme={setTheme} setUiTheme={setUiTheme} />
+      <AppHeader models={models} openSettings={openSettings} queue={queue} uiTheme={uiTheme} handleSearch={handleSearch} isSearching={isSearching} searchInputRef={searchInputRef} query={query} setQuery={setQuery} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} hasSearchResults={results.length > 0 || hasSearched} onClearSearch={handleCloseSearchResults} onPickImage={handleImageDrop} theme={theme} setTheme={setTheme} setUiTheme={setUiTheme} />
 
       {/* A browser on plain HTTP: its password and pictures are readable on the network */}
       <HttpWarningBanner />
@@ -374,7 +383,7 @@ function App() {
       <SearchFiltersPanel filters={searchFilters} indexedFolders={indexedFolders} />
 
       {/* Global Status Bar */}
-      <IndexingStatusBar status={status} queue={queue} setToast={setToast} setShowSettings={setShowSettings} isCancellingIndexing={isCancellingIndexing} handleCancelIndexing={handleCancelIndexing} />
+      <IndexingStatusBar status={status} queue={queue} setToast={setToast} openSettings={openSettings} isCancellingIndexing={isCancellingIndexing} handleCancelIndexing={handleCancelIndexing} />
 
       {/* Indexing Errors Alert */}
       <IndexingErrorsAlert showErrorAlert={showErrorAlert} setShowErrorAlert={setShowErrorAlert} status={status} />
@@ -427,9 +436,9 @@ function App() {
 
         {(!backendReady || isSwitchingModel) && !status.is_downloading && <BackendLoading isSwitchingModel={isSwitchingModel} />}
 
-        {backendReady && !isSwitchingModel && !models.active_model && !status.is_downloading && results.length === 0 && <ModelSetupState models={models} handleModelSwitch={handleModelSwitch} setShowSettings={setShowSettings} handleDownloadModel={handleDownloadModel} pendingModel={pendingModel} />}
+        {backendReady && !isSwitchingModel && !models.active_model && !status.is_downloading && results.length === 0 && <ModelSetupState models={models} handleModelSwitch={handleModelSwitch} openSettings={openSettings} handleDownloadModel={handleDownloadModel} pendingModel={pendingModel} />}
 
-        {models.active_model && !isSearching && query.length === 0 && results.length === 0 && !isSwitchingModel && !showNoMatches && <ReadyToSearch uiTheme={uiTheme} indexedFolders={indexedFolders} models={models} setShowSettings={setShowSettings} handleUnloadModel={handleUnloadModel} isUnloadingModel={isUnloadingModel} status={status} />}
+        {models.active_model && !isSearching && query.length === 0 && results.length === 0 && !isSwitchingModel && !showNoMatches && <ReadyToSearch uiTheme={uiTheme} indexedFolders={indexedFolders} models={models} openSettings={openSettings} handleUnloadModel={handleUnloadModel} isUnloadingModel={isUnloadingModel} status={status} />}
 
         {/* In-page results grid for Modern theme */}
         <SearchResultsGrid results={results} uiTheme={uiTheme} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelRef={sentinelRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} isBrowsing={isBrowsing} browseSort={browseSort} onBrowseSortChange={setBrowseSort} browseTotal={browseTotal} showBrowseHint={showBrowseHint} onDismissBrowseHint={dismissBrowseHint} />
@@ -445,7 +454,7 @@ function App() {
           onClose={() => queue.setIsDrawerOpen(false)}
           queue={queue}
           uiTheme={uiTheme}
-          onOpenSettings={() => setShowSettings(true)}
+          onOpenSettings={openSettings}
         />
       )}
 

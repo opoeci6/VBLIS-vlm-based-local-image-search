@@ -93,7 +93,7 @@ describe('ModelSetupState', () => {
   const props = (overrides = {}) => ({
     models: { models: [] },
     handleModelSwitch: vi.fn(),
-    setShowSettings: vi.fn(),
+    openSettings: vi.fn(),
     handleDownloadModel: vi.fn(),
     pendingModel: 'google/siglip2-base-patch16-224',
     ...overrides,
@@ -110,7 +110,7 @@ describe('ModelSetupState', () => {
     expect(p.handleModelSwitch).toHaveBeenCalledWith('org/model-a');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
-    expect(p.setShowSettings).toHaveBeenCalledWith(true);
+    expect(p.openSettings).toHaveBeenCalledWith('models');
   });
 
   it('asks for a download when no model is downloaded', () => {
@@ -122,7 +122,7 @@ describe('ModelSetupState', () => {
     expect(p.handleDownloadModel).toHaveBeenCalledWith('google/siglip2-base-patch16-224');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
-    expect(p.setShowSettings).toHaveBeenCalledWith(true);
+    expect(p.openSettings).toHaveBeenCalledWith('models');
   });
 
   it('handles a missing models list and labels the OpenAI CLIP download', () => {
@@ -140,7 +140,7 @@ describe('ReadyToSearch', () => {
     uiTheme: 'modern',
     indexedFolders: [],
     models: { active_model: 'org/model-a' },
-    setShowSettings: vi.fn(),
+    openSettings: vi.fn(),
     handleUnloadModel: vi.fn(),
     isUnloadingModel: false,
     status: { is_indexing: false },
@@ -155,7 +155,7 @@ describe('ReadyToSearch', () => {
     expect(screen.queryByText('ascii-logo-stub') !== null).toBe(uiTheme === 'terminal');
 
     fireEvent.click(screen.getByText(/Active Model:/));
-    expect(p.setShowSettings).toHaveBeenCalledWith(true);
+    expect(p.openSettings).toHaveBeenCalledWith('models');
 
     fireEvent.click(screen.getByRole('button', { name: /Eject/ }));
     expect(p.handleUnloadModel).toHaveBeenCalledTimes(1);
@@ -191,7 +191,7 @@ describe('browse wording', () => {
         uiTheme={uiTheme}
         indexedFolders={[]}
         models={{ active_model: 'org/model-a' }}
-        setShowSettings={vi.fn()}
+        openSettings={vi.fn()}
         handleUnloadModel={vi.fn()}
         isUnloadingModel={false}
         status={{ is_indexing: false }}
@@ -205,7 +205,7 @@ describe('browse wording', () => {
     uiTheme,
     indexedFolders: [],
     models: { active_model: 'org/model-a' },
-    setShowSettings: vi.fn(),
+    openSettings: vi.fn(),
     handleUnloadModel: vi.fn(),
     isUnloadingModel: false,
     status: { is_indexing: false },
@@ -266,7 +266,7 @@ describe('empty states on a phone', () => {
   });
 
   it('wrap the setup buttons and give them 44 px of height', () => {
-    render(<ModelSetupState models={{ models: [] }} handleModelSwitch={vi.fn()} setShowSettings={vi.fn()} handleDownloadModel={vi.fn()} pendingModel="org/some-model" />);
+    render(<ModelSetupState models={{ models: [] }} handleModelSwitch={vi.fn()} openSettings={vi.fn()} handleDownloadModel={vi.fn()} pendingModel="org/some-model" />);
     const settings = screen.getByRole('button', { name: 'Open Settings' });
     expect(settings.parentElement.className).toContain('flex-wrap');
     expect(settings.className).toContain('min-h-[44px]');
@@ -274,7 +274,7 @@ describe('empty states on a phone', () => {
 
   it('wrap the model buttons of the ready screen and let a long model name break', () => {
     const models = { active_model: 'org/' + 'm'.repeat(80) };
-    render(<ReadyToSearch uiTheme="modern" indexedFolders={[]} models={models} setShowSettings={vi.fn()} handleUnloadModel={vi.fn()} isUnloadingModel={false} status={{}} />);
+    render(<ReadyToSearch uiTheme="modern" indexedFolders={[]} models={models} openSettings={vi.fn()} handleUnloadModel={vi.fn()} isUnloadingModel={false} status={{}} />);
     const modelButton = screen.getByText('m'.repeat(80)).closest('button');
     expect(modelButton.parentElement.className).toContain('flex-wrap');
     expect(modelButton.className).toContain('max-w-full');

@@ -3,6 +3,7 @@ import { Copy, Loader2, Plus, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FilterToggle } from '../search/filters/FilterToggle';
 import { PermissionSwitch } from './PermissionSwitch';
+import { SectionTitle } from './SectionTitle';
 import { AccountsModal } from './AccountsModal';
 import { Field, cardClass, dangerButton, errorClass, primaryButton, secondaryButton } from './serverUi';
 import { problemText, useSharing } from '../../hooks/useSharing';
@@ -76,7 +77,8 @@ function FileField({ id, label, value, onChange, chooseLabel, onChoose, disabled
 // "Share on my network" for the Windows app: the switch, the addresses to open, HTTPS, the port, the library
 // folders, the accounts and signing every browser out. The state is read once when the section opens.
 // Fields that an environment variable sets are shown but can't be changed here.
-export function SharingSection({ uiTheme, setToast }) {
+// `showTitle` is false when the page it sits on already carries the title.
+export function SharingSection({ uiTheme, setToast, showTitle = true }) {
   const { t } = useTranslation('settings');
   const { state, isLoading, loadFailed, isBusy, apply, signOutEverywhere, reload } = useSharing();
   // The last refusal: { kind: 'error' | 'warning', text }. It stays until the next action starts.
@@ -121,8 +123,8 @@ export function SharingSection({ uiTheme, setToast }) {
     reload();
   };
 
-  const title = <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">{t('sharing.title')}</h4>;
-  const wrapperClass = 'pt-4 mt-2 border-t border-gray-100 dark:border-neutral-800 space-y-4';
+  const title = showTitle ? <SectionTitle>{t('sharing.title')}</SectionTitle> : null;
+  const wrapperClass = 'space-y-4';
 
   if (!state) {
     return (

@@ -59,7 +59,40 @@
   },
   "settingsModal": {
     "title": "设置",
-    "closeTooltip": "关闭设置"
+    "closeTooltip": "关闭设置",
+    "groupsLabel": "设置分组",
+    "back": "返回全部设置",
+    "groups": {
+      "appearance": {
+        "title": "外观",
+        "description": "界面主题风格和语言"
+      },
+      "search": {
+        "title": "搜索",
+        "description": "匹配度、相似度和显示结果数"
+      },
+      "models": {
+        "title": "模型与 GPU",
+        "description": "模型、硬件加速与批处理"
+      },
+      "library": {
+        "title": "媒体库",
+        "description": "缩略图和索引",
+        "descriptionDesktop": "缩略图、导出和索引"
+      },
+      "sharing": {
+        "title": "网络共享",
+        "description": "让局域网中的浏览器打开媒体库"
+      },
+      "server": {
+        "title": "服务器",
+        "description": "地址、账户和登录"
+      },
+      "account": {
+        "title": "我的账户",
+        "description": "修改密码或退出登录"
+      }
+    }
   },
   "dangerZone": {
     "confirm": "确定吗？此操作无法撤销。",

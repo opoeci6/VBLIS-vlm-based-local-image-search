@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../i18n';
 import { cn } from '../../utils/cn';
+import { SectionTitle } from './SectionTitle';
 import { readLanguagePreference, resolveLanguage, saveLanguagePreference } from '../../utils/language';
 
 // Language names are shown in their own language and are not translated; only "Follow system" is.
@@ -22,9 +23,9 @@ export const LanguageSection = () => {
   };
 
   return (
-    <div className="pt-2">
-      <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">{t('language.title')}</label>
-      <div className="grid grid-cols-3 gap-3 mb-2">
+    <div>
+      <SectionTitle className="mb-3">{t('language.title')}</SectionTitle>
+      <div className="grid grid-cols-3 gap-3">
         {OPTIONS.map(({ value, nativeName }) => (
           <button
             key={value}

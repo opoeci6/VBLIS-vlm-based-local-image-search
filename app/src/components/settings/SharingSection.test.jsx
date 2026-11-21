@@ -83,6 +83,15 @@ describe('SharingSection', () => {
       expect(requests('GET /sharing')).toHaveLength(1);
     });
 
+    it('has no title of its own when the page it sits on carries it, while loading and after', async () => {
+      routes['GET /sharing'] = () => reply(VIEW);
+      render(<SharingSection uiTheme="modern" setToast={setToast} showTitle={false} />);
+      expect(screen.getByRole('status').textContent).toBe('Loading sharing settings...');
+      expect(screen.queryByRole('heading', { name: 'Network sharing' })).toBeNull();
+      await screen.findByRole('switch', { name: 'Share on my network' });
+      expect(screen.queryByRole('heading', { name: 'Network sharing' })).toBeNull();
+    });
+
     it('says so when the state cannot be loaded and retries', async () => {
       routes['GET /sharing'] = () => reply({ detail: 'x' }, 500);
       render(<SharingSection uiTheme="modern" setToast={setToast} />);

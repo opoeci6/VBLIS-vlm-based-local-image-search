@@ -87,7 +87,7 @@ export const BackendLoading = ({ isSwitchingModel }) => {
   );
 };
 
-export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, handleDownloadModel, pendingModel }) => {
+export const ModelSetupState = ({ models, handleModelSwitch, openSettings, handleDownloadModel, pendingModel }) => {
   const { t } = useTranslation('home');
   const { isOwner } = useSession();
   // A read-only copy can only use the model its index was made with.
@@ -131,7 +131,7 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
               {t('setup.activate', { name: downloadedModels[0].id.split('/').pop() })}
             </button>
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => openSettings('models')}
               className="min-h-[44px] px-5 py-2.5 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-xs font-semibold hover:scale-105 active:scale-95 cursor-pointer"
             >
               {t('common:openSettings')}
@@ -159,7 +159,7 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
             {t('setup.download', { name: downloadTarget === "openai/clip-vit-base-patch32" ? t('setup.openaiClip') : downloadTarget.split('/').pop() })}
           </button>
           <button
-            onClick={() => setShowSettings(true)}
+            onClick={() => openSettings('models')}
             className="min-h-[44px] px-5 py-3 bg-white dark:bg-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-gray-200 dark:border-neutral-700 rounded-xl shadow-sm transition-all text-sm font-semibold hover:scale-105 active:scale-95 cursor-pointer"
           >
             {t('common:openSettings')}
@@ -170,7 +170,7 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
   );
 };
 
-export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings, handleUnloadModel, isUnloadingModel, status }) => {
+export const ReadyToSearch = ({ uiTheme, indexedFolders, models, openSettings, handleUnloadModel, isUnloadingModel, status }) => {
   const { t, i18n } = useTranslation('home');
   const { isOwner } = useSession();
   // English has no tip (home:searchTip is ""). i18next counts an empty value as missing: t() would return
@@ -191,7 +191,7 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
           {tip && <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">{tip}</p>}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => openSettings('models')}
               className="inline-flex max-w-full min-h-[40px] sm:min-h-0 items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
             >
               <div className="model-status-dot model-status-dot-online w-2 h-2 flex-shrink-0" aria-hidden="true" />
@@ -228,7 +228,7 @@ export const ReadyToSearch = ({ uiTheme, indexedFolders, models, setShowSettings
           {tip && <p className="text-sm text-neutral-500 dark:text-neutral-500 max-w-md">{tip}</p>}
           <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => openSettings('models')}
               className="inline-flex max-w-full min-h-[40px] sm:min-h-0 items-center gap-2 px-3.5 py-1.5 bg-indigo-50/80 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200/80 dark:border-indigo-500/20 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 transition-all hover:scale-105 cursor-pointer shadow-sm"
             >
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

@@ -63,6 +63,19 @@ describe('AccountSection', () => {
     vi.unstubAllGlobals();
   });
 
+  it('has a title of its own, unless the page it sits on carries it', () => {
+    renderSection();
+    expect(screen.getByRole('heading', { name: 'Your account' })).toBeTruthy();
+    cleanup();
+    render(
+      <SessionContext.Provider value={session}>
+        <AccountSection uiTheme="modern" setToast={setToast} showTitle={false} />
+      </SessionContext.Provider>
+    );
+    expect(screen.queryByRole('heading', { name: 'Your account' })).toBeNull();
+    expect(screen.getByText('Change password')).toBeTruthy();
+  });
+
   it('shows the name and the role of the signed-in account', () => {
     renderSection();
     expect(screen.getByRole('heading', { name: 'Your account' })).toBeTruthy();

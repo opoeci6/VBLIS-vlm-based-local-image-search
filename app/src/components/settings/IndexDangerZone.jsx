@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 export const IndexDangerZone = ({ showConfirmClear, setShowConfirmClear, handleClearCache, isClearing, models }) => {
   const { t } = useTranslation('settings');
   return (
-    <div className="pt-4 mt-6 border-t border-gray-100 dark:border-neutral-800">
+    <div>
       {showConfirmClear ? (
         <div className="p-4 bg-gray-50 dark:bg-neutral-950/50 border border-rose-200 dark:border-rose-500/30 rounded-xl space-y-3 animate-in zoom-in-95 duration-200">
           <p className="text-sm font-bold text-rose-600 dark:text-rose-300">{t('dangerZone.confirm')}</p>

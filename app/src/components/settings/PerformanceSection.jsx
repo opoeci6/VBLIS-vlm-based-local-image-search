@@ -2,6 +2,7 @@ import { Loader2, Check, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SettingsSelect } from '../common/SettingsSelect';
 import { cn } from '../../utils/cn';
+import { SectionTitle } from './SectionTitle';
 
 // Why a present NVIDIA GPU isn't used: a card or driver this PyTorch build can't run (api/gpu_support.py)
 const gpuProblemText = (t, problem) => {
@@ -19,8 +20,8 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
   const gpuProblem = gpuSettings.gpu_problem || null;
   const autoPrecisionLabel = t('performance.precision.auto', { precision: gpuSettings.active_precision ? gpuSettings.active_precision.toUpperCase() : 'FP32' });
   return (
-    <div className="pt-2">
-      <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">{t('performance.title')}</label>
+    <div>
+      <SectionTitle className="mb-3">{t('performance.title')}</SectionTitle>
       <div 
         className={cn(
           "flex items-center justify-between gap-3 p-3 border rounded-xl transition-all duration-200 mb-3",

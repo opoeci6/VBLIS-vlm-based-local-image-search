@@ -198,11 +198,14 @@ describe('App on a read-only copy of an index', () => {
       await screen.findByText('Ready to Search');
       await openSettings();
 
-      expect(screen.getAllByTestId('replica-notice').length).toBe(2);
-      expect(screen.queryByText('Clear Indexed Database')).toBeNull();
+      // The model pill opens the Models group.
       expect(screen.getByText('This copy can only use its own model.')).toBeTruthy();
       expect(screen.getAllByText('model-a').length).toBeGreaterThan(0);
       expect(screen.queryByText('model-b')).toBeNull();
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
+      expect(screen.getAllByTestId('replica-notice').length).toBe(2);
+      expect(screen.queryByText('Clear Indexed Database')).toBeNull();
       // Image cache and video thumbnails are not part of the index: still there.
       expect(screen.getByText('Thumbnail Cache Management')).toBeTruthy();
     });
@@ -245,8 +248,10 @@ describe('App on a read-only copy of an index', () => {
       expect(screen.getByText('Select All')).toBeTruthy();
       expect(screen.getByTitle('Re-sync entire folder tree')).toBeTruthy();
       await openSettings();
-      expect(screen.getByText('Clear Indexed Database')).toBeTruthy();
       expect(screen.getByText('model-b')).toBeTruthy();
+      fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
+      expect(screen.getByText('Clear Indexed Database')).toBeTruthy();
+      fireEvent.click(screen.getByRole('tab', { name: 'Models and GPU' }));
       // The control for the tests above: deleting a model offers the checkbox that wipes its index too.
       fireEvent.click(screen.getAllByTitle('Delete local files')[0]);
       expect(document.querySelector('input[type="checkbox"]')).not.toBeNull();
@@ -285,6 +290,7 @@ describe('App on a read-only copy of an index', () => {
       renderDesktop();
       await screen.findByText('Ready to Search');
       await openSettings();
+      fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
       fireEvent.click(screen.getByText('Clear Indexed Database'));
       fireEvent.click(await screen.findByText('Yes, Delete'));
       expect(await screen.findByText('This library is a read-only copy; indexing happens on another computer.')).toBeTruthy();

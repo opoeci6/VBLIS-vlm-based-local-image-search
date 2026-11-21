@@ -1,13 +1,14 @@
 import { Sparkles, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
+import { SectionTitle } from './SectionTitle';
 
 export const ThemeStyleSection = ({ uiTheme, setUiTheme }) => {
   const { t } = useTranslation('settings');
   return (
-    <div className="pt-2">
-      <label className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">{t('theme.title')}</label>
-      <div className="grid grid-cols-2 gap-3 mb-2">
+    <div>
+      <SectionTitle className="mb-3">{t('theme.title')}</SectionTitle>
+      <div className="grid grid-cols-2 gap-3">
         {/* aria-pressed also gives the chosen style the terminal theme's inverted look (index.css) */}
         <button
           type="button"

@@ -81,6 +81,16 @@ describe('ServerSection', () => {
       expect(screen.queryByText('Loading server settings...')).toBeNull();
     });
 
+    it('has a title of its own, unless the page it sits on carries it', async () => {
+      render(<ServerSection uiTheme="modern" setToast={setToast} />);
+      expect(screen.getByRole('heading', { name: 'Server' })).toBeTruthy();
+      cleanup();
+      render(<ServerSection uiTheme="modern" setToast={setToast} showTitle={false} />);
+      expect(screen.queryByRole('heading', { name: 'Server' })).toBeNull();
+      await screen.findByText('Server facts');
+      expect(screen.queryByRole('heading', { name: 'Server' })).toBeNull();
+    });
+
     it('says so when the settings cannot be loaded', async () => {
       routes['GET /server/settings'] = () => reply({ detail: 'x' }, 500);
       render(<ServerSection uiTheme="modern" setToast={setToast} />);
