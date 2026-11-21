@@ -151,6 +151,8 @@ def retry_queue_task(task_id: str, auth: Auth = Depends(current_auth)):
         found = app_state.task_queue.history_task(task_id)
         if found is None:
             raise HTTPException(status_code=404, detail="Historical task not found.")
+        if found[0] == TaskType.EXPORT_INDEX:  # writes a file on the desktop: the desktop app only
+            raise HTTPException(status_code=403, detail="This task can't be queued from the network.")
         for folder in payload_folders(found[1]):
             check_index_target(auth, folder)
     new_task = app_state.task_queue.retry_task(task_id)

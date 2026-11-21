@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '../../../utils/cn';
 import { formatNumber } from '../../../utils/formatters';
 import { useSession } from '../../../session/sessionContext';
+import { useReplica } from '../../../session/replicaContext';
 import { useBackToClose } from '../../../hooks/useBackToClose';
 import { useEscapeKey } from '../../../hooks/useEscapeKey';
 import {
@@ -117,6 +118,8 @@ function Coverage({ options, optionsLoading, optionsError, loadOptions, detailsF
 export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
   const { t } = useTranslation('filters');
   const { may } = useSession();
+  // Reading the missing media details is a change to the index, which a read-only copy refuses.
+  const { readOnly } = useReplica();
   const panelRef = useRef(null);
   const { isOpen, close } = filters;
 
@@ -337,7 +340,7 @@ export const SearchFiltersPanel = ({ filters, indexedFolders }) => {
         data-filters-footer="true"
         className="sticky bottom-0 z-10 -mx-5 mt-3 flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] dark:border-neutral-800 dark:bg-neutral-900 sm:static sm:z-auto sm:mx-0 sm:border-t-0 sm:p-0"
       >
-        {options?.registry_available !== false && (
+        {options?.registry_available !== false && !readOnly && (
           <button
             type="button"
             onClick={readDetailsNow}

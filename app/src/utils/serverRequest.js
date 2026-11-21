@@ -1,8 +1,10 @@
 import { API_BASE } from '../config';
 import { apiFetch } from './api';
+import { isReadOnlyRefusal, readOnlyMessage } from './replica';
 import i18n from '../i18n';
 
-// A sentence for a refused request: a wait for a 429, else translated by the server's error `code`,
+// A sentence for a refused request: a wait for a 429, the read-only sentence when the library is a read-only copy
+// (code read_only), else translated by the server's error `code`,
 // else the server's English `detail`, else a generic line with the status.
 const failureMessage = (res, body) => {
   if (res.status === 429) {
@@ -11,6 +13,7 @@ const failureMessage = (res, body) => {
       ? i18n.t('session:server.errors.tooManyAttempts', { count: seconds })
       : i18n.t('session:server.errors.tooManyAttemptsNoWait');
   }
+  if (isReadOnlyRefusal(body)) return readOnlyMessage();
   const key = `session:server.errors.codes.${body?.code}`;
   if (body?.code && i18n.exists(key)) return i18n.t(key);
   if (typeof body?.detail === 'string' && body.detail) return body.detail;

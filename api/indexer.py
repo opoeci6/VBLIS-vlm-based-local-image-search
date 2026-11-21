@@ -9,12 +9,14 @@ import collections
 import itertools
 import queue
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from model_manager import ModelManager
 import pathlib
 import paths
 import path_keys
 import media_sync
+import replica
 import security
 from media_image import (
     IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, embed_version_is_current, embedding_is_outdated,
@@ -391,6 +393,10 @@ class _EmbedQueue:
         self.jobs.clear()
         self.pending_by_hash.clear()
 
+# Seconds between rebuilds of the stored-hash map after the collection changed (Indexer.content_hash)
+STORED_HASH_REFRESH_S = 30.0
+
+
 class Indexer:
     def __init__(self, model_manager: ModelManager, db_path=None, data_dir=None, cache_dir=None):
         if db_path is None:
@@ -420,6 +426,9 @@ class Indexer:
         self._probed_video_rotations = {}
         # video source key -> path, learned from metadata reads (a pure function of the path, so never stale)
         self._video_paths_by_sha = {}
+        # ((collection name, version), {normcased path: (hash, size, mtime_ns)}, built at) of the image records
+        self._stored_hashes = None
+        self._stored_hashes_lock = threading.Lock()
         
         # Connect to the collection matching the loaded VLM
         if self.model_manager.current_model_id:
@@ -687,6 +696,56 @@ class Indexer:
                 except Exception as frame_error:
                     self._record_failed_frame(metadata["path"], metadata["timestamp_seconds"], record_id, frame_error)
         return stored_count
+
+    def content_hash(self, path) -> str:
+        """The sha256 of an image file's bytes, the key of its thumbnail and screen-sized copy in the cache.
+        The index stored it with the file's size and modified time; while both still match the file, that
+        hash is used and the file is not read (every thumbnail of a large photo, on a slow disk or a network
+        share). A file changed since, or not in the index, is read as before."""
+        try:
+            stat = os.stat(path)
+        except OSError:
+            return compute_file_hash(path)
+        entry = self._stored_hash_map().get(os.path.normcase(os.path.abspath(path)))
+        if entry is not None and entry[1] == stat.st_size and entry[2] == stat.st_mtime_ns:
+            return entry[0]
+        return compute_file_hash(path)
+
+    def _stored_hash_map(self) -> dict:
+        """{normcased path: (hash, size, mtime_ns)} of the active collection's image records, from the cached
+        metadata scan. Every entry is checked against the file's size and mtime when used, so an older map is
+        still safe: after the collection changed it is rebuilt at most every STORED_HASH_REFRESH_S seconds and
+        never while indexing (each batch changes the collection), by one thread at a time; the others keep the
+        map they have, and a file it doesn't know is read."""
+        collection = self.collection
+        if collection is None:
+            return {}
+        key = (collection.name, getattr(collection, "version", None))
+        cached = self._stored_hashes
+        same_collection = cached is not None and cached[0][0] == key[0]
+        if same_collection:
+            if key[1] is not None and cached[0] == key:
+                return cached[1]
+            if self.is_indexing or time.monotonic() - cached[2] < STORED_HASH_REFRESH_S:
+                return cached[1]
+        if not self._stored_hashes_lock.acquire(blocking=False):
+            return cached[1] if same_collection else {}
+        try:
+            mapping = {}
+            try:
+                scan = collection.get(include=["metadatas"])
+            except Exception:
+                return cached[1] if same_collection else mapping
+            for meta in scan.get("metadatas") or []:
+                if not meta or meta.get("media_type", "image") != "image":
+                    continue
+                file_hash, path, size, mtime_ns = meta.get("hash"), meta.get("path"), meta.get("size"), meta.get("mtime_ns")
+                if isinstance(file_hash, str) and isinstance(path, str) and isinstance(size, int) and isinstance(mtime_ns, int):
+                    mapping[os.path.normcase(os.path.abspath(path))] = (file_hash, size, mtime_ns)
+            self._stored_hashes = (key, mapping, time.monotonic())
+            return mapping
+        finally:
+            self._stored_hashes_lock.release()
 
     def video_rotation(self, path, stat=None) -> int:
         """Display rotation (PyAV degrees) of a video. The video signature and the thumbnail cache key need it
@@ -1751,7 +1810,10 @@ class Indexer:
 
     def _search_collection(self):
         if not self.collection:
-            self.switch_collection(self.model_manager.get_collection_name())
+            name = self.model_manager.get_collection_name()
+            if name == "default_collection" and replica.is_read_only():
+                name = (replica.marker() or {}).get("collection") or name
+            self.switch_collection(name)
         return self.collection
 
     @staticmethod

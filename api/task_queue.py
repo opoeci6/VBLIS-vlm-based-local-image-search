@@ -9,6 +9,8 @@ from typing import Optional, List, Dict, Any
 import paths
 import path_keys
 import cache_store
+import index_export
+import replica
 
 
 class TaskType(str, Enum):
@@ -19,6 +21,7 @@ class TaskType(str, Enum):
     PRUNE_DELETED = "PRUNE_DELETED"
     CLEAR_CACHE = "CLEAR_CACHE"
     SCAN_MEDIA_INFO = "SCAN_MEDIA_INFO"
+    EXPORT_INDEX = "EXPORT_INDEX"
 
 
 # Task types that need an AI model loaded before they can run
@@ -109,6 +112,8 @@ class Task:
             return f"Clear {target.capitalize()} Cache"
         elif task_type == TaskType.SCAN_MEDIA_INFO:
             return "Read media details"
+        elif task_type == TaskType.EXPORT_INDEX:
+            return "Export index"
         return str(task_type.value)
 
     def is_paused(self) -> bool:
@@ -396,6 +401,16 @@ class TaskQueueManager:
                         if not interrupted_task and idx == 0:
                             interrupted_task = task
 
+                if replica.is_read_only():
+                    # A read-only copy never indexes: tasks saved before the folder became one are dropped
+                    blocked = [t for t in self.pending_queue + ([interrupted_task] if interrupted_task else [])
+                               if t.type.value in replica.BLOCKED_TASK_TYPES]
+                    if blocked:
+                        self.pending_queue = [t for t in self.pending_queue if t not in blocked]
+                        if interrupted_task in blocked:
+                            interrupted_task = None
+                        print(f"[TaskQueue] Dropped {len(blocked)} indexing task(s): this library is a read-only copy.")
+
                 if interrupted_task:
                     # Place interrupted task as #1 in the queue (index 0)
                     existing_ids = [t.id for t in self.pending_queue]
@@ -428,6 +443,7 @@ class TaskQueueManager:
         priority: str = "bottom",
         model_id: Optional[str] = None
     ) -> Task:
+        replica.check_task_type(task_type)
         assigned_model = (model_id or self._get_active_model_id()) if task_type in MODEL_DEPENDENT_TASK_TYPES else None
         task = Task(task_type=task_type, payload=payload, title=title, model_id=assigned_model)
         with self.lock:
@@ -652,6 +668,7 @@ class TaskQueueManager:
                     break
             if not target:
                 return None
+            replica.check_task_type(target.type)
 
             new_task = Task(
                 task_type=target.type,
@@ -769,6 +786,8 @@ class TaskQueueManager:
                 self.indexer.regenerate_video_thumbnails(task_context=task)
             elif task.type == TaskType.SCAN_MEDIA_INFO:
                 self.indexer.scan_media_info(task_context=task)
+            elif task.type == TaskType.EXPORT_INDEX:
+                index_export.run_export_task(self.indexer, task)
             elif task.type == TaskType.CLEAR_CACHE:
                 target = task.payload.get("target", "all")
                 cache_store.safe_clear_cache(target=target)

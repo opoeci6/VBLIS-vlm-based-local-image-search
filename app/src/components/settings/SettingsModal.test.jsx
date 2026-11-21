@@ -266,6 +266,15 @@ describe('SettingsModal', () => {
     expect(screen.getByText('Loading sharing settings...')).toBeTruthy();
   });
 
+  it('puts the Export section of the desktop owner right after the thumbnail cache', () => {
+    render(<SettingsModal {...makeProps()} />);
+    const exportHeading = screen.getByRole('heading', { name: 'Export for another device' });
+    const thumbnails = screen.getByText('Thumbnail Cache Management');
+    const sharing = screen.getByRole('heading', { name: 'Network sharing' });
+    expect(thumbnails.compareDocumentPosition(exportHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(exportHeading.compareDocumentPosition(sharing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('passes props through to the sections', () => {
     const props = makeProps();
     render(<SettingsModal {...props} />);
@@ -323,6 +332,14 @@ describe('SettingsModal', () => {
     it('shows no account section in the desktop app', () => {
       render(<SettingsModal {...makeProps()} />);
       expect(screen.queryByRole('heading', { name: 'Your account' })).toBeNull();
+    });
+
+    it('shows no export section to a network owner or viewer', () => {
+      renderAs(networkSession('owner'));
+      expect(screen.queryByRole('heading', { name: 'Export for another device' })).toBeNull();
+      cleanup();
+      renderAs(networkSession('viewer'));
+      expect(screen.queryByRole('heading', { name: 'Export for another device' })).toBeNull();
     });
 
     it('shows no sharing section to a network owner or viewer', () => {

@@ -37,6 +37,8 @@ import { FolderPickerModal } from './components/folders/FolderPickerModal';
 import { HttpWarningBanner } from './components/status/HttpWarningBanner';
 import { apiFetch } from './utils/api';
 import { useSession } from './session/sessionContext';
+import { ReplicaContext, useReplicaInfo } from './session/replicaContext';
+import { isReadOnlyRefusal, readOnlyMessage, readRefusalBody } from './utils/replica';
 
 function App() {
   const { mode, isOwner } = useSession();
@@ -53,6 +55,11 @@ function App() {
   const { theme, setTheme, uiTheme, setUiTheme } = useThemePreferences();
   const { toast, setToast } = useToast();
   const queue = useTaskQueue(API_BASE, setToast);
+  const { status, setStatus, showErrorAlert, setShowErrorAlert, isCancellingIndexing, handleCancelIndexing } = useBackendStatus({ setToast });
+  // Whether the library is a read-only copy of an index made on another computer (and what is known about it):
+  // derived once here, handed to the hooks below and, through the context, to the components that hide actions.
+  const replicaInfo = useReplicaInfo(status);
+  const { readOnly, replica } = replicaInfo;
   // Stable so the memoized results modal does not re-render on unrelated App commits.
   const setSelectedVideoGroup = useCallback((group) => {
     setSelectedVideoPath(group ? group.path : null);
@@ -69,7 +76,8 @@ function App() {
   const searchFilters = useSearchFilters({
     setToast,
     activeTaskId: queue.activeTask?.id ?? null,
-    scanActive: mediaInfoScanActive
+    scanActive: mediaInfoScanActive,
+    readOnly
   });
   const {
     chips: filterChips,
@@ -141,7 +149,6 @@ function App() {
     () => (selectedVideoGroup ? selectedVideoGroup.frames : imageResults),
     [selectedVideoGroup, imageResults]
   );
-  const { status, setStatus, showErrorAlert, setShowErrorAlert, isCancellingIndexing, handleCancelIndexing } = useBackendStatus({ setToast });
   const {
     modelLoadError,
     setModelLoadError,
@@ -173,6 +180,7 @@ function App() {
     setStatus,
     queue,
     setToast,
+    replicaModelId: replica?.model_id ?? null,
     onSwitchStart: () => {
       setShowSettings(false);
       resetSearch();
@@ -182,7 +190,8 @@ function App() {
     enabled: Boolean(models.active_model),
     setToast,
     onFolders: queue.enqueueFolderIndexing,
-    onImage: handleImageDrop
+    onImage: handleImageDrop,
+    readOnly
   });
   const {
     indexedFolders,
@@ -202,7 +211,8 @@ function App() {
     lastTaskId: status.last_task_id,
     isExpanded: isFoldersExpanded,
     setToast,
-    onIndexChanged: refreshSearch
+    onIndexChanged: refreshSearch,
+    readOnly
   });
   const {
     showFolderContents,
@@ -234,6 +244,8 @@ function App() {
   const showNoMatches = results.length === 0 && !isSearching && hasSearched && Boolean(models.active_model) && !isSwitchingModel && (query.length > 0 || Boolean(imageSearchContext) || isBrowsing);
 
   const handleOpenFolder = async () => {
+    // Folders are indexed on the computer the copy came from.
+    if (readOnly) return;
     if (!window.electronAPI) {
       if (mode === 'network' && isOwner) setShowFolderPicker(true);
       return;
@@ -245,13 +257,18 @@ function App() {
   };
 
   const handleClearCache = async () => {
-    if (!models.active_model) return;
+    if (!models.active_model || readOnly) return;
 
     setIsClearing(true);
     try {
-      await apiFetch(`${API_BASE}/index/clear`, {
+      const res = await apiFetch(`${API_BASE}/index/clear`, {
         method: 'POST'
       });
+      // An old tab or a race: the backend refused, so nothing was cleared.
+      if (res?.status === 409 && isReadOnlyRefusal(await readRefusalBody(res))) {
+        setToast({ message: readOnlyMessage(), type: 'error' });
+        return;
+      }
       // Reset UI cleanly
       resetSearch();
       setSelectedImage(null);
@@ -265,7 +282,7 @@ function App() {
     }
   };
 
-  return (
+  const content = (
     <div
       className={cn(
         "isolate h-dvh w-full overflow-y-auto overflow-x-hidden font-sans flex flex-col items-center relative px-safe custom-scrollbar",
@@ -340,7 +357,7 @@ function App() {
         setToast={setToast}
       />
 
-      {showFolderPicker && (
+      {showFolderPicker && !readOnly && (
         <FolderPickerModal uiTheme={uiTheme} onClose={closeFolderPicker} onConfirm={queue.enqueueFolderIndexing} />
       )}
 
@@ -458,6 +475,9 @@ function App() {
       />
     </div>
   );
+
+  // The components below read whether the library is a read-only copy from here (useReplica)
+  return <ReplicaContext.Provider value={replicaInfo}>{content}</ReplicaContext.Provider>;
 }
 
 export default App;

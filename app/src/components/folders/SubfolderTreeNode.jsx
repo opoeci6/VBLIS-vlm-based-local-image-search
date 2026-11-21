@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from '../../session/sessionContext';
+import { useReplica } from '../../session/replicaContext';
 
 /**
  * Recursive Subfolder Tree Node Component
@@ -32,6 +33,9 @@ export const SubfolderTreeNode = ({
   const { t } = useTranslation('folders');
   // A viewer browses the folders but cannot select, re-sync or remove them.
   const { isOwner } = useSession();
+  // A read-only copy can't be re-synced or changed, so selecting folders for those actions has no use either.
+  const { readOnly } = useReplica();
+  const canManage = isOwner && !readOnly;
   const isModern = uiTheme === 'modern';
   const hasChildren = node.children && node.children.length > 0;
   const isExpanded = !!expandedNodes[node.path];
@@ -93,7 +97,7 @@ export const SubfolderTreeNode = ({
         {/* Left: Checkbox + Expand Button + Folder Icon + Title */}
         <div className="flex items-center gap-0.5 sm:gap-2 min-w-0 flex-1">
           {/* Subfolder Checkbox */}
-          {isOwner && (
+          {canManage && (
             <button
               type="button"
               onClick={(e) => {
@@ -267,7 +271,7 @@ export const SubfolderTreeNode = ({
           </button>
 
           {/* Re-sync: Kept enabled so user can re-sync when drive is reconnected */}
-          {isOwner && (
+          {canManage && (
             <button
               type="button"
               onClick={(e) => {
@@ -283,7 +287,7 @@ export const SubfolderTreeNode = ({
             </button>
           )}
 
-          {isOwner && (
+          {canManage && (
             <button
               type="button"
               onClick={(e) => {

@@ -9,8 +9,11 @@ import { IndexDangerZone } from './IndexDangerZone';
 import { ThumbnailCacheSection } from './ThumbnailCacheSection';
 import { ServerSection } from './ServerSection';
 import { SharingSection } from './SharingSection';
+import { ExportSection } from './ExportSection';
 import { AccountSection } from './AccountSection';
+import { ReplicaNotice } from '../status/ReplicaNotice';
 import { useSession } from '../../session/sessionContext';
+import { useReplica } from '../../session/replicaContext';
 import { useBackToClose } from '../../hooks/useBackToClose';
 import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
@@ -19,6 +22,8 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
   const { t } = useTranslation('settings');
   // A viewer only gets the sections that are about their own browser: theme, language and search tuning.
   const { isOwner, mode } = useSession();
+  // On a read-only copy of an index made elsewhere the index can't be cleared.
+  const { readOnly } = useReplica();
   const close = () => setShowSettings(false);
   // Esc first cancels an open inline confirmation (clear index, delete a model, clear thumbnails), then closes.
   const cancelOpenConfirmation = () => {
@@ -108,7 +113,7 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
                 resetSearchTuning={resetSearchTuning}
               />
 
-              {isOwner && (
+              {isOwner && !readOnly && (
                 <IndexDangerZone
                   showConfirmClear={showConfirmClear}
                   setShowConfirmClear={setShowConfirmClear}
@@ -130,6 +135,10 @@ export const SettingsModal = ({ showSettings, setShowSettings, uiTheme, setUiThe
                   isTriggeringRebuildThumbnails={isTriggeringRebuildThumbnails}
                 />
               )}
+              {/* The library is a read-only copy: says where from. A copy can still be exported on. */}
+              <ReplicaNotice />
+              {/* Copying the index to another device: the Windows app's owner only */}
+              {mode === 'desktop' && isOwner && <ExportSection uiTheme={uiTheme} setToast={setToast} />}
               {/* Who is signed in from a browser: any role changes its own password here */}
               {mode === 'network' && <AccountSection uiTheme={uiTheme} setToast={setToast} />}
               {/* Sharing from the Windows app: the desktop's only owner turns it on and manages its accounts here */}

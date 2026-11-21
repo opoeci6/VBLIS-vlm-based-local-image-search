@@ -1,12 +1,15 @@
 import { Image as ImageIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSession } from '../../session/sessionContext';
+import { useReplica } from '../../session/replicaContext';
 
 export const DragOverlay = ({ activeTask, pendingCount }) => {
   const { t } = useTranslation('settings');
-  // A browser can drop an image to search with, but a dropped folder has no path to index.
+  // A browser can drop an image to search with, but a dropped folder has no path to index; a read-only copy
+  // takes no folders either.
   const { mode } = useSession();
-  const imageOnly = mode === 'network';
+  const { readOnly } = useReplica();
+  const imageOnly = mode === 'network' || readOnly;
   return (
     <div className="app-overlay fixed inset-0 z-[100] bg-indigo-600/20 backdrop-blur-sm flex items-center justify-center p-8 pointer-events-none animate-in fade-in duration-200">
       <div className="w-full max-w-2xl h-64 border-2 border-dashed border-indigo-400 rounded-3xl bg-neutral-900/80 flex flex-col items-center justify-center gap-4 shadow-2xl scale-110">

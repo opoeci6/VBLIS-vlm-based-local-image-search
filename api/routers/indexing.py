@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 import app_state
 from auth_context import Auth, current_auth
+from replica import require_writable, summary as replica_summary
 from task_queue import TaskType
 from routers.guards import check_index_target, require_indexed_path
 
@@ -21,7 +22,7 @@ class FolderDeleteRequest(BaseModel):
 class BatchFolderRequest(BaseModel):
     folder_paths: list[str]
 
-@router.post("/index/clear")
+@router.post("/index/clear", dependencies=[Depends(require_writable)])
 def clear_index():
     try:
         app_state.indexer.clear_collection()
@@ -58,7 +59,7 @@ def get_indexed_folder_contents(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/index/folder/delete")
+@router.post("/index/folder/delete", dependencies=[Depends(require_writable)])
 def delete_folder_index(req: FolderDeleteRequest):
     try:
         count = app_state.indexer.delete_folder_index(req.folder_path)
@@ -67,7 +68,7 @@ def delete_folder_index(req: FolderDeleteRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/index/folder/reindex")
+@router.post("/index/folder/reindex", dependencies=[Depends(require_writable)])
 def reindex_folder(req: FolderDeleteRequest, auth: Auth = Depends(current_auth)):
     folder_path = check_index_target(auth, req.folder_path)
     if not os.path.isdir(folder_path):
@@ -80,7 +81,7 @@ def reindex_folder(req: FolderDeleteRequest, auth: Auth = Depends(current_auth))
     )
     return {"status": "queued", "task_id": t.id, "target": folder_path}
 
-@router.post("/index/folders/batch-delete")
+@router.post("/index/folders/batch-delete", dependencies=[Depends(require_writable)])
 def batch_delete_folders(req: BatchFolderRequest):
     try:
         count = app_state.indexer.batch_delete_folders(req.folder_paths)
@@ -89,7 +90,7 @@ def batch_delete_folders(req: BatchFolderRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/index/folders/batch-reindex")
+@router.post("/index/folders/batch-reindex", dependencies=[Depends(require_writable)])
 def batch_reindex_folders(req: BatchFolderRequest, auth: Auth = Depends(current_auth)):
     canonical = [check_index_target(auth, p) for p in req.folder_paths]
     valid_dirs = [d for d in canonical if os.path.isdir(d)]
@@ -105,7 +106,7 @@ def batch_reindex_folders(req: BatchFolderRequest, auth: Auth = Depends(current_
         enqueued.append(t.to_dict())
     return {"status": "queued", "tasks": enqueued, "message": f"Enqueued {len(enqueued)} folder(s) for re-indexing."}
 
-@router.post("/index/media-info/scan")
+@router.post("/index/media-info/scan", dependencies=[Depends(require_writable)])
 def scan_media_info():
     task, created = app_state.task_queue.enqueue_unique(TaskType.SCAN_MEDIA_INFO, {}, "Read media details")
     return {"status": "queued" if created else "duplicate", "task_id": task.id}
@@ -120,6 +121,8 @@ def get_status(auth: Auth = Depends(current_auth)):
     status["queue_worker_state"] = queue_snap["worker_state"]
     status["has_active_task"] = active_task is not None
     status["active_task"] = active_task
+    # A read-only copy of another machine's index (owners: the interface hides indexing)
+    status["replica"] = replica_summary()
     is_paused = (
         queue_snap["worker_state"] == "paused"
         or (active_task is not None and (active_task.get("is_paused") or active_task.get("status") == "paused"))

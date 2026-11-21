@@ -4,9 +4,11 @@ import { keepIfEqual } from '../utils/jsonEqual';
 import { getAllSelectablePaths, toggleFolderSelection as toggleFolderSelectionPure } from '../utils/folderSelection';
 import { apiFetch } from '../utils/api';
 import { useSession } from '../session/sessionContext';
+import { isReadOnlyRefusal, readOnlyMessage, readRefusalBody, refusalText } from '../utils/replica';
 import i18n from '../i18n';
 
-export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToast, onIndexChanged }) => {
+// `readOnly`: the library is a read-only copy of an index made elsewhere, so re-syncing and removing folders is never sent.
+export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToast, onIndexChanged, readOnly = false }) => {
   const { isOwner } = useSession();
   const [indexedFolders, setIndexedFolders] = useState([]);
   const [isFetchingFolders, setIsFetchingFolders] = useState(false);
@@ -28,7 +30,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
   }, [activeModel]);
 
   const handleReindexFolder = useCallback(async (folder_path) => {
-    if (!isOwner) return;
+    if (!isOwner || readOnly) return;
     try {
       const res = await apiFetch(`${API_BASE}/index/folder/reindex`, {
         method: 'POST',
@@ -39,6 +41,10 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
         setToast({ message: i18n.t('messages:indexedFolders.reindexStarted'), type: 'success' });
       } else {
         const error = await res.json().catch(() => ({ detail: res.statusText }));
+        if (isReadOnlyRefusal(error)) {
+          setToast({ message: readOnlyMessage(), type: 'error' });
+          return;
+        }
         // The backend's detail is English text; a detail that is not a string (a validation error) never matches.
         const detail = typeof error?.detail === 'string' ? error.detail.toLowerCase() : '';
         const isMissing = detail.includes('invalid directory') || detail.includes('not exist');
@@ -55,10 +61,10 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
       setToast({ message: i18n.t('messages:indexedFolders.reindexConnectFailed'), type: 'error' });
       fetchIndexedFolders(true);
     }
-  }, [setToast, fetchIndexedFolders, isOwner]);
+  }, [setToast, fetchIndexedFolders, isOwner, readOnly]);
 
   const handleDeleteFolderIndex = async (folder_path) => {
-    if (!isOwner) return;
+    if (!isOwner || readOnly) return;
     try {
       const res = await apiFetch(`${API_BASE}/index/folder/delete`, {
         method: 'POST',
@@ -73,7 +79,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
         onIndexChanged?.();
       } else {
         const error = await res.json();
-        setToast({ message: i18n.t('messages:indexedFolders.error', { detail: error.detail }), type: 'error' });
+        setToast({ message: refusalText(error, i18n.t('messages:indexedFolders.error', { detail: error.detail })), type: 'error' });
       }
     } catch (err) {
       console.error(err);
@@ -82,7 +88,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
   };
 
   const handleBatchDelete = async () => {
-    if (!isOwner || selectedFolders.length === 0) return;
+    if (!isOwner || readOnly || selectedFolders.length === 0) return;
     setIsBatchProcessing(true);
     try {
       const res = await apiFetch(`${API_BASE}/index/folders/batch-delete`, {
@@ -96,6 +102,8 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
         fetchIndexedFolders();
         // Reset results as they might be stale
         onIndexChanged?.();
+      } else if (isReadOnlyRefusal(await readRefusalBody(res))) {
+        setToast({ message: readOnlyMessage(), type: 'error' });
       }
     } catch (err) {
       console.error(err);
@@ -106,7 +114,7 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
   };
 
   const handleBatchReindex = async () => {
-    if (!isOwner || selectedFolders.length === 0) return;
+    if (!isOwner || readOnly || selectedFolders.length === 0) return;
     setIsBatchProcessing(true);
     try {
       const res = await apiFetch(`${API_BASE}/index/folders/batch-reindex`, {
@@ -117,6 +125,8 @@ export const useIndexedFolders = ({ activeModel, lastTaskId, isExpanded, setToas
       if (res.ok) {
         setToast({ message: i18n.t('messages:indexedFolders.batchReindexStarted', { count: selectedFolders.length }), type: 'success' });
         setSelectedFolders([]);
+      } else if (isReadOnlyRefusal(await readRefusalBody(res))) {
+        setToast({ message: readOnlyMessage(), type: 'error' });
       }
     } catch (err) {
       console.error(err);

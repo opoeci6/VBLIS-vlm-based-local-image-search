@@ -31,6 +31,7 @@ describe('ActiveTaskCard type icon', () => {
   it.each([
     ['INDEX_FOLDERS', 'lucide-folder', 'text-indigo-500'],
     ['REBUILD_VIDEO_THUMBNAILS', 'lucide-video', 'text-cyan-500'],
+    ['EXPORT_INDEX', 'lucide-file-down', 'text-amber-500'],
     ['SOMETHING_ELSE', 'lucide-refresh-cw', 'text-emerald-500'],
   ])('keeps the icon for %s', (type, iconClass, colour) => {
     const { container } = renderCard(makeTask(type));

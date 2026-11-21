@@ -2,12 +2,15 @@ import { Loader2, CheckCircle2, Trash2, AlertTriangle, RefreshCw, LogOut } from 
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../utils/cn';
 import { formatBytes } from '../../utils/formatters';
+import { useReplica } from '../../session/replicaContext';
 
 // The card of this model carries a hint about the query language.
 const CLIP_MODEL_ID = 'openai/clip-vit-base-patch32';
 
 export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnloadModel, isUnloadingModel, handleModelSwitch, isSwitchingModel, setPendingModel, handleDownloadModel, handleCancelDownload, showConfirmDeleteModel, setShowConfirmDeleteModel, deleteIndexWithModel, setDeleteIndexWithModel, handleDeleteModel, isDeletingModel }) => {
   const { t } = useTranslation('settings');
+  // A read-only copy has no index of its own to wipe along with the model.
+  const { readOnly } = useReplica();
   const isActive = models.active_model === m.id;
   const isDownloading = status.is_downloading && pendingModel === m.id;
 
@@ -174,7 +177,7 @@ export const ModelCard = ({ m, models, status, pendingModel, uiTheme, handleUnlo
               {showConfirmDeleteModel === m.id ? (
                 <div className="flex flex-col items-end gap-1 animate-in slide-in-from-right-2 duration-200">
                   {/* Only show "Wipe Index" checkbox for fully downloaded models that could have been used */}
-                  {m.downloaded && (
+                  {m.downloaded && !readOnly && (
                     <label className="flex items-center gap-1.5 cursor-pointer group/check mb-1 max-sm:min-h-10">
                       <input
                         type="checkbox"

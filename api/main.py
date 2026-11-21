@@ -9,6 +9,9 @@ if __name__ == "__main__":
     _args = cli.parse(sys.argv[1:])
     if _args.light:
         sys.exit(cli.run_light(_args))
+    # The index commands open the index themselves, so they too run before the backend is imported
+    if _args.index:
+        sys.exit(cli.run_index_command(_args))
 
 from contextlib import asynccontextmanager
 
@@ -17,11 +20,12 @@ from fastapi import FastAPI
 # Importing app_state runs bootstrap (env, HF_HOME, data migration) before anything loads transformers
 import app_state
 import paths
+import replica
 import security
 import win_asyncio
 from bootstrap import API_TOKEN
 from network_listener import NetworkListener
-from routers import indexing, media, models, queue, search, settings, sharing
+from routers import export, indexing, media, models, queue, search, settings, sharing
 
 # Windows: a browser resetting a connection (a video player does, while it buffers or seeks) no longer
 # prints a traceback and leaves the socket open
@@ -53,8 +57,10 @@ app = FastAPI(title="Local Image Search API", lifespan=desktop_lifespan)
 
 # Only clients holding the token (the Electron app passes it via env) may call the API
 security.install(app, API_TOKEN)
+# A read-only copy of another machine's index answers writes to it with 409
+replica.install(app)
 
-for _module in (settings, search, indexing, queue, models, media, sharing):
+for _module in (settings, search, indexing, queue, models, media, sharing, export):
     app.include_router(_module.router)
 
 if __name__ == "__main__":

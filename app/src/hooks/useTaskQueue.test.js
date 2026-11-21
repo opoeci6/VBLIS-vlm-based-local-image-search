@@ -172,6 +172,39 @@ describe('useTaskQueue', () => {
     });
   });
 
+  describe('on a read-only copy', () => {
+    const refuseWithReadOnly = (path) => {
+      const original = fetchMock.getMockImplementation();
+      fetchMock.mockImplementation(async (url, init) => (
+        url === `${API}${path}`
+          ? { ok: false, status: 409, statusText: 'Conflict', json: async () => ({ detail: 'Read-only copy.', code: 'read_only' }) }
+          : original(url, init)
+      ));
+    };
+
+    it('says so when the backend refuses to queue folders', async () => {
+      refuseWithReadOnly('/queue/enqueue');
+      const { result } = renderHook(() => useTaskQueue(API, setToast));
+      await flush();
+      await act(async () => { await result.current.enqueueFolderIndexing(['/a']); });
+      expect(setToast).toHaveBeenCalledWith({
+        message: 'This library is a read-only copy; indexing happens on another computer.',
+        type: 'error',
+      });
+    });
+
+    it('says so when the backend refuses to retry a task', async () => {
+      refuseWithReadOnly('/queue/old/retry');
+      const { result } = renderHook(() => useTaskQueue(API, setToast));
+      await flush();
+      await act(async () => { await result.current.retryTask('old'); });
+      expect(setToast).toHaveBeenCalledWith({
+        message: 'This library is a read-only copy; indexing happens on another computer.',
+        type: 'error',
+      });
+    });
+  });
+
   describe('completion toast', () => {
     it('toasts once when the active task moves to history as completed', async () => {
       renderHook(() => useTaskQueue(API, setToast));

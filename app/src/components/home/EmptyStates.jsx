@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AsciiLogo } from '../common/AsciiLogo';
 import { formatNumber } from '../../utils/formatters';
 import { useSession } from '../../session/sessionContext';
+import { useReplica } from '../../session/replicaContext';
 
 // `missingDetails`: files without media details that the active date/orientation/resolution filters
 // skip (0 when none of those filters is active); the hint offers to read them.
@@ -11,6 +12,7 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
   const { t } = useTranslation('home');
   // Reading the missing details starts a background scan, which only the owner can do.
   const { isOwner } = useSession();
+  const { readOnly } = useReplica();
   if (filtersActive) {
     return (
       <div className="flex flex-col items-center justify-center mt-16 sm:mt-32 gap-3 text-center">
@@ -21,7 +23,7 @@ export const NoMatches = ({ filtersActive = false, onClearFilters, missingDetail
         <p className="text-sm text-neutral-500 dark:text-neutral-500 font-medium">
           {browsing ? t('noMatches.filtered.browsingHint') : t('noMatches.filtered.searchHint')}
         </p>
-        {isOwner && missingDetails > 0 && (
+        {isOwner && !readOnly && missingDetails > 0 && (
           <div className="flex flex-col items-center gap-2 text-center" data-testid="no-matches-details-hint">
             <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">
               {t('noMatches.missingDetails', { count: missingDetails, formatted: formatNumber(missingDetails) })}
@@ -88,8 +90,11 @@ export const BackendLoading = ({ isSwitchingModel }) => {
 export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, handleDownloadModel, pendingModel }) => {
   const { t } = useTranslation('home');
   const { isOwner } = useSession();
-  const downloadedModels = models.models?.filter(m => m.downloaded) || [];
+  // A read-only copy can only use the model its index was made with.
+  const ownModel = useReplica().replica?.model_id || null;
+  const downloadedModels = models.models?.filter(m => m.downloaded && (!ownModel || m.id === ownModel)) || [];
   const hasDownloaded = downloadedModels.length > 0;
+  const downloadTarget = ownModel || pendingModel;
 
   // Models are the owner's to set up; a viewer can only wait for that.
   if (!isOwner) {
@@ -148,10 +153,10 @@ export const ModelSetupState = ({ models, handleModelSwitch, setShowSettings, ha
         <p className="text-neutral-500 dark:text-neutral-500 max-w-md font-medium">{t('setup.requiredDesc')}</p>
         <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
           <button
-            onClick={() => handleDownloadModel(pendingModel)}
+            onClick={() => handleDownloadModel(downloadTarget)}
             className="min-h-[44px] px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg transition-all font-medium text-sm hover:scale-105 active:scale-95 cursor-pointer"
           >
-            {t('setup.download', { name: pendingModel === "openai/clip-vit-base-patch32" ? t('setup.openaiClip') : pendingModel.split('/').pop() })}
+            {t('setup.download', { name: downloadTarget === "openai/clip-vit-base-patch32" ? t('setup.openaiClip') : downloadTarget.split('/').pop() })}
           </button>
           <button
             onClick={() => setShowSettings(true)}

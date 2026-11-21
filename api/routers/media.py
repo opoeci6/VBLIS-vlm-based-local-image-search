@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import app_state
 import paths
 from auth_context import Auth, current_auth
-from media_image import IMAGE_EXTENSIONS, compute_file_hash, decode_heif, open_image_upright
+from media_image import IMAGE_EXTENSIONS, decode_heif, open_image_upright
 from media_video import (
     VIDEO_ANALYSIS_INTERVAL_SECONDS, VIDEO_EXTENSIONS, extract_video_frame, extract_video_frames_batch,
     get_video_frame_cache_path
@@ -45,7 +45,7 @@ def _frame_time(auth: Auth, timestamp: float) -> float:
 def _preview_cache_path(path: str):
     """The screen-sized copy's place in the image cache, next to the thumbnails: by content, so exact copies
     share it and an edited file gets a new one. "Clear Image Cache" removes it with the thumbnails."""
-    return IMAGE_CACHE_DIR / f"{compute_file_hash(path)}_{PREVIEW_MAX_SIDE}.jpg"
+    return IMAGE_CACHE_DIR / f"{app_state.indexer.content_hash(path)}_{PREVIEW_MAX_SIDE}.jpg"
 
 
 def _preview_response(path: str, fits: bool):
@@ -188,7 +188,8 @@ def serve_image(
 
     # If thumbnail is requested, check cache first
     if size == "thumbnail":
-        file_hash = compute_file_hash(path)
+        # The index's hash when the file is unchanged, so a cached thumbnail costs no read of the file
+        file_hash = app_state.indexer.content_hash(path)
         cache_path = IMAGE_CACHE_DIR / f"{file_hash}_thumb.jpg"
         legacy_path = paths.CACHE_DIR / f"{file_hash}_thumb.jpg"
 

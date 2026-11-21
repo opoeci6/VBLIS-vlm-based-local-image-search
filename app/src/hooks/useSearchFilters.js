@@ -4,6 +4,7 @@ import { API_BASE } from '../config';
 import { apiFetch } from '../utils/api';
 import { formatNumber } from '../utils/formatters';
 import { useSession } from '../session/sessionContext';
+import { isReadOnlyRefusal, readOnlyMessage, readRefusalBody } from '../utils/replica';
 import i18n from '../i18n';
 import {
   buildFilterChips,
@@ -27,8 +28,9 @@ const toggleInList = (list, value) => (list.includes(value) ? list.filter(item =
 // filters and the filter-options data (formats, years, coverage) loaded while the panel is open.
 // Nothing here is persisted: filters reset when the app restarts.
 // `activeTaskId` is the id of the running background task; `scanActive` is true while a media
-// details scan (SCAN_MEDIA_INFO) is running or waiting in the queue.
-export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = false } = {}) => {
+// details scan (SCAN_MEDIA_INFO) is running or waiting in the queue. `readOnly`: the library is a read-only
+// copy, whose media details can't be read here (the scan is never started).
+export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = false, readOnly = false } = {}) => {
   // Only the filter chips are derived text, so only they need `t`: it changes when the language does,
   // and that is what updates the chips (and the memoized results grid they are passed to).
   const { t } = useTranslation('filters');
@@ -200,11 +202,17 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
   // Starts the media details scan. `autoFor` is the number of files an automatic start is for: it
   // changes the toast, and an automatic start says nothing when a scan was already queued.
   const requestScan = useCallback(async (autoFor = null) => {
-    if (!isOwner) return;
+    if (!isOwner || readOnly) return;
     setIsStartingScan(true);
     try {
       const res = await apiFetch(`${API_BASE}/index/media-info/scan`, { method: 'POST' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        if (isReadOnlyRefusal(await readRefusalBody(res))) {
+          setToastRef.current?.({ message: readOnlyMessage(), type: 'error' });
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
       if (data?.status === 'duplicate') {
         if (autoFor === null) setToastRef.current?.({ message: i18n.t('messages:searchFilters.scanAlreadyRunning'), type: 'info' });
@@ -222,7 +230,7 @@ export const useSearchFilters = ({ setToast, activeTaskId = null, scanActive = f
     } finally {
       setIsStartingScan(false);
     }
-  }, [isOwner]);
+  }, [isOwner, readOnly]);
 
   const readDetailsNow = useCallback(() => requestScan(), [requestScan]);
 
