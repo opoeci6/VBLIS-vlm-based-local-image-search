@@ -3,9 +3,14 @@
     main.py                              the desktop backend (what the Windows app starts)
     main.py serve                        the network server alone (Linux, Docker, a headless PC)
     main.py add-account NAME --role ...  and the other commands below: change server.json
+    main.py export-index FILE            write the index into one file another machine can import
+    main.py import-index FILE --map ...  make this data folder a read-only copy of an exported index
+    main.py detach-replica               make such a copy an ordinary index again
 
 Every command takes --data-dir. The settings commands run before the backend is imported, so they
-work while a server runs (it reads server.json again within a second) and never open the index."""
+work while a server runs (it reads server.json again within a second) and never open the index. The
+index commands open the index, so they need the data folder to themselves: they refuse to run while the
+desktop app or a server uses it."""
 import argparse
 import asyncio
 import getpass
@@ -36,6 +41,8 @@ _LIGHT_COMMANDS = _ACCOUNT_COMMANDS | {
     "add-account", "list-accounts", "add-library-folder", "remove-library-folder", "set",
     "sign-out-everywhere", "show-config",
 }
+# Commands that read or change the index; they run before the backend is imported, holding the data folder
+INDEX_COMMANDS = {"export-index", "import-index", "detach-replica"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +88,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("value", help="lists are comma-separated; true/false for switches")
     commands.add_parser("sign-out-everywhere", help="sign every browser out")
     commands.add_parser("show-config", help="print the server settings")
+    p = commands.add_parser("export-index", help="write the index into one file another machine can import")
+    p.add_argument("out", metavar="OUT", help="the file to write (.vblis-export is added when missing)")
+    p.add_argument("--model", help="the model whose index to export; default: the active model")
+    p.add_argument("--no-thumbnails", dest="thumbnails", action="store_false",
+                   help="leave the thumbnails out (a smaller file; the other machine makes them itself)")
+    p = commands.add_parser("import-index", help="make this data folder a read-only copy of an exported index")
+    p.add_argument("file", metavar="FILE", help="the .vblis-export file")
+    p.add_argument("--map", action="append", required=True, metavar="FROM=TO",
+                   help="a folder of the exporting machine and where its files are here, for example "
+                        "'D:\\Photos=/mnt/photos'; repeat for each folder")
+    p.add_argument("--force", action="store_true",
+                   help="replace an index that was made in this data folder (it is lost)")
+    commands.add_parser("detach-replica", help="allow indexing in a data folder that holds an imported copy")
     return parser
 
 
@@ -89,11 +109,12 @@ def parse(argv):
     args = build_parser().parse_args(argv)
     if args.data_dir:
         os.environ["VBLIS_DATA_DIR"] = os.path.abspath(args.data_dir)
-    if args.command == "serve" and not (os.environ.get("VBLIS_API_TOKEN") or "").strip():
+    if (args.command == "serve" or args.command in INDEX_COMMANDS) and not (os.environ.get("VBLIS_API_TOKEN") or "").strip():
         # The headless server has no desktop listener, so the desktop token is never used; a random one
         # keeps bootstrap from printing a note about setting it
         os.environ["VBLIS_API_TOKEN"] = secrets.token_hex(32)
     args.light = args.command in _LIGHT_COMMANDS
+    args.index = args.command in INDEX_COMMANDS
     return args
 
 
@@ -255,6 +276,117 @@ def _run_account_command(store, args) -> int:
     elif command == "sign-out":
         store.sign_out_account(account.id)
         print(f"{account.name} has to sign in again in every browser.")
+    return 0
+
+
+# ---------------------------------------------------------------- index commands
+
+def run_index_command(args) -> int:
+    """Runs one of INDEX_COMMANDS. Importing bootstrap loads .env and takes the data folder's lock, so this
+    exits with a message while the desktop app or a server uses the folder."""
+    import bootstrap  # noqa: F401
+
+    if args.command == "import-index":
+        return _run_import(args)
+    if args.command == "detach-replica":
+        return _run_detach()
+    import chromadb
+
+    import index_export
+    import paths
+    from folder_registry import FolderRegistry
+    from media_registry import MediaRegistry
+    from model_list import AVAILABLE_MODELS
+
+    if args.command != "export-index":
+        raise SystemExit(f"Unknown command: {args.command}")
+    try:
+        out_path = index_export.resolve_output_path(os.path.abspath(args.out))
+        model_id = args.model or (os.environ.get("ACTIVE_MODEL") or "").strip() or index_export.DEFAULT_MODEL
+        if model_id not in AVAILABLE_MODELS:
+            raise index_export.ExportError(
+                f"Unknown model {model_id}. The models are: {', '.join(AVAILABLE_MODELS)}.", "unknown_model")
+        if not (paths.CHROMA_DIR / "chroma.sqlite3").is_file():
+            # Opening the client would create an empty index here
+            raise index_export.ExportError(f"There is no index in {paths.DATA_ROOT} yet.", "no_index")
+        client = chromadb.PersistentClient(path=str(paths.CHROMA_DIR))
+        registry = MediaRegistry(paths.DATA_DIR / "media_registry.sqlite3")
+        try:
+            result = index_export.export_index(
+                client, index_export.collection_name_for(model_id), model_id, registry,
+                FolderRegistry(paths.DATA_DIR, paths.CACHE_DIR), paths.IMAGE_CACHE_DIR, paths.VIDEO_CACHE_DIR,
+                out_path, thumbnails=args.thumbnails, rotation_for=index_export.registry_rotation_for(registry),
+                progress=lambda done, total, label: print(f"{label}: {done:,} / {total:,}", flush=True),
+            )
+        finally:
+            registry.close()
+    except index_export.ExportError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("Cancelled; nothing was written.", file=sys.stderr)
+        return 1
+    except OSError as e:
+        print(f"Could not write the export: {e}", file=sys.stderr)
+        return 1
+    print(f"{index_export.summary(result)} in {result.seconds:g} s.")
+    print(f"  {result.images:,} images, {result.video_frames:,} video frames, {result.registry_rows:,} media "
+          f"details, {result.image_thumbnails:,} image and {result.video_thumbnails:,} video thumbnails.")
+    return 0
+
+
+def _items(count, noun="item"):
+    return f"{count:,} {noun}" + ("" if count == 1 else "s")
+
+
+def _run_import(args) -> int:
+    import index_import
+    import paths
+
+    try:
+        result = index_import.import_index(
+            os.path.abspath(args.file), args.map, chroma_dir=paths.CHROMA_DIR, data_dir=paths.DATA_DIR,
+            cache_dir=paths.CACHE_DIR, models_dir=paths.MODELS_DIR, env_file=paths.ENV_FILE,
+            force=args.force, progress=lambda line: print(line, flush=True))
+    except index_import.ImportProblem as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        # A stop after the new index is in place comes back as ImportProblem("incomplete") above
+        print("Stopped before the new index was put in place; the previous index is unchanged.", file=sys.stderr)
+        return 1
+    except Exception as e:  # noqa: BLE001  (a damaged file or a full disk, before the new index is in place)
+        print(f"Could not import: {e}. The previous index is unchanged.", file=sys.stderr)
+        return 1
+    print(f"Imported {result.records:,} items ({result.images:,} images, {result.video_frames:,} video frames) "
+          f"in {result.seconds:g} s. This data folder is now a read-only copy.")
+    if result.dropped:
+        print(f"  {_items(result.dropped)} left out: no --map covers their folder.")
+    if result.unmapped_roots:
+        print("  Folders without a --map: " + ", ".join(result.unmapped_roots))
+    if result.duplicates:
+        print(f"  {_items(result.duplicates)} left out: they landed on a file already imported.")
+    if result.missing:
+        print(f"  {_items(result.missing, 'file')} not on this machine (yet), for example:")
+        for example in result.missing_examples:
+            print(f"    {example}")
+    print(f"  Media details: {result.registry_rows:,} files. Thumbnails: {result.image_thumbnails:,} "
+          f"pictures, {result.video_thumbnails:,} video frames.")
+    if not result.model_present:
+        print(f"  The model {result.model_id} isn't downloaded here yet: start the server, sign in as an owner "
+              "and download it in Settings.")
+    return 0
+
+
+def _run_detach() -> int:
+    import index_import
+    import paths
+
+    if index_import.detach_replica(paths.DATA_DIR):
+        print("This data folder holds an ordinary index again: indexing is allowed. Importing a new export "
+              "later replaces it.")
+    else:
+        print("This data folder isn't a copy of another index; nothing changed.")
     return 0
 
 

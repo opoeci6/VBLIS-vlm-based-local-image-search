@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { getPathForFile, isDirectory } from '../utils/electron';
 import { useSession } from '../session/sessionContext';
+import { readOnlyMessage } from '../utils/replica';
 import i18n from '../i18n';
 
-export const useFileDrop = ({ enabled, setToast, onFolders, onImage }) => {
+// `readOnly`: the library is a read-only copy, so a dropped folder is not queued for indexing; images still search.
+export const useFileDrop = ({ enabled, setToast, onFolders, onImage, readOnly = false }) => {
   const [isDragging, setIsDragging] = useState(false);
   const { mode, isOwner, may } = useSession();
   // A drop is for searching by image or (desktop only) for adding folders. Without the image-search
@@ -64,13 +66,15 @@ export const useFileDrop = ({ enabled, setToast, onFolders, onImage }) => {
       if (await isDirectory(filePath)) folderPaths.push(filePath);
     }
 
-    if (folderPaths.length > 0) {
+    if (folderPaths.length > 0 && !readOnly) {
       await onFolders(folderPaths);
     } else if (imageFiles.length > 0) {
       onImage(imageFiles[0]);
+    } else if (folderPaths.length > 0) {
+      setToast({ message: readOnlyMessage(), type: 'info' });
     } else if (inBrowser) {
-      // The owner is told where folders are added; a viewer cannot add any.
-      if (isOwner && otherEntries > 0) {
+      // The owner is told where folders are added; a viewer cannot add any, and a read-only copy takes none.
+      if (isOwner && !readOnly && otherEntries > 0) {
         setToast({ message: i18n.t('session:fileDrop.useAddFolders'), type: 'info' });
       }
     } else {

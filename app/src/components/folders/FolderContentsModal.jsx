@@ -7,11 +7,13 @@ import { useBackToClose } from '../../hooks/useBackToClose';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { cn } from '../../utils/cn';
 import { useSession } from '../../session/sessionContext';
+import { useReplica } from '../../session/replicaContext';
 
 export const FolderContentsModal = memo(function FolderContentsModal({ showFolderContents, browsingFolder, folderContents, isFetchingFolderContents, isCleaningGhostRecords, setIsCleaningGhostRecords, folderVisibleLimit, setFolderVisibleLimit, handleCloseFolderContents, handleReindexFolder, setSelectedImage, setToast, uiTheme }) {
   const { t } = useTranslation('folders');
-  // Cleaning up missing files re-syncs the folder, which only the owner can do.
+  // Cleaning up missing files re-syncs the folder, which only the owner can do, and not on a read-only copy.
   const { isOwner } = useSession();
+  const { readOnly } = useReplica();
   const backdropDismiss = useBackdropDismiss(handleCloseFolderContents);
   const isShowing = Boolean(showFolderContents && browsingFolder);
   // The lightbox opens over this window and registers later, so Esc and Back close it first.
@@ -77,7 +79,7 @@ export const FolderContentsModal = memo(function FolderContentsModal({ showFolde
                   <AlertTriangle className="w-3 h-3 text-rose-500" />
                   {t('modal.missingFromDisk', { count: folderContents.missing_on_disk_count })}
                 </span>
-                {isOwner && (
+                {isOwner && !readOnly && (
                   <button
                     type="button"
                     disabled={isCleaningGhostRecords}

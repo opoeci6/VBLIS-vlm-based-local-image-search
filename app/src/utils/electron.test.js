@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../i18n';
-import { copyText, getPathForFile, isDirectory, openInExplorer, pickFile, translateElectronError } from './electron';
+import { copyText, getPathForFile, isDirectory, openInExplorer, pickFile, pickSavePath, translateElectronError } from './electron';
 
 describe('electron helpers', () => {
   afterEach(() => {
@@ -162,5 +162,27 @@ describe('pickFile', () => {
   it('resolves to null when the dialog is cancelled', async () => {
     window.electronAPI = { openFile: vi.fn().mockResolvedValue(null) };
     await expect(pickFile('certificate')).resolves.toBeNull();
+  });
+});
+
+describe('pickSavePath', () => {
+  afterEach(() => {
+    delete window.electronAPI;
+  });
+
+  it('resolves to null without the Electron bridge', async () => {
+    await expect(pickSavePath('export')).resolves.toBeNull();
+  });
+
+  it('asks the save dialog for the kind and returns the path', async () => {
+    const saveFile = vi.fn().mockResolvedValue('D:/out/VBLIS-2026-11-20.vblis-export');
+    window.electronAPI = { saveFile };
+    await expect(pickSavePath('export')).resolves.toBe('D:/out/VBLIS-2026-11-20.vblis-export');
+    expect(saveFile).toHaveBeenCalledWith('export');
+  });
+
+  it('resolves to null when the dialog is cancelled', async () => {
+    window.electronAPI = { saveFile: vi.fn().mockResolvedValue(null) };
+    await expect(pickSavePath('export')).resolves.toBeNull();
   });
 });

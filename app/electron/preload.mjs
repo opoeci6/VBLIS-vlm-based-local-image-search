@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   apiToken,
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   openFile: (kind) => ipcRenderer.invoke('dialog:openFile', kind),
+  saveFile: (kind) => ipcRenderer.invoke('dialog:saveFile', kind),
   openInExplorer: (filePath) => ipcRenderer.invoke('shell:openInExplorer', filePath),
   isDirectory: (filePath) => ipcRenderer.invoke('fs:isDirectory', filePath),
   getPathForFile: (file) => webUtils.getPathForFile(file),

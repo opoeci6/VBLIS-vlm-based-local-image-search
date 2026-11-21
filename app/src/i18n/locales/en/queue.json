@@ -11,7 +11,8 @@
       "images": "Clear Images Cache",
       "videos": "Clear Videos Cache"
     },
-    "scanMediaInfo": "Read media details"
+    "scanMediaInfo": "Read media details",
+    "exportIndex": "Export index"
   },
   "taskType": {
     "INDEX_FOLDERS": "INDEX_FOLDERS",
@@ -20,7 +21,8 @@
     "REBUILD_VIDEO_THUMBNAILS": "REBUILD_VIDEO_THUMBNAILS",
     "PRUNE_DELETED": "PRUNE_DELETED",
     "CLEAR_CACHE": "CLEAR_CACHE",
-    "SCAN_MEDIA_INFO": "SCAN_MEDIA_INFO"
+    "SCAN_MEDIA_INFO": "SCAN_MEDIA_INFO",
+    "EXPORT_INDEX": "EXPORT_INDEX"
   },
   "activeTask": {
     "emptyTitle": "No active task in progress",

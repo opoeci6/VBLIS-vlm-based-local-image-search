@@ -17,6 +17,7 @@ const BACKEND_TITLES = [
   { type: 'CLEAR_CACHE', title: 'Clear Images Cache', en: 'Clear Images Cache', zh: '清除图片缓存' },
   { type: 'CLEAR_CACHE', title: 'Clear Videos Cache', en: 'Clear Videos Cache', zh: '清除视频缓存' },
   { type: 'SCAN_MEDIA_INFO', title: 'Read media details', en: 'Read media details', zh: '读取媒体详情' },
+  { type: 'EXPORT_INDEX', title: 'Export index', en: 'Export index', zh: '导出索引' },
 ];
 
 describe('taskTitle', () => {
@@ -76,12 +77,14 @@ describe('taskTypeLabel', () => {
   it('shows the raw type in English', () => {
     expect(taskTypeLabel('SCAN_MEDIA_INFO')).toBe('SCAN_MEDIA_INFO');
     expect(taskTypeLabel('INDEX_FOLDERS')).toBe('INDEX_FOLDERS');
+    expect(taskTypeLabel('EXPORT_INDEX')).toBe('EXPORT_INDEX');
   });
 
   it('translates a known type in Chinese', async () => {
     await i18n.changeLanguage('zh-CN');
     expect(taskTypeLabel('SCAN_MEDIA_INFO')).toBe('读取媒体详情');
     expect(taskTypeLabel('CLEAR_CACHE')).toBe('清除缓存');
+    expect(taskTypeLabel('EXPORT_INDEX')).toBe('导出索引');
   });
 
   it('shows an unknown type raw in both languages, without a missing-key error', async () => {

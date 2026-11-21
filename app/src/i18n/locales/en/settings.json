@@ -178,6 +178,27 @@
       "clear": "Clear"
     }
   },
+  "export": {
+    "title": "Export for another device",
+    "intro": "Copy this library's index to another computer, such as a small Linux server, which then searches it without indexing again. The file holds the index, media details (including places) and thumbnails, so keep it private.",
+    "loading": "Checking what can be exported...",
+    "loadFailed": "Could not check what can be exported.",
+    "empty": "Nothing to export yet: index a folder first.",
+    "model": "Index to export",
+    "items_one": "{{n}} item",
+    "items_other": "{{n}} items",
+    "thumbnails": "Include thumbnails (larger file, faster browsing on the other device)",
+    "path": "Save the file as",
+    "pathHint": "The full path of the file to write, ending in .vblis-export.",
+    "button": "Export…",
+    "started": "Export started. It appears in the task queue.",
+    "errors": {
+      "invalidPath": "That location can't be used. Choose another file name or folder.",
+      "unknownModel": "That index isn't available any more. Close Settings, open them again and choose another.",
+      "noIndex": "Nothing to export yet: index a folder first.",
+      "failed": "The export could not be started."
+    }
+  },
   "sharing": {
     "title": "Network sharing",
     "switchLabel": "Share on my network",

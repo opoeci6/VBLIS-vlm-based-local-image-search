@@ -8,6 +8,10 @@ def update_env(updates: dict[str, str], env_path=None):
     """Set KEY=value lines in the .env file in one atomic write, leaving every other line as it was.
     Existing lines for a key are all replaced; keys not present yet are appended in dict order."""
     env_path = paths.ENV_FILE if env_path is None else env_path
+    for key, value in updates.items():
+        # One KEY=value line each: a line break would add another variable to the file
+        if any(ch in f"{key}{value}" for ch in (chr(13), chr(10), chr(0))) or "=" in key:
+            raise ValueError(f"not a single .env line: {key!r}")
     lines = []
     if os.path.exists(env_path):
         with open(env_path, "r", encoding="utf-8", errors="surrogateescape", newline="") as f:

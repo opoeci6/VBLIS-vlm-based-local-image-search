@@ -4,11 +4,16 @@ import { useTranslation } from 'react-i18next';
 import { IndexedFolderTree } from './IndexedFolderTree';
 import { cn } from '../../utils/cn';
 import { useSession } from '../../session/sessionContext';
+import { useReplica } from '../../session/replicaContext';
+import { ReplicaNotice } from '../status/ReplicaNotice';
 
 export const IndexedFoldersPanel = ({ isFoldersExpanded, setIsFoldersExpanded, suppressCollapse, indexedFolders, isFetchingFolders, selectedFolders, allSelectableFolderPaths, toggleSelectAll, toggleFolderSelection, isBatchProcessing, handleBatchReindex, handleBatchDelete, handleOpenFolder, handleBrowseFolderContents, handleReindexFolder, handleDeleteFolderIndex, status, uiTheme }) => {
   const { t } = useTranslation('folders');
-  // Adding, re-syncing and removing folders is the owner's; a viewer only browses them.
+  // Adding, re-syncing and removing folders is the owner's; a viewer only browses them. A read-only copy of an
+  // index made elsewhere can't be changed at all, so nobody gets those actions.
   const { isOwner } = useSession();
+  const { readOnly } = useReplica();
+  const canManage = isOwner && !readOnly;
   const foldersRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +37,7 @@ export const IndexedFoldersPanel = ({ isFoldersExpanded, setIsFoldersExpanded, s
 
   return (
     <section data-ascii-protected="true" className="w-full max-w-7xl px-3 sm:px-6 mb-3 relative z-30">
+      <ReplicaNotice className="mb-3" />
       <div
         ref={foldersRef}
         className="bg-white dark:bg-neutral-900/70 border border-gray-200 dark:border-neutral-800 rounded-3xl shadow-xl shadow-black/5 dark:shadow-black/20 transition-all duration-200"
@@ -58,7 +64,7 @@ export const IndexedFoldersPanel = ({ isFoldersExpanded, setIsFoldersExpanded, s
           </div>
 
           <div className="flex items-center gap-2 max-sm:w-full sm:flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            {isOwner && (
+            {canManage && (
               <button
                 type="button"
                 onClick={handleOpenFolder}
@@ -90,7 +96,7 @@ export const IndexedFoldersPanel = ({ isFoldersExpanded, setIsFoldersExpanded, s
                 : "bg-white dark:bg-black border border-black dark:border-white shadow-2xl"
             )}
           >
-            {isOwner && indexedFolders.length > 0 && (
+            {canManage && indexedFolders.length > 0 && (
               <div className="px-4 sm:px-6 py-3 bg-gray-50/70 dark:bg-neutral-800/20 border-b border-gray-100 dark:border-neutral-800 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"

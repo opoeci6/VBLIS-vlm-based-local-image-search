@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 import accounts as acct
 import passwords
 import path_keys
+import replica
 import sessions
 from account_admin import MESSAGES, NAME_INPUT_MAX, account_error, error  # noqa: F401 - also imported from here
 from auth_context import NETWORK, Auth, NetRequest, current_auth, net_request, optional_auth
@@ -51,6 +52,8 @@ def session_info(auth: Optional[Auth], net: NetRequest) -> dict:
         "secure": net.scheme == "https",
         "case_sensitive_paths": not path_keys.FOLD_CASE,
         "path_separator": os.sep,
+        "read_only": replica.is_read_only(),
+        "replica": replica.summary() if auth.is_owner else None,
     }
 
 

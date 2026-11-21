@@ -18,6 +18,12 @@ export const pickFile = async (kind) => (
   window.electronAPI?.openFile ? (await window.electronAPI.openFile(kind)) ?? null : null
 );
 
+// Asks where to save one file ('export' is the index file for another device) with the native dialog.
+// Resolves to the path, or to null when the dialog is cancelled or there is no Electron bridge.
+export const pickSavePath = async (kind) => (
+  window.electronAPI?.saveFile ? (await window.electronAPI.saveFile(kind)) ?? null : null
+);
+
 export const isDirectory = async (path) => (
   window.electronAPI?.isDirectory ? window.electronAPI.isDirectory(path) : false
 );

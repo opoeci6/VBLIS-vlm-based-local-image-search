@@ -4,14 +4,22 @@ import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
 import { isModelDependentTask } from '../utils/taskTypes';
 import { useSession } from '../session/sessionContext';
+import { isReadOnlyRefusal, readOnlyMessage, readRefusalBody, refusalText } from '../utils/replica';
 import i18n from '../i18n';
 
-export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchStart }) => {
+// `replicaModelId`: when the library is a read-only copy, the model its index was made with. That is the only
+// model it can use, so switching to or downloading any other is never sent, and its index is never wiped.
+export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchStart, replicaModelId = null }) => {
   const { isOwner } = useSession();
+  const isForeignModel = (name) => Boolean(replicaModelId) && name !== replicaModelId;
   const [modelLoadError, setModelLoadError] = useState(null);
 
   const [models, setModels] = useState({ active_model: '', models: [] });
   const [pendingModel, setPendingModel] = useState("google/siglip2-base-patch16-224");
+  // The model to offer first is the copy's own.
+  useEffect(() => {
+    if (replicaModelId) setPendingModel(replicaModelId);
+  }, [replicaModelId]);
   const [backendReady, setBackendReady] = useState(false);
   const [isSwitchingModel, setIsSwitchingModel] = useState(false);
   const [isUnloadingModel, setIsUnloadingModel] = useState(false);
@@ -175,6 +183,10 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
   };
 
   const handleModelSwitch = async (model_name) => {
+    if (isForeignModel(model_name)) {
+      setToast({ message: readOnlyMessage(), type: 'error' });
+      return;
+    }
     // 1. Guard against active running/paused task
     if (queue.activeTask && (queue.activeTask.status === 'running' || queue.activeTask.status === 'paused')) {
       setModelSwitchWarning({
@@ -214,7 +226,7 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ detail: res.statusText }));
-        const errorMessage = errorData.detail || i18n.t('messages:modelManager.loadFailedFallback');
+        const errorMessage = refusalText(errorData, errorData.detail || i18n.t('messages:modelManager.loadFailedFallback'));
         setToast({ message: i18n.t('messages:modelManager.loadError', { message: errorMessage }), type: 'error' });
         setModelLoadError({ model: model_name, message: errorMessage });
         
@@ -272,15 +284,24 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
   };
 
   const handleDownloadModel = async (model_name) => {
+    if (isForeignModel(model_name)) {
+      setToast({ message: readOnlyMessage(), type: 'error' });
+      return;
+    }
     lastToastedError.current = null;
     setModelLoadError(null);
     setStatus(prev => ({ ...prev, download_error: null, is_downloading: true }));
     try {
-      await apiFetch(`${API_BASE}/models/download`, {
+      const res = await apiFetch(`${API_BASE}/models/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_name })
       });
+      // An old tab or a race: the backend refused, so there is no download to wait for.
+      if (res?.status === 409 && isReadOnlyRefusal(await readRefusalBody(res))) {
+        setStatus(prev => ({ ...prev, is_downloading: false }));
+        setToast({ message: readOnlyMessage(), type: 'error' });
+      }
     } catch (err) {
       console.error(err);
     }
@@ -294,12 +315,12 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model_name,
-          delete_index: deleteIndexWithModel
+          delete_index: replicaModelId ? false : deleteIndexWithModel
         })
       });
       if (res.ok) {
         setToast({
-          message: deleteIndexWithModel
+          message: deleteIndexWithModel && !replicaModelId
             ? i18n.t('messages:modelManager.deletedWithIndex', { name: model_name })
             : i18n.t('messages:modelManager.deleted', { name: model_name }),
           type: 'success'
@@ -310,7 +331,7 @@ export const useModelManager = ({ status, setStatus, queue, setToast, onSwitchSt
         setModels(data);
       } else {
         const error = await res.json();
-        setToast({ message: i18n.t('messages:modelManager.deleteError', { detail: error.detail }), type: 'error' });
+        setToast({ message: refusalText(error, i18n.t('messages:modelManager.deleteError', { detail: error.detail })), type: 'error' });
       }
     } catch (err) {
       console.error(err);

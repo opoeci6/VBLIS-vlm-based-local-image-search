@@ -3,11 +3,15 @@ import { CheckCircle2, AlertCircle, XCircle, RotateCcw, Trash2, ChevronDown, Che
 import { useTranslation } from 'react-i18next';
 import { formatDuration, formatTimeAgo } from '../../utils/formatters';
 import { taskTitle } from '../../utils/taskTitle';
+import { INDEXING_TASK_TYPES } from '../../utils/replica';
+import { useReplica } from '../../session/replicaContext';
 
 export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'modern' }) => {
   const { t } = useTranslation('queue');
   const [expandedErrorId, setExpandedErrorId] = useState(null);
   const isModern = uiTheme === 'modern';
+  // On a read-only copy the backend refuses to run indexing tasks again, so those get no Retry button.
+  const { readOnly } = useReplica();
 
   if (!history || history.length === 0) {
     return (
@@ -100,14 +104,16 @@ export const TaskHistoryList = ({ history, onRetry, onClearHistory, uiTheme = 'm
                   </div>
                 </div>
 
-                <button
-                  onClick={() => onRetry(task.id)}
-                  className="px-2.5 py-1 max-sm:min-h-10 max-sm:justify-center bg-gray-50 dark:bg-neutral-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border border-gray-200/80 dark:border-neutral-600/50 sm:shrink-0 cursor-pointer shadow-2xs"
-                  title={t('history.requeueTitle')}
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>{t('common:retry')}</span>
-                </button>
+                {!(readOnly && INDEXING_TASK_TYPES.has(task.type)) && (
+                  <button
+                    onClick={() => onRetry(task.id)}
+                    className="px-2.5 py-1 max-sm:min-h-10 max-sm:justify-center bg-gray-50 dark:bg-neutral-700/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 text-neutral-700 dark:text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border border-gray-200/80 dark:border-neutral-600/50 sm:shrink-0 cursor-pointer shadow-2xs"
+                    title={t('history.requeueTitle')}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>{t('common:retry')}</span>
+                  </button>
+                )}
               </div>
 
               {/* Error logs dropdown */}

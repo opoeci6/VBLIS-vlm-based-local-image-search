@@ -1,0 +1,13 @@
+{
+  "notice": {
+    "withDate": "Read-only copy of the library on {{host}}, exported {{date}}. Indexing happens on that computer: export again there and import here to update.",
+    "withoutDate": "Read-only copy of the library on {{host}}. Indexing happens on that computer: export again there and import here to update.",
+    "withDateNoHost": "Read-only copy of the library on another computer, exported {{date}}. Indexing happens on that computer: export again there and import here to update.",
+    "withoutDateNoHost": "Read-only copy of the library on another computer. Indexing happens on that computer: export again there and import here to update.",
+    "missing_one": "{{formatted}} file of the copy isn't on this computer.",
+    "missing_other": "{{formatted}} files of the copy aren't on this computer."
+  },
+  "refused": "This library is a read-only copy; indexing happens on {{host}}.",
+  "refusedNoHost": "This library is a read-only copy; indexing happens on another computer.",
+  "onlyOwnModel": "This copy can only use its own model."
+}

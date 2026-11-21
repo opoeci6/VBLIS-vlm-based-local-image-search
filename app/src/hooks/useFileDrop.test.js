@@ -68,6 +68,28 @@ describe('useFileDrop', () => {
     });
   });
 
+  describe('on a read-only copy', () => {
+    const renderReadOnly = () => renderHook(() => useFileDrop({ enabled: true, setToast, onFolders, onImage, readOnly: true }));
+
+    it('does not queue a dropped folder, and says why', async () => {
+      const { result } = renderReadOnly();
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [folderFile] })); });
+      expect(onFolders).not.toHaveBeenCalled();
+      expect(setToast).toHaveBeenCalledWith({
+        message: 'This library is a read-only copy; indexing happens on another computer.',
+        type: 'info',
+      });
+    });
+
+    it('still searches with a dropped image, also when a folder came along', async () => {
+      const { result } = renderReadOnly();
+      await act(async () => { await result.current.handleDrop(makeEvent({ files: [folderFile, imageFile] })); });
+      expect(onFolders).not.toHaveBeenCalled();
+      expect(onImage).toHaveBeenCalledWith(imageFile);
+      expect(setToast).not.toHaveBeenCalled();
+    });
+  });
+
   describe('drop', () => {
     it('is a no-op for an empty file list', async () => {
       const { result } = render(true);

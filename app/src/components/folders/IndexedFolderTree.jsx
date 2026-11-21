@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { SubfolderTreeNode } from './SubfolderTreeNode';
 import { buildSubfolderTree } from '../../utils/folderTree';
 import { useSession } from '../../session/sessionContext';
+import { useReplica } from '../../session/replicaContext';
 
 export const IndexedFolderTree = ({
   folders = [],
@@ -28,6 +29,9 @@ export const IndexedFolderTree = ({
   const { t } = useTranslation('folders');
   // A viewer browses the folders but cannot select, re-sync or remove them.
   const { isOwner } = useSession();
+  // A read-only copy can't be re-synced or changed, so selecting folders for those actions has no use either.
+  const { readOnly } = useReplica();
+  const canManage = isOwner && !readOnly;
   // By default, expand all root folders with subfolders if there are 4 or fewer root folders
   const [expandedRoots, setExpandedRoots] = useState(() => {
     const initial = {};
@@ -124,7 +128,7 @@ export const IndexedFolderTree = ({
                 {/* Left: Checkbox + Expand Button + Folder Info */}
                 <div className="flex items-center gap-0.5 sm:gap-2.5 min-w-0 flex-1">
                   {/* Root Checkbox */}
-                  {isOwner && (
+                  {canManage && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -311,7 +315,7 @@ export const IndexedFolderTree = ({
                   </button>
 
                   {/* Re-sync: Kept enabled so user can re-sync when drive is reconnected */}
-                  {isOwner && (
+                  {canManage && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -327,7 +331,7 @@ export const IndexedFolderTree = ({
                     </button>
                   )}
 
-                  {isOwner && (
+                  {canManage && (
                     <button
                       type="button"
                       onClick={(e) => {
