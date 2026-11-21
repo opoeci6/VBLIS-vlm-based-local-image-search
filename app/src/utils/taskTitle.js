@@ -20,6 +20,7 @@ const RULES = [
   { type: 'PRUNE_DELETED', pattern: /^Prune Missing Files$/, translate: () => i18n.t('queue:taskTitle.pruneMissing') },
   { type: 'CLEAR_CACHE', pattern: /^Clear (All|Images|Videos) Cache$/, translate: ([, target]) => clearCacheTitles[target.toLowerCase()]() },
   { type: 'SCAN_MEDIA_INFO', pattern: /^Read media details$/, translate: () => i18n.t('queue:taskTitle.scanMediaInfo') },
+  { type: 'EXPORT_INDEX', pattern: /^Export index$/, translate: () => i18n.t('queue:taskTitle.exportIndex') },
 ];
 
 // The title of a task in the interface language, or task.title unchanged when it is not a known one.

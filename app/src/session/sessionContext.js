@@ -12,6 +12,9 @@ export const DESKTOP_SESSION = Object.freeze({
   may: () => true,
   secure: true,
   caseSensitivePaths: false,
+  // Replica mode comes from the polled status here (see replicaContext.js); a network session carries it.
+  readOnly: false,
+  replica: null,
   signOut: async () => {},
   refresh: async () => {}
 });
@@ -37,6 +40,9 @@ export const buildNetworkSession = (info, signOut, refresh) => {
     may: (name) => isOwner || Boolean(permissions[name]),
     secure: info.secure !== false,
     caseSensitivePaths: Boolean(info.case_sensitive_paths),
+    // The library is a read-only copy of an index made elsewhere; `replica` describes it (owner only, else null).
+    readOnly: Boolean(info.read_only),
+    replica: info.replica && typeof info.replica === 'object' ? info.replica : null,
     signOut,
     refresh
   };

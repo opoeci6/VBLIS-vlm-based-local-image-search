@@ -71,6 +71,17 @@ describe('QueueDrawer no-model banner', () => {
     renderDrawer(makeQueue({ pendingTasks: [indexTask], pendingCount: 1, activeModel: 'org/model-a' }));
     expect(screen.queryByText('No AI Model Loaded in Memory')).toBeNull();
   });
+
+  it('closes the drawer and opens the settings on the models group from "Open Settings"', () => {
+    const calls = [];
+    const onClose = vi.fn(() => calls.push('close'));
+    const onOpenSettings = vi.fn((group) => calls.push(`open:${group}`));
+    render(<QueueDrawer isOpen onClose={onClose} queue={makeQueue({ pendingTasks: [indexTask], pendingCount: 1 })} onOpenSettings={onOpenSettings} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).toHaveBeenCalledWith('models');
+    expect(calls).toEqual(['close', 'open:models']);
+  });
 });
 
 describe('QueueDrawer backdrop', () => {

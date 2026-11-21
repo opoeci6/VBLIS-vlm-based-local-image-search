@@ -10,6 +10,9 @@ from typing import Mapping, NamedTuple, Optional
 
 SCHEMA_VERSION = 1
 WRITE_CHUNK = 500
+READ_CHUNK = 500  # keys per SELECT ... IN (...), under SQLite's variable limit
+# The `error` of a row whose file the OS refused to open (media_sync writes it) starts with this
+ACCESS_ERROR_PREFIX = "PermissionError:"
 
 COLUMNS = (
     "key", "path", "media_type", "ext", "size", "mtime_ns", "width", "height", "orientation", "rotation",
@@ -220,13 +223,18 @@ class MediaRegistry:
     # ------------------------------------------------------------------ reads
 
     def stat_index(self) -> dict:
-        """{key: (path, size, mtime_ns, probe_version)} for every row, in one read."""
+        """{key: (path, size, mtime_ns, probe_version, access_error)} for every row, in one read.
+        access_error is True when the row records a file the OS refused to open (its error starts with
+        ACCESS_ERROR_PREFIX)."""
         with self._lock:
             conn = self._connection()
             if conn is None:
                 return {}
-            rows = conn.execute("SELECT key, path, size, mtime_ns, probe_version FROM media").fetchall()
-        return {key: (path, size, mtime_ns, probe_version) for key, path, size, mtime_ns, probe_version in rows}
+            rows = conn.execute("SELECT key, path, size, mtime_ns, probe_version, error FROM media").fetchall()
+        return {
+            key: (path, size, mtime_ns, probe_version, bool(error) and error.startswith(ACCESS_ERROR_PREFIX))
+            for key, path, size, mtime_ns, probe_version, error in rows
+        }
 
     def count(self) -> int:
         with self._lock:
@@ -234,6 +242,32 @@ class MediaRegistry:
             if conn is None:
                 return 0
             return conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
+
+    def rows(self, keys=None) -> list:
+        """Whole rows (dicts with every COLUMNS entry) of the given keys, or of every file when keys is None.
+        Keys that have no row are skipped. Large key lists are read in chunks; [] when the file can't be read."""
+        sql = f"SELECT {', '.join(COLUMNS)} FROM media"
+        if keys is None:
+            batches = [None]
+        else:
+            keys = list(dict.fromkeys(keys))
+            batches = [keys[start:start + READ_CHUNK] for start in range(0, len(keys), READ_CHUNK)]
+        result = []
+        for batch in batches:
+            with self._lock:
+                conn = self._connection()
+                if conn is None:
+                    return []
+                try:
+                    if batch is None:
+                        fetched = conn.execute(sql).fetchall()
+                    else:
+                        fetched = conn.execute(f"{sql} WHERE key IN ({', '.join('?' * len(batch))})", batch).fetchall()
+                except sqlite3.Error as e:
+                    self._warn(f"cannot read {self.db_path}: {e}")
+                    return []
+            result.extend(dict(zip(COLUMNS, row)) for row in fetched)
+        return result
 
     def snapshot(self) -> RegistrySnapshot:
         """The facts of every row, rebuilt only when a write happened since the last call. The returned

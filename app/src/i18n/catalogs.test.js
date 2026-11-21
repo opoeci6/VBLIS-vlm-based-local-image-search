@@ -141,7 +141,7 @@ describe('catalog files', () => {
     expect(Object.keys(catalogs).sort()).toEqual(['en', 'zh-CN']);
     expect(Object.keys(catalogs['zh-CN']).sort()).toEqual(Object.keys(catalogs.en).sort());
     expect(Object.keys(catalogs.en).sort()).toEqual([
-      'common', 'filters', 'folders', 'format', 'home', 'media', 'messages', 'queue', 'search', 'session', 'settings', 'status',
+      'common', 'filters', 'folders', 'format', 'home', 'media', 'messages', 'queue', 'replica', 'search', 'session', 'settings', 'status',
     ]);
   });
 

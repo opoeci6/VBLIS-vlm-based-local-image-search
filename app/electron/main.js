@@ -403,6 +403,26 @@ app.whenReady().then(async () => {
     return filePaths[0];
   });
 
+  // Where to save one file. `kind` picks the dialog; the renderer never supplies any part of the path.
+  // 'export' is the index file for another device (replica mode).
+  const SAVE_DIALOGS = {
+    export: () => ({
+      defaultName: `VBLIS-${new Date().toLocaleDateString('sv-SE')}.vblis-export`,
+      filters: [{ name: 'VBLIS export', extensions: ['vblis-export'] }]
+    })
+  };
+  handleTrusted('dialog:saveFile', async (event, kind) => {
+    if (typeof kind !== 'string' || !Object.hasOwn(SAVE_DIALOGS, kind)) return null;
+    const { defaultName, filters } = SAVE_DIALOGS[kind]();
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: path.join(lastDialogDirectory || app.getPath('documents'), defaultName),
+      filters
+    });
+    if (canceled || !filePath) return null;
+    lastDialogDirectory = path.dirname(filePath);
+    return filePath;
+  });
+
   handleTrusted('shell:openInExplorer', (event, filePath) => {
     if (fs.existsSync(filePath)) {
       shell.showItemInFolder(filePath);

@@ -342,6 +342,70 @@ describe('App (smoke)', () => {
     await screen.findByText('Ready to Search');
     fireEvent.click(screen.getAllByTitle(/Active Vision Engine: org\/model-a/)[0]);
     expect(await screen.findByText('Settings')).toBeTruthy();
+    // The pill is about the model: Settings opens on its group.
+    expect(screen.getByRole('tab', { name: 'Models and GPU' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('Model Management')).toBeTruthy();
+  });
+
+  describe('the settings groups', () => {
+    const selectedTabName = () => screen.getAllByRole('tab').find(tab => tab.getAttribute('aria-selected') === 'true')?.textContent;
+
+    it('opens the gear on Appearance at first, and then on the group used last', async () => {
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      const gear = screen.getByRole('button', { name: 'Settings' });
+
+      fireEvent.click(gear);
+      expect(await screen.findByRole('tab', { name: 'Appearance' })).toBeTruthy();
+      expect(selectedTabName()).toBe('Appearance');
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
+      expect(screen.queryByRole('tablist')).toBeNull();
+
+      fireEvent.click(gear);
+      expect(selectedTabName()).toBe('Library');
+    });
+
+    it('opens the gear on the group the model pill left it on, and the pill on Models and GPU again', async () => {
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      fireEvent.click(screen.getAllByTitle(/Active Vision Engine: org\/model-a/)[0]);
+      expect(selectedTabName()).toBe('Models and GPU');
+      fireEvent.click(screen.getByRole('tab', { name: 'Search' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+      expect(selectedTabName()).toBe('Search');
+      fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
+
+      fireEvent.click(screen.getAllByTitle(/Active Vision Engine: org\/model-a/)[0]);
+      expect(selectedTabName()).toBe('Models and GPU');
+    });
+
+    it('closes the queue drawer and opens Models and GPU from its "Open Settings" button', async () => {
+      const original = fetchMock.getMockImplementation();
+      fetchMock.mockImplementation(async (url, init) => (
+        new URL(String(url)).pathname === '/queue' && (init?.method || 'GET') === 'GET'
+          ? json({
+            ...queuePayload,
+            active_model: null,
+            pending_count: 1,
+            pending_tasks: [{ id: 2, type: 'INDEX_FOLDERS', title: 'Index folders', status: 'pending', progress: 0, model_id: 'org/model-a' }],
+          })
+          : original(url, init)
+      ));
+      render(<App />);
+      await screen.findByText('Ready to Search');
+      // With a task waiting, the queue button is titled by the count.
+      fireEvent.click(await screen.findByTitle(/queued/i));
+      expect(await screen.findByText('Task Queue Manager')).toBeTruthy();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Settings' }));
+      expect(screen.queryByText('Task Queue Manager')).toBeNull();
+      expect(await screen.findByRole('tab', { name: 'Models and GPU' })).toBeTruthy();
+      expect(selectedTabName()).toBe('Models and GPU');
+    });
   });
 
   describe('the sharing pill', () => {
@@ -366,6 +430,7 @@ describe('App (smoke)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Sharing' }));
       expect(await screen.findByText('Settings')).toBeTruthy();
       expect(await screen.findByRole('heading', { name: 'Network sharing' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'Network sharing' }).getAttribute('aria-selected')).toBe('true');
     });
 
     it('shows an amber "Not sharing" when sharing should run but cannot', async () => {

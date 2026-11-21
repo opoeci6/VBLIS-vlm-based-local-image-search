@@ -5,7 +5,7 @@ import { hasModelDependentTask } from '../../utils/taskTypes';
 import { taskTitle } from '../../utils/taskTitle';
 import { useSession } from '../../session/sessionContext';
 
-export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, isCancellingIndexing, handleCancelIndexing }) => {
+export const IndexingStatusBar = ({ status, queue, setToast, openSettings, isCancellingIndexing, handleCancelIndexing }) => {
   const { t } = useTranslation('status');
   const { isOwner } = useSession();
   if (!(status.is_indexing || queue.activeTask || (queue.pendingCount > 0 && queue.workerState === 'paused'))) return null;
@@ -89,7 +89,7 @@ export const IndexingStatusBar = ({ status, queue, setToast, setShowSettings, is
                           message: t('indexing.cannotResumeNoModel'),
                           type: 'error'
                         });
-                        setShowSettings(true);
+                        openSettings('models');
                         return;
                       }
                       if (queue.activeTask) {

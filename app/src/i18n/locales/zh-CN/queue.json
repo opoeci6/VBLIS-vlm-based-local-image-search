@@ -11,7 +11,8 @@
       "images": "清除图片缓存",
       "videos": "清除视频缓存"
     },
-    "scanMediaInfo": "读取媒体详情"
+    "scanMediaInfo": "读取媒体详情",
+    "exportIndex": "导出索引"
   },
   "taskType": {
     "INDEX_FOLDERS": "索引文件夹",
@@ -20,7 +21,8 @@
     "REBUILD_VIDEO_THUMBNAILS": "重建视频缩略图",
     "PRUNE_DELETED": "清理缺失的文件",
     "CLEAR_CACHE": "清除缓存",
-    "SCAN_MEDIA_INFO": "读取媒体详情"
+    "SCAN_MEDIA_INFO": "读取媒体详情",
+    "EXPORT_INDEX": "导出索引"
   },
   "activeTask": {
     "emptyTitle": "没有正在进行的任务",

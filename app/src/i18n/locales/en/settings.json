@@ -61,7 +61,40 @@
   },
   "settingsModal": {
     "title": "Settings",
-    "closeTooltip": "Close settings"
+    "closeTooltip": "Close settings",
+    "groupsLabel": "Settings groups",
+    "back": "Back to all settings",
+    "groups": {
+      "appearance": {
+        "title": "Appearance",
+        "description": "Theme style and language"
+      },
+      "search": {
+        "title": "Search",
+        "description": "Match scores and how many results to show"
+      },
+      "models": {
+        "title": "Models and GPU",
+        "description": "Models, GPU acceleration and batching"
+      },
+      "library": {
+        "title": "Library",
+        "description": "Thumbnails and the index",
+        "descriptionDesktop": "Thumbnails, export and the index"
+      },
+      "sharing": {
+        "title": "Network sharing",
+        "description": "Let browsers on your network open the library"
+      },
+      "server": {
+        "title": "Server",
+        "description": "Addresses, accounts and sign-ins"
+      },
+      "account": {
+        "title": "Your account",
+        "description": "Change your password or sign out"
+      }
+    }
   },
   "dangerZone": {
     "confirm": "Are you sure? This cannot be undone.",
@@ -102,6 +135,14 @@
     "gpuUsingCuda": "Currently using CUDA",
     "gpuDirects": "Directs tasks to GPU",
     "gpuNotDetected": "No NVIDIA GPU detected",
+    "gpuUnusable": "{{name}} can't be used",
+    "gpuUnusableUnnamed": "The NVIDIA GPU can't be used",
+    "problem": {
+      "unsupportedGpu": "{{name}} ({{capability}}) isn't supported by this version of VBLIS, so it runs on the CPU. GPU acceleration needs a GeForce GTX 16 or RTX 20-series card or newer.",
+      "unsupportedGpuUnnamed": "This NVIDIA GPU isn't supported by this version of VBLIS, so it runs on the CPU. GPU acceleration needs a GeForce GTX 16 or RTX 20-series card or newer.",
+      "driverTooOld": "Update the NVIDIA driver to version 580 or newer to use the GPU. Until then VBLIS runs on the CPU.",
+      "cudaFailed": "The NVIDIA GPU couldn't be started, so VBLIS runs on the CPU. Updating the NVIDIA driver may help."
+    },
     "gpuDisable": "Disable NVIDIA GPU support",
     "gpuEnable": "Enable NVIDIA GPU support",
     "cudaRequired": "CUDA-capable GPU is required for GPU acceleration.",
@@ -168,6 +209,27 @@
       "rebuild": "Rebuild Videos",
       "clearTooltip": "Clear only video thumbnails",
       "clear": "Clear"
+    }
+  },
+  "export": {
+    "title": "Export for another device",
+    "intro": "Copy this library's index to another computer, such as a small Linux server, which then searches it without indexing again. The file holds the index, media details (including places) and thumbnails, so keep it private.",
+    "loading": "Checking what can be exported...",
+    "loadFailed": "Could not check what can be exported.",
+    "empty": "Nothing to export yet: index a folder first.",
+    "model": "Index to export",
+    "items_one": "{{n}} item",
+    "items_other": "{{n}} items",
+    "thumbnails": "Include thumbnails (larger file, faster browsing on the other device)",
+    "path": "Save the file as",
+    "pathHint": "The full path of the file to write, ending in .vblis-export.",
+    "button": "Export…",
+    "started": "Export started. It appears in the task queue.",
+    "errors": {
+      "invalidPath": "That location can't be used. Choose another file name or folder.",
+      "unknownModel": "That index isn't available any more. Close Settings, open them again and choose another.",
+      "noIndex": "Nothing to export yet: index a folder first.",
+      "failed": "The export could not be started."
     }
   },
   "sharing": {

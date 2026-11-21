@@ -298,6 +298,40 @@ describe('useIndexedFolders', () => {
     });
   });
 
+  describe('on a read-only copy', () => {
+    const refusal = () => ({ ok: false, status: 409, statusText: 'Conflict', json: async () => ({ detail: 'Read-only copy.', code: 'read_only' }) });
+    const MESSAGE = 'This library is a read-only copy; indexing happens on another computer.';
+
+    it('sends none of the four index changes', async () => {
+      const { result } = render({ readOnly: true });
+      await flush();
+      act(() => result.current.toggleSelectAll());
+      await act(async () => {
+        await result.current.handleReindexFolder('/a');
+        await result.current.handleDeleteFolderIndex('/a');
+        await result.current.handleBatchDelete();
+        await result.current.handleBatchReindex();
+      });
+      expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toEqual([]);
+      expect(setToast).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['reindex', 'index/folder/reindex', (r) => r.current.handleReindexFolder('/a')],
+      ['delete', 'index/folder/delete', (r) => r.current.handleDeleteFolderIndex('/a')],
+      ['batch delete', 'index/folders/batch-delete', (r) => r.current.handleBatchDelete()],
+      ['batch reindex', 'index/folders/batch-reindex', (r) => r.current.handleBatchReindex()],
+    ])('says so when the backend refuses a %s (an old tab)', async (name, path, act1) => {
+      routes[`POST ${API}/${path}`] = async () => refusal();
+      const { result } = render();
+      await flush();
+      act(() => result.current.toggleSelectAll());
+      await act(async () => { await act1(result); });
+      expect(setToast).toHaveBeenCalledWith({ message: MESSAGE, type: 'error' });
+      expect(onIndexChanged).not.toHaveBeenCalled();
+    });
+  });
+
   describe('poll state identity', () => {
     const useFreshResponses = () => {
       routes[`GET ${API}/index/folders`] = () => jsonResponse(JSON.parse(JSON.stringify(foldersPayload)));

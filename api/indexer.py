@@ -9,12 +9,14 @@ import collections
 import itertools
 import queue
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from model_manager import ModelManager
 import pathlib
 import paths
 import path_keys
 import media_sync
+import replica
 import security
 from media_image import (
     IMAGE_EXTENSIONS, IMAGE_EMBED_VERSION, compute_file_hash, embed_version_is_current, embedding_is_outdated,
@@ -391,6 +393,10 @@ class _EmbedQueue:
         self.jobs.clear()
         self.pending_by_hash.clear()
 
+# Seconds between rebuilds of the stored-hash map after the collection changed (Indexer.content_hash)
+STORED_HASH_REFRESH_S = 30.0
+
+
 class Indexer:
     def __init__(self, model_manager: ModelManager, db_path=None, data_dir=None, cache_dir=None):
         if db_path is None:
@@ -401,12 +407,14 @@ class Indexer:
         self.client = chromadb.PersistentClient(path=self.db_path)
         self.collection = None
         self.search_sessions = SearchSessions()
-        # Library-wide duplicates of the active collection (the "Duplicates" filter, visual copies, counts)
-        self.duplicate_index = DuplicateIndex(VISUAL_DUPLICATE_THRESHOLD, METADATA_GET_MAX)
         self.data_dir = pathlib.Path(data_dir if data_dir is not None else paths.DATA_DIR)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = pathlib.Path(cache_dir if cache_dir is not None else paths.CACHE_DIR)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # Library-wide duplicates of the active collection (the "Duplicates" filter, visual copies, counts); the
+        # look-alike level is kept in cache/duplicates (not touched by the thumbnail cache's Clear buttons)
+        self.duplicate_index = DuplicateIndex(VISUAL_DUPLICATE_THRESHOLD, METADATA_GET_MAX,
+                                              store_dir=self.cache_dir / "duplicates")
         self.video_cache_dir = self.cache_dir / "videos"
         self.folders = FolderRegistry(self.data_dir, self.cache_dir)
         self.media_registry = MediaRegistry(self.data_dir / "media_registry.sqlite3")
@@ -420,11 +428,18 @@ class Indexer:
         self._probed_video_rotations = {}
         # video source key -> path, learned from metadata reads (a pure function of the path, so never stale)
         self._video_paths_by_sha = {}
+        # ((collection name, version), {normcased path: (hash, size, mtime_ns)}, built at) of the image records
+        self._stored_hashes = None
+        self._stored_hashes_lock = threading.Lock()
         
         # Connect to the collection matching the loaded VLM
         if self.model_manager.current_model_id:
             self.switch_collection(self.model_manager.get_collection_name())
             
+        # Guards the progress counters below: the task worker writes them, /status reads them on other threads.
+        # Re-entrant (_count_failed_file nests _advance_progress). Held only for a few assignments, never while
+        # waiting on pause/cancel, doing file, Chroma or model work, or calling task_context.
+        self._status_lock = threading.RLock()
         self.is_indexing = False
         self.cancel_requested = False
         self.total_files = 0
@@ -489,6 +504,9 @@ class Indexer:
             print(f"Clearing collection: {collection_name}")
             self.client.delete_collection(name=collection_name)
             self.folders.forget(collection_name)
+            # Reset first, so a look-alike build still running for the old content is not saved again
+            self.duplicate_index.reset()
+            self.duplicate_index.forget(collection_name)
             self.switch_collection(collection_name)
             self.run_maintenance()
 
@@ -501,6 +519,7 @@ class Indexer:
                 self.collection = None
                 self.duplicate_index.reset()
             self.folders.forget(collection_name)
+            self.duplicate_index.forget(collection_name)
             self.run_maintenance()
         except Exception as e:
             print(f"Error deleting collection {collection_name}: {e}")
@@ -550,12 +569,14 @@ class Indexer:
         """should_stop callback for the media sync: true once the run is cancelled (blocks while paused)."""
         return self.cancel_requested or (task_context is not None and not task_context.check_paused_or_cancelled())
 
-    def _run_media_sync(self, roots, image_paths, video_paths, stats, task_context=None, on_progress=None):
+    def _run_media_sync(self, roots, image_paths, video_paths, stats, task_context=None, on_progress=None,
+                        retry_access_errors=False, keep_access_errors=None):
         files = [(path, "image", stats.get(path)) for path in image_paths]
         files += [(path, "video", stats.get(path)) for path in video_paths]
         result = media_sync.sync_media_files(
             self.media_registry, files, roots,
-            should_stop=lambda: self._sync_stop_check(task_context), on_progress=on_progress
+            should_stop=lambda: self._sync_stop_check(task_context), on_progress=on_progress,
+            retry_access_errors=retry_access_errors, keep_access_errors=keep_access_errors
         )
         self.last_media_sync = result
         print(
@@ -568,12 +589,18 @@ class Indexer:
         """Bring the media registry up to date after an index run. A registry problem is only logged: it
         must never fail the run."""
         try:
-            self.current_file = "Reading media details..."
+            with self._status_lock:
+                self.current_file = "Reading media details..."
             if task_context:
                 task_context.update_progress(
                     task_context.processed_count, task_context.total_count, "Reading media details..."
                 )
-            self._run_media_sync(roots, image_paths, video_paths, stats, task_context)
+            # A file the OS refused to open before is read again (its permissions may have been fixed, or it
+            # was only locked), unless this run just failed to read it too
+            with self._status_lock:
+                failed = list(self.failed_files)
+            self._run_media_sync(roots, image_paths, video_paths, stats, task_context,
+                                 retry_access_errors=True, keep_access_errors=failed)
         except Exception as e:
             print(f"[Warning] Indexer: could not update the media registry: {e}")
 
@@ -618,7 +645,9 @@ class Indexer:
             if task_context:
                 task_context.update_progress(done, total, f"Reading media details ({done}/{total})")
 
-        result = self._run_media_sync(roots, images, videos, file_stats, task_context, on_progress)
+        # The manual read also tries again the files the OS refused to open (access denied, held by another program)
+        result = self._run_media_sync(roots, images, videos, file_stats, task_context, on_progress,
+                                      retry_access_errors=True)
         if task_context and not result.stopped and result.probed == 0:
             task_context.update_progress(0, 0, "Media details are up to date")
 
@@ -655,8 +684,9 @@ class Indexer:
 
     def _record_failed_frame(self, path, timestamp, record_id, error):
         print(f"Error indexing video frame {record_id}: {error}")
-        self.error_count += 1
-        self.failed_files.append(f"{path} @ {timestamp:.2f}s")
+        with self._status_lock:
+            self.error_count += 1
+            self.failed_files.append(f"{path} @ {timestamp:.2f}s")
 
     def _add_video_frame_batch(self, prepared, metadatas, record_ids, task_context=None):
         """Embed and store one batch of prepared video frames, falling back per frame on failure."""
@@ -687,6 +717,56 @@ class Indexer:
                 except Exception as frame_error:
                     self._record_failed_frame(metadata["path"], metadata["timestamp_seconds"], record_id, frame_error)
         return stored_count
+
+    def content_hash(self, path) -> str:
+        """The sha256 of an image file's bytes, the key of its thumbnail and screen-sized copy in the cache.
+        The index stored it with the file's size and modified time; while both still match the file, that
+        hash is used and the file is not read (every thumbnail of a large photo, on a slow disk or a network
+        share). A file changed since, or not in the index, is read as before."""
+        try:
+            stat = os.stat(path)
+        except OSError:
+            return compute_file_hash(path)
+        entry = self._stored_hash_map().get(os.path.normcase(os.path.abspath(path)))
+        if entry is not None and entry[1] == stat.st_size and entry[2] == stat.st_mtime_ns:
+            return entry[0]
+        return compute_file_hash(path)
+
+    def _stored_hash_map(self) -> dict:
+        """{normcased path: (hash, size, mtime_ns)} of the active collection's image records, from the cached
+        metadata scan. Every entry is checked against the file's size and mtime when used, so an older map is
+        still safe: after the collection changed it is rebuilt at most every STORED_HASH_REFRESH_S seconds and
+        never while indexing (each batch changes the collection), by one thread at a time; the others keep the
+        map they have, and a file it doesn't know is read."""
+        collection = self.collection
+        if collection is None:
+            return {}
+        key = (collection.name, getattr(collection, "version", None))
+        cached = self._stored_hashes
+        same_collection = cached is not None and cached[0][0] == key[0]
+        if same_collection:
+            if key[1] is not None and cached[0] == key:
+                return cached[1]
+            if self.is_indexing or time.monotonic() - cached[2] < STORED_HASH_REFRESH_S:
+                return cached[1]
+        if not self._stored_hashes_lock.acquire(blocking=False):
+            return cached[1] if same_collection else {}
+        try:
+            mapping = {}
+            try:
+                scan = collection.get(include=["metadatas"])
+            except Exception:
+                return cached[1] if same_collection else mapping
+            for meta in scan.get("metadatas") or []:
+                if not meta or meta.get("media_type", "image") != "image":
+                    continue
+                file_hash, path, size, mtime_ns = meta.get("hash"), meta.get("path"), meta.get("size"), meta.get("mtime_ns")
+                if isinstance(file_hash, str) and isinstance(path, str) and isinstance(size, int) and isinstance(mtime_ns, int):
+                    mapping[os.path.normcase(os.path.abspath(path))] = (file_hash, size, mtime_ns)
+            self._stored_hashes = (key, mapping, time.monotonic())
+            return mapping
+        finally:
+            self._stored_hashes_lock.release()
 
     def video_rotation(self, path, stat=None) -> int:
         """Display rotation (PyAV degrees) of a video. The video signature and the thumbnail cache key need it
@@ -875,9 +955,10 @@ class Indexer:
                 break
 
             normalized_path = os.path.abspath(os.path.normpath(filepath))
-            self.current_file = normalized_path
+            with self._status_lock:
+                self.current_file = normalized_path
             if task_context:
-                task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(normalized_path))
+                task_context.update_progress(*self._progress_counts(), os.path.basename(normalized_path))
             try:
                 stat = os.stat(normalized_path)
                 rotation = self.video_rotation(normalized_path, stat)
@@ -887,7 +968,8 @@ class Indexer:
                     entry.get("source_signature") == source_signature
                     for entry in previous_entries
                 ):
-                    self.indexed_video_frames += len(previous_entries)
+                    with self._status_lock:
+                        self.indexed_video_frames += len(previous_entries)
                     continue
 
                 # The new frames can have the ids of the old ones, so the old records go first. They are kept
@@ -904,17 +986,17 @@ class Indexer:
                     raise
                 if frame_count == 0:  # cancelled part-way: the new frames were removed again
                     self._restore_records(backup)
-                self.indexed_video_frames += frame_count
+                with self._status_lock:
+                    self.indexed_video_frames += frame_count
             except Exception as e:
                 print(f"Error indexing video {normalized_path}: {e}")
-                self.error_count += 1
-                self.failed_files.append(normalized_path)
+                with self._status_lock:
+                    self.error_count += 1
+                    self.failed_files.append(normalized_path)
                 if task_context:
                     task_context.add_error(f"{os.path.basename(normalized_path)}: {e}")
             finally:
-                self.indexed_files += 1
-                if task_context:
-                    task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(normalized_path))
+                self._advance_progress(normalized_path, task_context)
 
     def delete_folder_index(self, folder_path: str):
         """Delete all index entries belonging to a specific folder."""
@@ -947,16 +1029,30 @@ class Indexer:
             raise e
             
     def get_status(self):
+        # One consistent read of the counters; nothing below waits on the task worker (a paused task included)
+        with self._status_lock:
+            is_indexing = self.is_indexing
+            total_files = self.total_files
+            indexed_files = self.indexed_files
+            current_file = self.current_file
+            error_count = self.error_count
+            failed_files = list(self.failed_files)
+            last_task_id = self.last_task_id
+            discovered_video_count = self.discovered_video_count
+            indexed_video_frames = self.indexed_video_frames
+            is_rebuilding = self.is_rebuilding_video_thumbnails
+            rebuilt_frames = self.rebuilt_video_frames
+            frames_to_rebuild = self.total_video_frames_to_rebuild
         return {
-            "is_indexing": self.is_indexing,
-            "progress": f"{self.indexed_files}/{self.total_files}" if self.total_files > 0 else "0/0",
-            "percent": (self.indexed_files / self.total_files * 100) if self.total_files > 0 else 0,
-            "total_files": self.total_files,
-            "indexed_files": self.indexed_files,
-            "current_file": self.current_file,
-            "errors": self.error_count,
-            "failed_files": self.failed_files,
-            "last_task_id": self.last_task_id,
+            "is_indexing": is_indexing,
+            "progress": f"{indexed_files}/{total_files}" if total_files > 0 else "0/0",
+            "percent": (indexed_files / total_files * 100) if total_files > 0 else 0,
+            "total_files": total_files,
+            "indexed_files": indexed_files,
+            "current_file": current_file,
+            "errors": error_count,
+            "failed_files": failed_files,
+            "last_task_id": last_task_id,
             "is_downloading": self.model_manager.is_downloading,
             "download_total_bytes": self.model_manager.download_total_bytes,
             "download_current_bytes": self.model_manager.download_current_bytes,
@@ -967,11 +1063,11 @@ class Indexer:
             "is_loading_model": self.model_manager.is_loading_model,
             "oom_triggered": getattr(self.model_manager, "oom_triggered", False),
             "cancel_requested": self.cancel_requested,
-            "discovered_video_count": self.discovered_video_count,
-            "indexed_video_frames": self.indexed_video_frames,
-            "is_rebuilding_video_thumbnails": self.is_rebuilding_video_thumbnails,
-            "rebuilt_video_frames": self.rebuilt_video_frames,
-            "total_video_frames_to_rebuild": self.total_video_frames_to_rebuild
+            "discovered_video_count": discovered_video_count,
+            "indexed_video_frames": indexed_video_frames,
+            "is_rebuilding_video_thumbnails": is_rebuilding,
+            "rebuilt_video_frames": rebuilt_frames,
+            "total_video_frames_to_rebuild": frames_to_rebuild
         }
 
     def regenerate_video_thumbnails(self, task_context=None):
@@ -984,9 +1080,10 @@ class Indexer:
                 task_context.add_error("No active collection.")
             return {"status": "error", "message": "No active collection."}
 
-        self.is_rebuilding_video_thumbnails = True
-        self.rebuilt_video_frames = 0
-        self.total_video_frames_to_rebuild = 0
+        with self._status_lock:
+            self.is_rebuilding_video_thumbnails = True
+            self.rebuilt_video_frames = 0
+            self.total_video_frames_to_rebuild = 0
 
         try:
             entries_by_path = self._get_existing_video_entries()
@@ -999,7 +1096,8 @@ class Indexer:
             for filepath, entries in entries_by_path.items():
                 if os.path.isfile(filepath):
                     total_frames += len(entries)
-            self.total_video_frames_to_rebuild = total_frames
+            with self._status_lock:
+                self.total_video_frames_to_rebuild = total_frames
             if task_context:
                 task_context.update_progress(0, total_frames, "Starting video thumbnail rebuild...")
 
@@ -1015,22 +1113,22 @@ class Indexer:
                 timestamps = [float(e["timestamp_seconds"]) for e in entries if "timestamp_seconds" in e]
                 if timestamps:
                     def on_frame_done(_ts):
-                        self.rebuilt_video_frames += 1
+                        with self._status_lock:
+                            self.rebuilt_video_frames += 1
+                            rebuilt, total = self.rebuilt_video_frames, self.total_video_frames_to_rebuild
                         if task_context:
-                            task_context.update_progress(
-                                self.rebuilt_video_frames,
-                                self.total_video_frames_to_rebuild,
-                                os.path.basename(filepath)
-                            )
+                            task_context.update_progress(rebuilt, total, os.path.basename(filepath))
 
                     extract_video_frames_batch(
                         filepath, timestamps, self.video_cache_dir, on_frame_saved=on_frame_done, rotation=rotation
                     )
 
+            with self._status_lock:
+                rebuilt = self.rebuilt_video_frames
             return {
                 "status": "success",
-                "message": f"Successfully regenerated {self.rebuilt_video_frames} video thumbnails.",
-                "rebuilt": self.rebuilt_video_frames
+                "message": f"Successfully regenerated {rebuilt} video thumbnails.",
+                "rebuilt": rebuilt
             }
         except Exception as e:
             print(f"Error rebuilding video thumbnails: {e}")
@@ -1038,23 +1136,32 @@ class Indexer:
                 task_context.add_error(str(e))
             return {"status": "error", "message": str(e)}
         finally:
-            self.is_rebuilding_video_thumbnails = False
+            with self._status_lock:
+                self.is_rebuilding_video_thumbnails = False
 
     def _stop_requested(self, task_context):
         return self.cancel_requested or bool(task_context and not task_context.check_paused_or_cancelled())
 
+    def _progress_counts(self):
+        """(indexed_files, total_files) read together, to hand to task_context.update_progress."""
+        with self._status_lock:
+            return self.indexed_files, self.total_files
+
     def _advance_progress(self, filepath, task_context, count=1):
-        self.indexed_files += count
+        with self._status_lock:
+            self.indexed_files += count
+            indexed, total = self.indexed_files, self.total_files
         if task_context:
-            task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(filepath))
+            task_context.update_progress(indexed, total, os.path.basename(filepath))
 
     def _record_failed_file(self, filepath, err, task_context):
         print(f"Error preparing {filepath}: {err}")
         self._count_failed_file(filepath, err, task_context)
 
     def _count_failed_file(self, filepath, err, task_context):
-        self.error_count += 1
-        self.failed_files.append(filepath)
+        with self._status_lock:
+            self.error_count += 1
+            self.failed_files.append(filepath)
         if task_context:
             task_context.add_error(f"{os.path.basename(filepath)}: {err}")
         self._advance_progress(filepath, task_context)
@@ -1325,9 +1432,10 @@ class Indexer:
                         stopped = True
                         break
                     chunk_files = [filepath for filepath, _ in chunk]
-                    self.current_file = chunk_files[0]
+                    with self._status_lock:
+                        self.current_file = chunk_files[0]
                     if task_context:
-                        task_context.update_progress(self.indexed_files, self.total_files, os.path.basename(self.current_file))
+                        task_context.update_progress(*self._progress_counts(), os.path.basename(chunk_files[0]))
 
                     # 2. Sort the chunk and write its record updates
                     plan = self._classify_chunk(chunk_files, dict(chunk), known, stats, task_context)
@@ -1370,19 +1478,33 @@ class Indexer:
             print(f"[Notice] {label} cancelled by user.")
         return upgraded_count, reembedded_count
 
+    def _start_run_counters(self):
+        """Start of an index or reindex run: every counter back to zero together, the total too, so a poll
+        during discovery reads 0/0 and not the previous run's total next to indexed 0."""
+        with self._status_lock:
+            self.is_indexing = True
+            self.error_count = 0
+            self.indexed_files = 0
+            self.total_files = 0
+            self.discovered_video_count = 0
+            self.indexed_video_frames = 0
+            self.failed_files = []
+
+    def _finish_run(self):
+        with self._status_lock:
+            self.is_indexing = False
+            self.current_file = ""
+            self.last_task_id += 1
+
     def batch_index_folders(self, folder_paths: list[str], task_context=None):
         if self.is_indexing and task_context is None:
             return  # Prevent concurrent indexing
             
-        self.is_indexing = True
         self.cancel_requested = False
-        self.error_count = 0
-        self.indexed_files = 0
-        self.discovered_video_count = 0
-        self.indexed_video_frames = 0
+        self._start_run_counters()
         self.model_manager.oom_triggered = False
         self.model_manager.oom_triggered_count = 0
-        
+
         # Ensure collection is set
         if not self.collection:
             self.switch_collection(self.model_manager.get_collection_name())
@@ -1390,18 +1512,18 @@ class Indexer:
         for folder_path in folder_paths:
             if os.path.isdir(folder_path):
                 self._add_selected_folder(folder_path)
-            
-        self.failed_files = []
-        
+
         try:
             if task_context:
                 task_context.update_progress(0, 0, "Discovering media files...")
             files_to_index, discovered_videos, file_stats = self.discover_media_files(folder_paths)
-            self.discovered_video_count = len(discovered_videos)
-            self.total_files = len(files_to_index) + len(discovered_videos)
+            total_files = len(files_to_index) + len(discovered_videos)
+            with self._status_lock:
+                self.discovered_video_count = len(discovered_videos)
+                self.total_files = total_files
             if task_context:
-                task_context.update_progress(0, self.total_files, "Comparing index cache...")
-            
+                task_context.update_progress(0, total_files, "Comparing index cache...")
+
             # Get existing IDs (paths) to avoid redundant work
             existing_results = self.collection.get(include=["metadatas"])
             # Compared by normalized path so the same file reached through a differently written folder
@@ -1415,9 +1537,10 @@ class Indexer:
             
             # Filter out already indexed files
             pending_files = [f for f in files_to_index if os.path.normcase(os.path.normpath(f)) not in existing_paths]
-            self.indexed_files = len(files_to_index) - len(pending_files)
+            with self._status_lock:
+                self.indexed_files = len(files_to_index) - len(pending_files)
             if task_context:
-                task_context.update_progress(self.indexed_files, self.total_files, "Indexing items...")
+                task_context.update_progress(*self._progress_counts(), "Indexing items...")
 
             self._index_image_files(pending_files, task_context=task_context, label="Indexing", stats=file_stats)
 
@@ -1428,9 +1551,7 @@ class Indexer:
                 roots = [folder for folder in folder_paths if os.path.isdir(folder)]
                 self._sync_media_registry(roots, files_to_index, discovered_videos, file_stats, task_context)
         finally:
-            self.is_indexing = False
-            self.current_file = ""
-            self.last_task_id += 1
+            self._finish_run()
 
     def reindex_directory(self, directory: str, task_context=None):
         """Synchronize the index with the current state of a directory.
@@ -1445,22 +1566,16 @@ class Indexer:
                 task_context.add_error(f"Directory '{directory}' not found.")
             return
 
-        self.is_indexing = True
         self.cancel_requested = False
-        self.error_count = 0
-        self.indexed_files = 0
-        self.discovered_video_count = 0
-        self.indexed_video_frames = 0
+        self._start_run_counters()
         self.model_manager.oom_triggered = False
         self.model_manager.oom_triggered_count = 0
-        
+
         if not self.collection:
             self.switch_collection(self.model_manager.get_collection_name())
 
         self._add_selected_folder(directory)
-            
-        self.failed_files = []
-        
+
         try:
             norm_target = os.path.normpath(directory)
             if task_context:
@@ -1471,8 +1586,9 @@ class Indexer:
             disk_files = [os.path.normpath(path) for path in discovered_images]
             disk_video_files = [os.path.normpath(path) for path in discovered_videos]
             disk_stats = {os.path.normpath(path): stat for path, stat in file_stats.items()}
-            self.discovered_video_count = len(discovered_videos)
-            
+            with self._status_lock:
+                self.discovered_video_count = len(discovered_videos)
+
             # 2. Get current files in index for this directory
             results = self.collection.get(include=["metadatas"])
             db_entries = [] # List of (id, path, hash)
@@ -1501,10 +1617,12 @@ class Indexer:
             stale_source_paths = {e["path"] for e in stale_entries}
             existing_video_entries = self._get_existing_video_entries(results)
 
-            self.total_files = len(disk_files) + len(disk_video_files) + len(stale_source_paths)
+            total_files = len(disk_files) + len(disk_video_files) + len(stale_source_paths)
+            with self._status_lock:
+                self.total_files = total_files
             if task_context:
-                task_context.update_progress(0, self.total_files, "Cleaning stale entries...")
-            
+                task_context.update_progress(0, total_files, "Cleaning stale entries...")
+
             # 3. Remove entries from DB that are no longer on disk
             ids_to_remove = [entry["id"] for entry in stale_entries]
             
@@ -1514,10 +1632,11 @@ class Indexer:
                 self.run_maintenance()
             
             # Update progress
-            self.indexed_files = len(stale_source_paths)
+            with self._status_lock:
+                self.indexed_files = len(stale_source_paths)
             if task_context:
-                task_context.update_progress(self.indexed_files, self.total_files, "Processing updated files...")
-            
+                task_context.update_progress(*self._progress_counts(), "Processing updated files...")
+
             # 4. Add or update files from disk in batched chunks
             upgraded_count, reembedded_count = self._index_image_files(
                 disk_files, task_context=task_context, known=known, label="Re-indexing", stats=disk_stats
@@ -1535,9 +1654,7 @@ class Indexer:
                 self._sync_media_registry([directory], discovered_images, discovered_videos, file_stats, task_context)
                 
         finally:
-            self.is_indexing = False
-            self.current_file = ""
-            self.last_task_id += 1
+            self._finish_run()
 
     def batch_delete_folders(self, folder_paths: list[str]):
         """Delete multiple folder indexes."""
@@ -1751,7 +1868,10 @@ class Indexer:
 
     def _search_collection(self):
         if not self.collection:
-            self.switch_collection(self.model_manager.get_collection_name())
+            name = self.model_manager.get_collection_name()
+            if name == "default_collection" and replica.is_read_only():
+                name = (replica.marker() or {}).get("collection") or name
+            self.switch_collection(name)
         return self.collection
 
     @staticmethod

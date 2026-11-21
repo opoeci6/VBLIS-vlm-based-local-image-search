@@ -2,6 +2,7 @@
 import bootstrap
 import os
 import paths
+import replica
 import security
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -26,6 +27,10 @@ async def lifespan(app: FastAPI):
     security.install_access_log_redaction()
     # Initialize indexer and models gracefully
     print("Starting API backend...")
+    copy = replica.summary()
+    if copy is not None:
+        print(f"[Replica] Read-only copy of the index exported by {copy['source_host'] or 'another computer'} "
+              f"on {copy['exported_at'] or 'an unknown date'}: indexing happens there.")
     active_model = os.getenv("ACTIVE_MODEL", "google/siglip2-base-patch16-224")
     try:
         print(f"Loading last active model: {active_model}")

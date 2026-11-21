@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import ratelimit
+import replica
 from network_gate import OWNER_ROUTE, PUBLIC, VIEWER_ROUTE, NetworkGate
 from routers import auth, fs, indexing, media, models, original, queue, search, server_settings, settings
 
@@ -87,6 +88,7 @@ def build_core_app() -> FastAPI:
     app = FastAPI(title="VBLIS server", docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
     for module in SHARED_ROUTERS + NETWORK_ROUTERS:
         app.include_router(module.router)
+    replica.install(app)
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request: Request, exc: StarletteHTTPException):

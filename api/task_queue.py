@@ -9,6 +9,8 @@ from typing import Optional, List, Dict, Any
 import paths
 import path_keys
 import cache_store
+import index_export
+import replica
 
 
 class TaskType(str, Enum):
@@ -19,6 +21,7 @@ class TaskType(str, Enum):
     PRUNE_DELETED = "PRUNE_DELETED"
     CLEAR_CACHE = "CLEAR_CACHE"
     SCAN_MEDIA_INFO = "SCAN_MEDIA_INFO"
+    EXPORT_INDEX = "EXPORT_INDEX"
 
 
 # Task types that need an AI model loaded before they can run
@@ -83,6 +86,9 @@ class Task:
         self.cancel_requested: bool = False
         self._pause_event: threading.Event = threading.Event()
         self._pause_event.set()  # set means running, clear means paused
+        # Guards the progress fields that update_progress / add_error write and to_dict reads (the worker writes,
+        # request threads read). Taken after the queue lock, and never held while calling into the queue or indexer.
+        self._progress_lock: threading.Lock = threading.Lock()
 
     # app/src/utils/taskTitle.js parses these strings, so a change here needs a change there.
     @staticmethod
@@ -109,6 +115,8 @@ class Task:
             return f"Clear {target.capitalize()} Cache"
         elif task_type == TaskType.SCAN_MEDIA_INFO:
             return "Read media details"
+        elif task_type == TaskType.EXPORT_INDEX:
+            return "Export index"
         return str(task_type.value)
 
     def is_paused(self) -> bool:
@@ -136,21 +144,27 @@ class Task:
         return not self.cancel_requested
 
     def update_progress(self, processed: int, total: int, current_item: str = ""):
-        self.processed_count = processed
-        self.total_count = total
-        if total > 0:
-            self.progress = round(min(100.0, max(0.0, (processed / total) * 100.0)), 1)
-        else:
-            self.progress = 0.0
-        if current_item:
-            self.current_item = current_item
+        with self._progress_lock:
+            self.processed_count = processed
+            self.total_count = total
+            if total > 0:
+                self.progress = round(min(100.0, max(0.0, (processed / total) * 100.0)), 1)
+            else:
+                self.progress = 0.0
+            if current_item:
+                self.current_item = current_item
 
     def add_error(self, error_msg: str):
-        self.error_count += 1
-        if len(self.errors) < 50:
-            self.errors.append(error_msg)
+        with self._progress_lock:
+            self.error_count += 1
+            if len(self.errors) < 50:
+                self.errors.append(error_msg)
 
     def to_dict(self) -> Dict[str, Any]:
+        with self._progress_lock:
+            return self._to_dict_locked()
+
+    def _to_dict_locked(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "type": self.type.value if hasattr(self.type, "value") else str(self.type),
@@ -163,7 +177,7 @@ class Task:
             "processed_count": self.processed_count,
             "total_count": self.total_count,
             "error_count": self.error_count,
-            "errors": self.errors,
+            "errors": list(self.errors),
             "created_at": self.created_at,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
@@ -396,6 +410,16 @@ class TaskQueueManager:
                         if not interrupted_task and idx == 0:
                             interrupted_task = task
 
+                if replica.is_read_only():
+                    # A read-only copy never indexes: tasks saved before the folder became one are dropped
+                    blocked = [t for t in self.pending_queue + ([interrupted_task] if interrupted_task else [])
+                               if t.type.value in replica.BLOCKED_TASK_TYPES]
+                    if blocked:
+                        self.pending_queue = [t for t in self.pending_queue if t not in blocked]
+                        if interrupted_task in blocked:
+                            interrupted_task = None
+                        print(f"[TaskQueue] Dropped {len(blocked)} indexing task(s): this library is a read-only copy.")
+
                 if interrupted_task:
                     # Place interrupted task as #1 in the queue (index 0)
                     existing_ids = [t.id for t in self.pending_queue]
@@ -428,6 +452,7 @@ class TaskQueueManager:
         priority: str = "bottom",
         model_id: Optional[str] = None
     ) -> Task:
+        replica.check_task_type(task_type)
         assigned_model = (model_id or self._get_active_model_id()) if task_type in MODEL_DEPENDENT_TASK_TYPES else None
         task = Task(task_type=task_type, payload=payload, title=title, model_id=assigned_model)
         with self.lock:
@@ -652,6 +677,7 @@ class TaskQueueManager:
                     break
             if not target:
                 return None
+            replica.check_task_type(target.type)
 
             new_task = Task(
                 task_type=target.type,
@@ -769,6 +795,8 @@ class TaskQueueManager:
                 self.indexer.regenerate_video_thumbnails(task_context=task)
             elif task.type == TaskType.SCAN_MEDIA_INFO:
                 self.indexer.scan_media_info(task_context=task)
+            elif task.type == TaskType.EXPORT_INDEX:
+                index_export.run_export_task(self.indexer, task)
             elif task.type == TaskType.CLEAR_CACHE:
                 target = task.payload.get("target", "all")
                 cache_store.safe_clear_cache(target=target)

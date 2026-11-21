@@ -1,4 +1,4 @@
-import { Folder, Video, RefreshCw, FileSearch } from 'lucide-react';
+import { Folder, Video, RefreshCw, FileSearch, FileDown } from 'lucide-react';
 
 // Icon (and colour) shown for a queue task of the given type.
 export const getTaskTypeIcon = (type) => {
@@ -11,6 +11,8 @@ export const getTaskTypeIcon = (type) => {
       return <Video className="w-4 h-4 text-cyan-500" />;
     case 'SCAN_MEDIA_INFO':
       return <FileSearch className="w-4 h-4 text-violet-500" />;
+    case 'EXPORT_INDEX':
+      return <FileDown className="w-4 h-4 text-amber-500" />;
     default:
       return <RefreshCw className="w-4 h-4 text-emerald-500" />;
   }

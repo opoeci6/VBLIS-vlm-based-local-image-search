@@ -935,12 +935,14 @@ describe('SearchFiltersPanel', () => {
       // The pinned buttons row keeps clear of the home bar instead (see below).
       expect(classes).not.toContain('env(safe-area-inset-bottom');
       // From sm up it floats under the header as before.
-      ['sm:top-24', 'sm:left-1/2', 'sm:max-h-[70dvh]', 'sm:rounded-2xl'].forEach(name => {
+      ['sm:top-24', 'sm:left-1/2', 'sm:max-h-[70dvh]', 'sm:rounded-2xl', 'sm:pb-0'].forEach(name => {
         expect(classes.split(/\s+/)).toContain(name);
       });
+      // No bottom padding from sm up either, so the pinned row sits on the panel's bottom edge.
+      expect(classes.split(/\s+/)).not.toContain('sm:p-5');
     });
 
-    it('pins Clear all and Done to the bottom of the sheet, clear of the home bar, and not from sm up', async () => {
+    it('pins Clear all and Done to the bottom of the panel on every screen size, clear of the home bar', async () => {
       await renderPanel();
       const dialog = screen.getByRole('dialog');
       const footer = dialog.querySelector('[data-filters-footer]');
@@ -948,9 +950,11 @@ describe('SearchFiltersPanel', () => {
       expect(footer.parentElement).toBe(dialog);
       expect(footer.nextElementSibling).toBeNull();
       const classes = footer.className.split(/\s+/);
-      ['sticky', 'bottom-0', 'bg-white', 'dark:bg-neutral-900', 'sm:static', 'sm:p-0'].forEach(name => {
+      ['sticky', 'bottom-0', 'bg-white', 'dark:bg-neutral-900'].forEach(name => {
         expect(classes).toContain(name);
       });
+      // Nothing turns it back into an ordinary row on the desktop (it used to be static from sm up).
+      expect(classes.filter(name => name.startsWith('sm:'))).toEqual([]);
       expect(footer.className).toContain('env(safe-area-inset-bottom');
       expect(within(footer).getByRole('button', { name: 'Clear all' })).toBeTruthy();
       expect(within(footer).getByRole('button', { name: 'Done' })).toBeTruthy();

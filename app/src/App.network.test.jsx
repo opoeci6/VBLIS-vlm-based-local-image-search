@@ -275,7 +275,9 @@ describe('App in a browser', () => {
       expect(screen.queryByRole('button', { name: 'Search with a picture' })).toBeNull();
       openSettings(container);
       await screen.findByText('Settings');
-      expect(screen.getByText('Your account')).toBeTruthy();
+      expect(screen.queryByRole('tab', { name: 'Server' })).toBeNull();
+      fireEvent.click(screen.getByRole('tab', { name: 'Your account' }));
+      expect(screen.getByRole('heading', { name: 'Your account' })).toBeTruthy();
       expect(screen.queryByText('Server')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Manage accounts' })).toBeNull();
       expect(calls).not.toContain('GET /server/settings');
@@ -286,7 +288,8 @@ describe('App in a browser', () => {
       const { container } = renderApp(viewer());
       await screen.findByText('Ready to Search');
       openSettings(container);
-      await screen.findByText('Your account');
+      fireEvent.click(await screen.findByRole('tab', { name: 'Your account' }));
+      await screen.findByRole('heading', { name: 'Your account' });
       fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'old-password' } });
       fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password-1' } });
       fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'new-password-1' } });
@@ -323,7 +326,11 @@ describe('App in a browser', () => {
       await screen.findByText('Settings');
       expect(screen.getByText('UI Theme Style')).toBeTruthy();
       expect(screen.getByText('Language')).toBeTruthy();
+      fireEvent.click(screen.getByRole('tab', { name: 'Search' }));
       expect(screen.getByText('Minimum Match Score')).toBeTruthy();
+      // A viewer has no Models and GPU or Library group at all.
+      expect(screen.queryByRole('tab', { name: 'Models and GPU' })).toBeNull();
+      expect(screen.queryByRole('tab', { name: 'Library' })).toBeNull();
       expect(screen.queryByText('Model Management')).toBeNull();
       expect(screen.queryByText('Hardware Acceleration & Batching')).toBeNull();
       expect(screen.queryByText('Thumbnail Cache Management')).toBeNull();
@@ -419,8 +426,10 @@ describe('App in a browser', () => {
 
       openSettings(container);
       await screen.findByText('Settings');
+      fireEvent.click(screen.getByRole('tab', { name: 'Models and GPU' }));
       expect(screen.getByText('Model Management')).toBeTruthy();
       expect(screen.getByText('Hardware Acceleration & Batching')).toBeTruthy();
+      fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
       expect(screen.getByText('Clear Indexed Database')).toBeTruthy();
 
       expect(calls).toContain('GET /queue');
@@ -439,7 +448,8 @@ describe('App in a browser', () => {
       const { container } = renderApp(sessionInfo('owner'));
       await screen.findByText('Ready to Search');
       openSettings(container);
-      expect(screen.getByText('Your account')).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'Your account' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('tab', { name: 'Server' }));
       expect(await screen.findByText('1 owner, 2 viewers')).toBeTruthy();
       expect(calls).toContain('GET /server/settings');
 
@@ -539,10 +549,12 @@ describe('App in a browser', () => {
       expect(screen.queryByRole('button', { name: 'Search with a picture' })).toBeNull();
       openSettings(container);
       await screen.findByText('Settings');
-      expect(screen.queryByText('Your account')).toBeNull();
-      // The desktop has its own Sharing section (with its own Manage accounts button), not the network's Server one.
-      expect(screen.queryByRole('heading', { name: 'Server' })).toBeNull();
+      expect(screen.queryByRole('tab', { name: 'Your account' })).toBeNull();
+      // The desktop has its own Sharing group (with its own Manage accounts button), not the network's Server one.
+      expect(screen.queryByRole('tab', { name: 'Server' })).toBeNull();
+      fireEvent.click(screen.getByRole('tab', { name: 'Network sharing' }));
       expect(await screen.findByRole('heading', { name: 'Network sharing' })).toBeTruthy();
+      expect(screen.queryByRole('heading', { name: 'Server' })).toBeNull();
       expect(calls).not.toContain('GET /server/settings');
       expect(screen.queryByText(/isn't encrypted/)).toBeNull();
     });

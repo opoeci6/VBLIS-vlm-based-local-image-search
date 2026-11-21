@@ -257,7 +257,7 @@ export const QueueDrawer = ({ isOpen, onClose, queue, uiTheme = 'modern', onOpen
                       type="button"
                       onClick={() => {
                         onClose();
-                        if (typeof onOpenSettings === 'function') onOpenSettings();
+                        if (typeof onOpenSettings === 'function') onOpenSettings('models');
                       }}
                       className="w-full sm:w-auto px-3.5 py-1.5 max-sm:min-h-10 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                     >

@@ -368,4 +368,66 @@ describe('useModelManager', () => {
       expect(result.current.models).toBe(models);
     });
   });
+
+  describe('on a read-only copy', () => {
+    const MESSAGE = 'This library is a read-only copy; indexing happens on another computer.';
+    const OWN = 'org/model-a';
+
+    it('offers the copy\'s own model first', async () => {
+      setupFetch();
+      const { result } = render({ replicaModelId: OWN });
+      await flush();
+      expect(result.current.pendingModel).toBe(OWN);
+    });
+
+    it('switches to and downloads its own model, but never another one', async () => {
+      const fetchMock = setupFetch({
+        [`POST ${API}/models/switch`]: async () => ({ ok: true, json: async () => ({}) }),
+        [`POST ${API}/models/download`]: async () => ({ ok: true, status: 200, json: async () => ({}) }),
+      });
+      const { result, setToast } = render({ replicaModelId: OWN });
+      await flush();
+
+      await act(async () => {
+        await result.current.handleModelSwitch('org/model-b');
+        await result.current.handleDownloadModel('org/model-b');
+      });
+      expect(urlsOf(fetchMock)).not.toContain(`${API}/models/switch`);
+      expect(urlsOf(fetchMock)).not.toContain(`${API}/models/download`);
+      expect(setToast).toHaveBeenCalledTimes(2);
+      expect(setToast).toHaveBeenCalledWith({ message: MESSAGE, type: 'error' });
+
+      await act(async () => {
+        await result.current.handleModelSwitch(OWN);
+        await result.current.handleDownloadModel(OWN);
+      });
+      expect(urlsOf(fetchMock)).toContain(`${API}/models/switch`);
+      expect(urlsOf(fetchMock)).toContain(`${API}/models/download`);
+    });
+
+    it('deletes the model files without the index, whatever the checkbox says', async () => {
+      const fetchMock = setupFetch({
+        [`POST ${API}/models/delete`]: async () => ({ ok: true, json: async () => ({}) }),
+      });
+      const { result } = render({ replicaModelId: OWN });
+      await flush();
+      act(() => result.current.setDeleteIndexWithModel(true));
+      await act(async () => { await result.current.handleDeleteModel(OWN); });
+      const call = fetchMock.mock.calls.find(([url]) => url === `${API}/models/delete`);
+      expect(JSON.parse(call[1].body)).toEqual({ model_name: OWN, delete_index: false });
+    });
+
+    it('says so when the backend refuses a switch (an old tab)', async () => {
+      setupFetch({
+        [`POST ${API}/models/switch`]: async () => ({
+          ok: false, status: 409, statusText: 'Conflict', json: async () => ({ detail: 'x', code: 'read_only' }),
+        }),
+      });
+      const { result, setToast } = render();
+      await flush();
+      await act(async () => { await result.current.handleModelSwitch('org/model-b'); });
+      expect(setToast).toHaveBeenCalledWith({ message: `Model load error: ${MESSAGE}`, type: 'error' });
+    });
+  });
+
 });

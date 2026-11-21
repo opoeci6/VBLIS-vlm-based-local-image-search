@@ -31,7 +31,7 @@ const makeProps = (overrides = {}) => ({
   status: { is_indexing: true, percent: 10, progress: '1/10', current_file: '/f.jpg' },
   queue: makeQueue({ activeTask: runningTask }),
   setToast: vi.fn(),
-  setShowSettings: vi.fn(),
+  openSettings: vi.fn(),
   isCancellingIndexing: false,
   handleCancelIndexing: vi.fn(),
   ...overrides,
@@ -96,7 +96,7 @@ describe('IndexingStatusBar', () => {
         message: 'Cannot resume queue: No AI model is currently loaded in memory. Please select a model in Settings.',
         type: 'error',
       });
-      expect(props.setShowSettings).toHaveBeenCalledWith(true);
+      expect(props.openSettings).toHaveBeenCalledWith('models');
       expect(queue.resumeTask).not.toHaveBeenCalled();
       expect(queue.controlWorker).not.toHaveBeenCalled();
     });
@@ -116,7 +116,7 @@ describe('IndexingStatusBar', () => {
       fireEvent.click(screen.getByRole('button', { name: /Resume/ }));
 
       expect(props.setToast).not.toHaveBeenCalled();
-      expect(props.setShowSettings).not.toHaveBeenCalled();
+      expect(props.openSettings).not.toHaveBeenCalled();
       expect(queue.controlWorker).toHaveBeenCalledWith('start');
     });
 
@@ -146,7 +146,7 @@ describe('IndexingStatusBar', () => {
 
       expect(screen.getByText('NO MODEL LOADED')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: /Resume/ }));
-      expect(props.setShowSettings).toHaveBeenCalledWith(true);
+      expect(props.openSettings).toHaveBeenCalledWith('models');
       expect(queue.controlWorker).not.toHaveBeenCalled();
     });
 

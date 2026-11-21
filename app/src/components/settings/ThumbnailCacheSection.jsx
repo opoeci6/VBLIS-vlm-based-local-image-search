@@ -1,12 +1,13 @@
 import { Loader2, Image as ImageIcon, Trash2, RefreshCw, Video } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { SectionTitle } from './SectionTitle';
 
 export const ThumbnailCacheSection = ({ cacheStats, showConfirmClearThumbnails, setShowConfirmClearThumbnails, handleClearThumbnailCache, isClearingThumbnails, status, handleRebuildVideoThumbnails, isTriggeringRebuildThumbnails }) => {
   const { t } = useTranslation('settings');
   return (
-    <div className="pt-4 mt-2 border-t border-gray-100 dark:border-neutral-800 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">{t('thumbnailCache.title')}</h4>
+        <SectionTitle>{t('thumbnailCache.title')}</SectionTitle>
         <span className="text-[11px] font-mono font-medium text-neutral-400 dark:text-neutral-500">{t('thumbnailCache.total', { size: cacheStats.total.formatted })}</span>
       </div>
 

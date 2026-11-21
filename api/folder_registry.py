@@ -43,6 +43,9 @@ class FolderRegistry:
                 print(f"[Warning] Failed to load indexed_folders.json: {e}")
 
     def save(self):
+        import replica
+        if replica.is_read_only():
+            return  # a replica's folder list comes from the import; changes stay in memory
         config_path = self.data_dir / "indexed_folders.json"
         try:
             data = {

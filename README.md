@@ -26,13 +26,14 @@ VBLIS is a powerful, privacy-focused local image search application that uses ad
 - **Two Interface Styles**: A modern style and a terminal style, each in dark and light mode.
 - **English and Simplified Chinese**: The interface follows the Windows language, or the language you choose in the settings.
 - **Server Mode**: Use your library from browsers on other devices, phones included, with an account for each person and per-account permissions. Turn on **Share on my network** in the Windows app's Settings, or run VBLIS as a server on Linux (also in Docker) or Windows. See [SERVER.md](SERVER.md).
+- **Replica Mode**: Index on your PC, export the index into one file, and import it on a small machine (an Orange Pi, a NAS, a server) that then serves the library read-only without indexing anything itself. See [SERVER.md](SERVER.md).
 
 ## System Requirements
 
 - Windows 10 or 11, 64-bit.
 - Server mode also runs on a 64-bit Linux (x86-64 or ARM64) with Python 3.11 to 3.13, or in Docker. See [SERVER.md](SERVER.md).
-- An NVIDIA GPU is optional: VBLIS uses it through CUDA when one is available and runs on the CPU otherwise (indexing is slower).
-- Disk space: about 4.5 GB for the app, plus 0.6–4.3 GB for each downloaded model, plus the index and the thumbnail cache.
+- An NVIDIA GPU is optional: VBLIS uses it through CUDA when one is available (a GeForce GTX 16 or RTX 20-series card or newer, with NVIDIA driver 580 or newer) and runs on the CPU otherwise (indexing is slower). Older cards, such as the GTX 10 series, run on the CPU, and Settings says why.
+- Disk space: about 3.7 GB for the app, plus 0.6–4.3 GB for each downloaded model, plus the index and the thumbnail cache.
 
 ## Supported Formats
 
@@ -63,20 +64,22 @@ For a server on Linux or in Docker, follow [SERVER.md](SERVER.md) instead. The r
 4. **Search**: Once indexing is complete, type a query in the search bar or drag an image into the search area to find what you're looking for.
 > [!TIP]
 > VBLIS partially supports search while indexing. You can search while the app is indexing your folders, but the results will be limited to the images that have been indexed so far.
-5. **GPU Settings**: If you have an NVIDIA GPU, ensure GPU acceleration is enabled in the settings for optimal performance.
+5. **GPU Settings**: If you have an NVIDIA GPU, ensure GPU acceleration is enabled in the settings (**Models and GPU**) for optimal performance.
 6. **Result Filtering**: In the settings you can adjust how many results to display (a video counts as one result and brings its best frames; open it and use **Find more frames** to see all of its matching frames) and two minimums: a **match score** for text searches (with SigLIP models, how sure the model is that a result fits your words) and a **similarity** for image searches (how visually close a result is to the dropped image). VBLIS remembers these three settings; **Reset to defaults** restores them. The library view always shows everything.
 7. **Search Filters**: The **Filters** button next to the search bar narrows any search to images or videos, chosen folders, a date range (the date a photo or video was taken, or the file's modified date when it has none), a place (a country or region, or a region or city inside it, from the GPS data of the file), orientation, file format, a minimum resolution, and duplicates (exact copies or images that look alike). Changing a filter updates the current results right away. Date, place, orientation and resolution come from media details that VBLIS reads while indexing; for folders indexed with an older version, use **Read details now** in the Filters panel. Places are matched to the nearest known town or city without boundary data, so a photo taken close to a border or in a suburb can be named after the neighbouring place.
 8. **Model Management**: You can download, switch, and delete models in the settings.
-9. **Index and Cache Management**: You can clear the index and cache in the settings.
+9. **Index and Cache Management**: You can clear the index and cache in the settings (**Library**).
 10. **Language**: Choose English or Simplified Chinese in the settings, or let VBLIS follow Windows. Searching works best with English queries; in Chinese, use common words.
 11. **Share on Your Network**: Turn on **Share on my network** in the settings, add an account for each person with **Manage accounts**, and open one of the addresses it shows in a browser on a phone or another computer. Sharing lasts while the app is open. See [SERVER.md](SERVER.md) for HTTPS, permissions and running VBLIS as a server.
+12. **Copy the Index to Another Device**: In the settings, **Library** → **Export for another device** writes the index into one file. Import it on the other machine with `import-index`, which maps your PC's folders to where the pictures are there; see [SERVER.md](SERVER.md).
 
 ## Upgrading
 
 - Your index, downloaded models and settings are kept. The installer keeps them in `%LOCALAPPDATA%\VBLIS`, and the portable version in the `VBLIS-data` folder next to `VBLIS.exe`. When you install over an older version, its data is moved there automatically.
 - After upgrading from v0.2.0 or older, re-sync your folders once (the **Re-sync** button of each folder in the Indexed Folders panel). That picks up AVIF files, and turns portrait videos and photos that older versions indexed sideways upright. Only those files are embedded again.
 - If some HEIC photos showed up turned in v0.4.0 or older, re-sync their folder once and use **Clear Image Cache** in the settings. Only those photos are embedded again.
-- Upgrading from v0.5.0 needs no re-indexing. Sharing stays off until you turn on **Share on my network**.
+- Upgrading from v0.5.0 or newer needs no re-indexing: the new PyTorch in v0.7.0 gives the same search results. Sharing stays off until you turn on **Share on my network**.
+- Since v0.7.0 the GPU needs NVIDIA driver 580 or newer. With an older driver VBLIS uses the CPU, and the settings (**Models and GPU**) say so; update the driver to use the GPU again.
 - The date, place, orientation and resolution filters need media details that older versions didn't read. VBLIS reads them in the background the first time you open the Filters panel; no re-indexing is needed.
 
 ## TODO / Roadmap
@@ -90,6 +93,8 @@ For a server on Linux or in Docker, follow [SERVER.md](SERVER.md) instead. The r
 - [x] Advanced filtering (by date, folder, or image properties).
 - [x] Image-to-Video searching.
 - [x] Server mode: use the library from a browser on other devices, phones included, and run it on Linux or in Docker.
+- [x] Replica mode: index on a PC and search a copy of the index on a small machine.
+- [x] NVIDIA RTX 50-series GPUs.
 
 ## Credits
 

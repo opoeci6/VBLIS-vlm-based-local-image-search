@@ -2,6 +2,7 @@ import shutil
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 import app_state
+import replica
 import settings_store
 from model_manager import AVAILABLE_MODELS
 from task_queue import MODEL_DEPENDENT_TASK_TYPES, TaskStatus
@@ -41,6 +42,8 @@ def list_models():
 @router.post("/models/delete")
 def delete_model(req: ModelDeleteRequest):
     require_known_model(req.model_name)
+    if req.delete_index:
+        replica.check_writable("Deleting the index")
     if (app_state.task_queue.active_task and app_state.task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED)) or app_state.indexer.is_indexing:
         raise HTTPException(status_code=409, detail="Cannot delete model while an indexing or rebuild task is in progress.")
     if app_state.model_manager.is_downloading:
@@ -83,6 +86,7 @@ def delete_model(req: ModelDeleteRequest):
 @router.post("/models/download")
 async def download_model(req: ModelSwitchRequest, background_tasks: BackgroundTasks):
     require_known_model(req.model_name)
+    replica.check_model(req.model_name, "Downloading another model")
     if app_state.model_manager.is_downloading:
         return {"status": "Error", "message": "A download is already in progress."}
 
@@ -149,6 +153,7 @@ async def cancel_download():
 @router.post("/models/switch")
 def switch_model(req: ModelSwitchRequest):
     require_known_model(req.model_name)
+    replica.check_model(req.model_name, "Switching to another model")
     # Guard: Cannot switch while an active task is running
     if app_state.task_queue.active_task and app_state.task_queue.active_task.status in (TaskStatus.RUNNING, TaskStatus.PAUSED):
         raise HTTPException(

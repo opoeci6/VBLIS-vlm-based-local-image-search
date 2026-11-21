@@ -44,6 +44,15 @@ export const formatTimeAgo = (timestamp) => {
   return i18n.t('format:timeAgo.days', { n: Math.floor(diff / 86400) });
 };
 
+// Short local date of a timestamp (an ISO string such as the backend's "2026-11-20T12:00:00+00:00", or a Date), in
+// the interface language. '' for a missing or invalid value.
+export const formatDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
 // Short local date ("Mar 12, 2024" in English, "2024年3月12日" in Chinese) from a "YYYY-MM-DDTHH:MM:SS"
 // wall time, in the interface language rather than the Windows regional format. The date is built from its
 // own parts, so a time zone can never shift it to the day before or after. '' for null or an invalid value.

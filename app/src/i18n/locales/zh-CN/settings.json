@@ -59,7 +59,40 @@
   },
   "settingsModal": {
     "title": "设置",
-    "closeTooltip": "关闭设置"
+    "closeTooltip": "关闭设置",
+    "groupsLabel": "设置分组",
+    "back": "返回全部设置",
+    "groups": {
+      "appearance": {
+        "title": "外观",
+        "description": "界面主题风格和语言"
+      },
+      "search": {
+        "title": "搜索",
+        "description": "匹配度、相似度和显示结果数"
+      },
+      "models": {
+        "title": "模型与 GPU",
+        "description": "模型、硬件加速与批处理"
+      },
+      "library": {
+        "title": "媒体库",
+        "description": "缩略图和索引",
+        "descriptionDesktop": "缩略图、导出和索引"
+      },
+      "sharing": {
+        "title": "网络共享",
+        "description": "让局域网中的浏览器打开媒体库"
+      },
+      "server": {
+        "title": "服务器",
+        "description": "地址、账户和登录"
+      },
+      "account": {
+        "title": "我的账户",
+        "description": "修改密码或退出登录"
+      }
+    }
   },
   "dangerZone": {
     "confirm": "确定吗？此操作无法撤销。",
@@ -100,6 +133,14 @@
     "gpuUsingCuda": "正在使用 CUDA",
     "gpuDirects": "将任务交给 GPU 处理",
     "gpuNotDetected": "未检测到 NVIDIA GPU",
+    "gpuUnusable": "无法使用 {{name}}",
+    "gpuUnusableUnnamed": "无法使用 NVIDIA GPU",
+    "problem": {
+      "unsupportedGpu": "此版本的 VBLIS 不支持 {{name}}（{{capability}}），因此使用 CPU 运行。GPU 加速需要 GeForce GTX 16 或 RTX 20 系列及更新的显卡。",
+      "unsupportedGpuUnnamed": "此版本的 VBLIS 不支持这块 NVIDIA GPU，因此使用 CPU 运行。GPU 加速需要 GeForce GTX 16 或 RTX 20 系列及更新的显卡。",
+      "driverTooOld": "请将 NVIDIA 驱动程序更新到 580 或更高版本以使用 GPU。在此之前，VBLIS 使用 CPU 运行。",
+      "cudaFailed": "无法启动 NVIDIA GPU，因此 VBLIS 使用 CPU 运行。更新 NVIDIA 驱动程序可能会有帮助。"
+    },
     "gpuDisable": "停用 NVIDIA GPU 支持",
     "gpuEnable": "启用 NVIDIA GPU 支持",
     "cudaRequired": "GPU 加速需要支持 CUDA 的 GPU。",
@@ -162,6 +203,26 @@
       "rebuild": "重建缩略图",
       "clearTooltip": "仅清除视频缩略图",
       "clear": "清除"
+    }
+  },
+  "export": {
+    "title": "导出到其他设备",
+    "intro": "将此图库的索引复制到另一台电脑（例如小型 Linux 服务器），在那里无需重新建立索引即可搜索。文件包含索引、媒体详情（含图片位置信息）和缩略图，请妥善保管。",
+    "loading": "正在检查可导出的内容……",
+    "loadFailed": "无法检查可导出的内容。",
+    "empty": "暂无可导出的内容：请先为文件夹建立索引。",
+    "model": "要导出的索引",
+    "items_other": "{{n}} 项",
+    "thumbnails": "包含缩略图（文件更大，在另一台设备上浏览更快）",
+    "path": "保存为",
+    "pathHint": "要写入的文件的完整路径，以 .vblis-export 结尾。",
+    "button": "导出……",
+    "started": "导出已开始，可在任务队列中查看。",
+    "errors": {
+      "invalidPath": "无法使用该位置。请换一个文件名或文件夹。",
+      "unknownModel": "该索引已不可用。请关闭设置后重新打开，再选择其他索引。",
+      "noIndex": "暂无可导出的内容：请先为文件夹建立索引。",
+      "failed": "无法开始导出。"
     }
   },
   "sharing": {

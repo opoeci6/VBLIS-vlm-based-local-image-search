@@ -15,6 +15,8 @@ from transformers import AutoProcessor, AutoModel
 import gc
 import time
 import threading
+import gpu_support
+from index_export import collection_name_for
 from model_downloader import ModelDownloader
 from search_scoring import ScoreParams, read_score_params
 
@@ -23,14 +25,8 @@ try:
 except ImportError:  # the pre-resize is then simply skipped
     get_image_size_for_max_num_patches = None
 
-# The only models the API will download, switch to or delete
-AVAILABLE_MODELS = (
-    "google/siglip2-base-patch16-224",
-    "google/siglip2-base-patch16-naflex",
-    "google/siglip2-so400m-patch14-384",
-    "google/siglip2-so400m-patch16-naflex",
-    "openai/clip-vit-base-patch32",
-)
+# The only models the API will download, switch to or delete (model_list.py, importable without torch)
+from model_list import AVAILABLE_MODELS  # noqa: E402,F401
 
 
 class PreparedImage(NamedTuple):
@@ -60,7 +56,9 @@ class ModelManager:
         
         # Read device and performance preferences from environment
         env_use_gpu = os.getenv("USE_GPU", "True").lower() == "true"
-        cuda_available = torch.cuda.is_available()
+        # A card or driver this PyTorch build can't run falls back to the CPU (gpu_support); the one test
+        # operation on the card only runs when the GPU is wanted
+        cuda_available = gpu_support.check_cuda(probe=env_use_gpu).usable
         self.use_gpu = env_use_gpu and cuda_available
         self.device = "cuda" if self.use_gpu else "cpu"
         
@@ -114,7 +112,7 @@ class ModelManager:
             return 16
 
     def check_fp16_support(self) -> bool:
-        if not torch.cuda.is_available():
+        if not torch.cuda.is_available() or not gpu_support.check_cuda().usable:
             return False
         try:
             major, minor = torch.cuda.get_device_capability()
@@ -303,9 +301,13 @@ class ModelManager:
         return {"status": "success", "message": f"Precision set to {mode}"}
 
     def set_device(self, use_gpu: bool):
-        """Toggle GPU usage and reload current model if necessary."""
-        cuda_available = torch.cuda.is_available()
-        new_use_gpu = use_gpu and cuda_available
+        """Toggle GPU usage and reload current model if necessary. A card or driver this build can't run
+        keeps the CPU: the answer then has status "unusable" and the gpu_support code."""
+        check = gpu_support.check_cuda(probe=use_gpu)
+        if use_gpu and not check.usable and check.code:
+            return {"status": "unusable", "code": check.code, "device": self.device,
+                    "message": f"The GPU can't be used ({check.code}): {check.detail}"}
+        new_use_gpu = use_gpu and check.usable
         new_device = "cuda" if new_use_gpu else "cpu"
         
         if self.device == new_device:
@@ -356,7 +358,7 @@ class ModelManager:
     def get_collection_name(self) -> str:
         if not self.current_model_id:
             return "default_collection"
-        return self.current_model_id.replace("/", "_").replace("-", "_")
+        return collection_name_for(self.current_model_id)
 
     def prepare_image(self, image: Image.Image) -> PreparedImage:
         """Run the (CPU-only) processor for one image. Thread-safe: safe to call from worker threads.

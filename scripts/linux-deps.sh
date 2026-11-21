@@ -6,7 +6,8 @@
 #
 #   --python   the Python of an existing virtual environment (it needs pip)
 #   --torch    cpu: PyTorch without a GPU (the default; the only choice on ARM64)
-#              cuda: PyTorch with NVIDIA CUDA 12.4 (x86-64 only; about 3 GB more to download)
+#              cuda: PyTorch with NVIDIA CUDA 13.0 (x86-64 only; GTX 16 / RTX 20 or newer and NVIDIA
+#                    driver 580 or newer; a few GB more to download)
 #   --api      the folder with requirements.txt and constraints.txt (default: ../api next to this script)
 #
 # Installs PyTorch first, then the other packages, then runs "pip check".
@@ -17,7 +18,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API="$HERE/../api"
 PY=""
 TORCH="cpu"
-TORCH_VERSION="2.6.0"
+TORCH_VERSION="2.14.1"
 
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
@@ -40,11 +41,12 @@ done
 ARCH="$(uname -m)"
 case "$TORCH" in
   cpu)
-    # PyPI's ARM64 build is the CPU build; on x86-64 the CPU index avoids 3 GB of CUDA libraries
-    if [ "$ARCH" = "x86_64" ]; then TORCH_INDEX="https://download.pytorch.org/whl/cpu"; else TORCH_INDEX=""; fi ;;
+    # The CPU index on both architectures: PyPI's Linux builds pull in the CUDA 13 libraries (several GB),
+    # on ARM64 too
+    TORCH_INDEX="https://download.pytorch.org/whl/cpu" ;;
   cuda)
     [ "$ARCH" = "x86_64" ] || fail "CUDA builds of PyTorch exist for x86-64 only."
-    TORCH_INDEX="https://download.pytorch.org/whl/cu124" ;;
+    TORCH_INDEX="https://download.pytorch.org/whl/cu130" ;;
   *) fail "--torch must be cpu or cuda" ;;
 esac
 

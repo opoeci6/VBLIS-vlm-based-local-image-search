@@ -10,6 +10,7 @@ from typing import NamedTuple
 from PIL import UnidentifiedImageError
 
 from media_image import _format_offset, _format_taken, is_macos_junk_path, probe_image_info
+from media_registry import ACCESS_ERROR_PREFIX
 from media_video import probe_video_info
 
 # Bump when the probers change. What each version changed, and so which rows are read again:
@@ -54,14 +55,19 @@ def _mtime_date(mtime_ns):
         return None, None
 
 
-def _is_transient(path, error, stat) -> bool:
-    """True when a probe failure may pass: the file is gone or changed meanwhile, or the failure is an I/O
-    error (unplugged drive, locked file) rather than a file that cannot be decoded."""
+def _stat_matches(path, stat) -> bool:
+    """True when the file still exists with the (mtime_ns, size) it had before the probe."""
     try:
         st = os.stat(path)
     except OSError:
-        return True
-    if (st.st_mtime_ns, st.st_size) != tuple(stat):
+        return False
+    return (st.st_mtime_ns, st.st_size) == tuple(stat)
+
+
+def _is_transient(path, error, stat) -> bool:
+    """True when a probe failure may pass: the file is gone or changed meanwhile, or the failure is an I/O
+    error (unplugged drive, locked file) rather than a file that cannot be decoded."""
+    if not _stat_matches(path, stat):
         return True
     return isinstance(error, OSError) and not isinstance(error, UnidentifiedImageError)
 
@@ -87,9 +93,18 @@ def _probe_row(path, media_type, stat):
         info = probe_image_info(path) if media_type == "image" else probe_video_info(path)
         row.update({field: info.get(field) for field in _PROBE_FIELDS})
     except Exception as e:
-        if _is_transient(path, e, (mtime_ns, size)):
+        if isinstance(e, PermissionError):
+            # Access denied (ACL) or held open with a deny share mode: the exception can't tell which, and
+            # either way the file can't be read, so it gets an error row (flagged by the prefix) instead of
+            # being probed again on every sync. A file that is gone or changed meanwhile stays transient.
+            if _stat_matches(path, (mtime_ns, size)):
+                row["error"] = f"{ACCESS_ERROR_PREFIX} {e}"[:_ERROR_LIMIT]
+            else:
+                return None
+        elif _is_transient(path, e, (mtime_ns, size)):
             return None
-        row["error"] = f"{type(e).__name__}: {e}"[:_ERROR_LIMIT]
+        else:
+            row["error"] = f"{type(e).__name__}: {e}"[:_ERROR_LIMIT]
     if row["taken_at"]:
         row["taken_source"] = "exif" if media_type == "image" else "video"
     else:
@@ -98,7 +113,8 @@ def _probe_row(path, media_type, stat):
     return row
 
 
-def sync_media_files(registry, files, roots, should_stop=None, on_progress=None, max_workers=16) -> SyncResult:
+def sync_media_files(registry, files, roots, should_stop=None, on_progress=None, max_workers=16,
+                     retry_access_errors=False, keep_access_errors=None) -> SyncResult:
     """Probe the files whose row is missing or out of date and write the rows, then delete the rows of
     files that are gone from under `roots`.
 
@@ -106,7 +122,9 @@ def sync_media_files(registry, files, roots, should_stop=None, on_progress=None,
     (mtime_ns, size), or None when it is not known (it is read before probing).
     should_stop() is asked once before the first chunk and after each chunk (it may block while the task
     is paused); when it returns True the sync stops without pruning. on_progress(done, total) is called
-    after each chunk."""
+    after each chunk. A row whose file the OS refused to open (error starts with ACCESS_ERROR_PREFIX) is
+    kept as it is until the file changes, unless `retry_access_errors` is set: then it is probed again, except
+    the files in `keep_access_errors` (paths an index run just failed to read itself)."""
     started = time.monotonic()
     if not registry.available:
         return SyncResult(0, 0, 0, 0, time.monotonic() - started, False, 0)
@@ -114,13 +132,18 @@ def sync_media_files(registry, files, roots, should_stop=None, on_progress=None,
     unique = {}
     for path, media_type, stat in files:
         unique.setdefault(registry.key_for(path), (path, media_type, stat))
+    keep_errors = {registry.key_for(path) for path in (keep_access_errors or ())}
 
     known = registry.stat_index()
     to_probe = []
     unchanged = 0
     for key, (path, media_type, stat) in unique.items():
         row = known.get(key)
-        if row is not None and stat is not None and row[1] == stat[1] and row[2] == stat[0] and _row_is_current(path, row[3]):
+        retry = retry_access_errors and row is not None and row[4] and key not in keep_errors
+        if (
+            row is not None and stat is not None and row[1] == stat[1] and row[2] == stat[0]
+            and _row_is_current(path, row[3]) and not retry
+        ):
             unchanged += 1
         else:
             to_probe.append((path, media_type, stat))

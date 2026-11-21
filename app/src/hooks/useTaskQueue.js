@@ -3,6 +3,7 @@ import { keepIfEqual } from '../utils/jsonEqual';
 import { apiFetch } from '../utils/api';
 import { taskTitle } from '../utils/taskTitle';
 import { useSession } from '../session/sessionContext';
+import { refusalText } from '../utils/replica';
 import i18n from '../i18n';
 
 // The toast for folders that were just queued. The backend's own message is English, so it is
@@ -117,7 +118,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         fetchQueue();
         return data;
       } else {
-        setToast?.({ message: i18n.t('messages:taskQueue.queueError', { detail: data.detail || res.statusText }), type: 'error' });
+        setToast?.({ message: refusalText(data, i18n.t('messages:taskQueue.queueError', { detail: data.detail || res.statusText })), type: 'error' });
         return null;
       }
     } catch {
@@ -243,7 +244,7 @@ export const useTaskQueue = (API_BASE, setToast) => {
         setToast?.({ message: i18n.t('messages:taskQueue.requeued', { title: taskTitle(data.task) || '' }), type: 'success' });
         fetchQueue();
       } else {
-        setToast?.({ message: data.detail || i18n.t('messages:taskQueue.retryFailed'), type: 'error' });
+        setToast?.({ message: refusalText(data, data.detail || i18n.t('messages:taskQueue.retryFailed')), type: 'error' });
       }
     } catch {
       setToast?.({ message: i18n.t('messages:taskQueue.retryNetworkError'), type: 'error' });
