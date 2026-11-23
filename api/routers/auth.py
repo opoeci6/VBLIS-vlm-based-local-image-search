@@ -1,8 +1,10 @@
 """Signing in and out on the network listener, and changing your own password. Only the network app
-includes this router."""
+includes this router.
+
+No password is ever sent: the browser asks for a challenge and answers it with a proof, and a new
+password arrives already hashed (password_proof.py)."""
 import math
 import os
-import threading
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -10,28 +12,37 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import accounts as acct
-import passwords
+import password_proof
 import path_keys
 import replica
 import sessions
-from account_admin import MESSAGES, NAME_INPUT_MAX, account_error, error  # noqa: F401 - also imported from here
+from account_admin import (  # noqa: F401 - MESSAGES is also imported from here
+    MESSAGES,
+    NAME_INPUT_MAX,
+    Proof,
+    account_error,
+    error,
+    new_hash_refusal,
+)
 from auth_context import NETWORK, Auth, NetRequest, current_auth, net_request, optional_auth
 from server_config import ServerConfigError
 
 router = APIRouter()
 
-# scrypt needs 32 MiB and a moment of CPU per attempt; this keeps a burst of attempts from piling up
-_hashing = threading.BoundedSemaphore(2)
+
+class ChallengeRequest(BaseModel):
+    name: str = Field(..., max_length=NAME_INPUT_MAX)
 
 
 class LoginRequest(BaseModel):
     name: str = Field(..., max_length=NAME_INPUT_MAX)
-    password: str = Field(..., max_length=passwords.MAX_LENGTH)
+    challenge: str = Field(..., max_length=password_proof.FIELD_MAX)
+    proof: str = Field(..., max_length=password_proof.FIELD_MAX)
 
 
 class OwnPasswordRequest(BaseModel):
-    current_password: str = Field(..., max_length=passwords.MAX_LENGTH)
-    new_password: str = Field(..., max_length=passwords.MAX_LENGTH)
+    confirm: Optional[Proof] = None
+    password_hash: str = Field(..., max_length=password_proof.HASH_FIELD_MAX)
 
 
 def auth_for(account, client) -> Auth:
@@ -67,48 +78,66 @@ def _clear_session_cookie(response: Response, net: NetRequest) -> None:
     response.headers.append("set-cookie", sessions.clear_cookie_header(net.cookie_name, net.scheme))
 
 
-def check_password(net: NetRequest, password: str, find, signed_in_as: Optional[str] = None, refund=True):
-    """The account find(config) returns, when `password` is its password; else None.
+def _challenges(net: NetRequest):
+    if net.challenges is None:
+        raise HTTPException(status_code=503, detail="Signing in isn't available here.")
+    return net.challenges
 
-    Always exactly one scrypt hash, also for an unknown name (against a dummy hash), so the time taken
-    doesn't tell which names exist. Rate-limited per client and per network group. Someone already
+
+def confirm_subject(net: NetRequest, auth: Auth) -> str:
+    """What a confirmation challenge belongs to: the account and this sign-in (its cookie's nonce)."""
+    nonce = net.session.nonce if net.session is not None else ""
+    return f"{auth.account_id}|{nonce}"
+
+
+class ChallengeExpired(Exception):
+    """The challenge a proof answers is unknown, used, too old, or was given to another client or for
+    another purpose. It says nothing about the password, so it isn't counted: the browser asks again."""
+
+
+def check_proof(net: NetRequest, purpose: str, subject: str, proof: Proof, find,
+                signed_in_as: Optional[str] = None, refund=True):
+    """The account find(config) returns, when `proof` answers a challenge given out for `purpose` and
+    `subject` to this client with that account's password; else None. Raises ChallengeExpired.
+
+    The same work for an unknown name (against a random key), so the time taken doesn't tell which
+    names exist. Rate-limited per client and per network group. Someone already
     signed in, confirming their own password (`signed_in_as`: their account id), is limited per client
     and per account instead of per group: guessing elsewhere can't block them, and a stolen session
     can't guess that account's password from many addresses. A correct owner password clears the
     client's count; another account's only refunds the attempt, so it can't be used to reset the count
     while guessing an owner's. refund=False keeps even a correct password in the account's count (not
-    the client's), for a request that costs more hashing after it (a new password): a signed-in viewer
-    can't repeat it without limit, and this browser's sign-ins aren't affected."""
+    the client's), for a change of your own password: a signed-in viewer can't repeat it without limit,
+    and this browser's sign-ins aren't affected."""
     shared = signed_in_as is None
     wait = net.limiter.begin(net.client, shared=shared, account=signed_in_as, group=net.sign_in_group)
     if wait > 0:
         raise HTTPException(status_code=429, detail="Too many attempts. Wait a moment and try again.",
                             headers={"Retry-After": str(math.ceil(wait))})
-    if not _hashing.acquire(timeout=10):
-        net.limiter.succeeded(net.client, shared=shared, account=signed_in_as,
-                              group=net.sign_in_group)  # not tried, so not counted
-        raise HTTPException(status_code=503, detail="The server is busy. Try again in a moment.",
-                            headers={"Retry-After": "5"})
-    try:
-        account = find(net.store.current())
-        correct = passwords.verify_password(password, (account.password or None) if account is not None else None)
-    finally:
-        _hashing.release()
-    if not correct:
+    if not _challenges(net).take(proof.challenge, purpose, subject, net.client):
+        net.limiter.succeeded(net.client, shared=shared, account=signed_in_as, group=net.sign_in_group)
+        raise ChallengeExpired()
+    account = find(net.store.current())
+    stored = (account.password or None) if account is not None else None
+    if not password_proof.proof_matches(stored, purpose, proof.challenge, proof.proof):
         return None
     net.limiter.succeeded(net.client, shared=shared, clear=account.is_owner and account.can_sign_in,
                           account=signed_in_as if refund else None, group=net.sign_in_group)
     return account
 
 
-def confirm_own_password(net: NetRequest, auth: Auth, password, refund=True) -> Optional[JSONResponse]:
-    """None when `password` is the signed-in account's own password, else the refusal to answer with.
+def confirm_own_password(net: NetRequest, auth: Auth, proof: Optional[Proof], refund=True) -> Optional[JSONResponse]:
+    """None when `proof` proves the signed-in account's own password, else the refusal to answer with.
     The account must still be able to sign in with the role the session was checked for: a change from
     the command line a moment ago (turned off, demoted) counts."""
-    if not password:
+    if proof is None:
         return error(403, "confirm_password")
-    found = check_password(net, password, lambda config: config.account_by_id(auth.account_id),
-                           signed_in_as=auth.account_id, refund=refund)
+    try:
+        found = check_proof(net, password_proof.CONFIRM, confirm_subject(net, auth), proof,
+                            lambda config: config.account_by_id(auth.account_id),
+                            signed_in_as=auth.account_id, refund=refund)
+    except ChallengeExpired:
+        return error(403, "challenge_expired")
     if found is None:
         return error(403, "wrong_password")
     if not found.can_sign_in or found.role != auth.role:
@@ -116,15 +145,58 @@ def confirm_own_password(net: NetRequest, auth: Auth, password, refund=True) -> 
     return None
 
 
-@router.post("/auth/login")
-def login(req: LoginRequest, response: Response, net: NetRequest = Depends(net_request)):
-    config = net.store.ensure_secret()
+def _sign_in_refusal(net: NetRequest, config) -> Optional[JSONResponse]:
     if config.load_error or (net.require_owner and not config.has_owner):
         return error(503, "no_owner_account")
     if not config.has_sign_in:
         # Shared from the desktop app, which needs no owner account, but nobody can sign in yet
         return error(503, "no_accounts")
-    account = check_password(net, req.password, lambda current: current.account_by_name(req.name))
+    return None
+
+
+@router.post("/auth/challenge")
+def sign_in_challenge(req: ChallengeRequest, net: NetRequest = Depends(net_request)):
+    """A one-time challenge for signing in as `name`, with that account's salt and cost values. A name
+    without an account gets a made-up salt that stays the same, so the answer doesn't show which
+    names exist."""
+    config = net.store.ensure_secret()
+    refusal = _sign_in_refusal(net, config)
+    if refusal is not None:
+        return refusal
+    subject = acct.name_key(req.name)
+    challenge = _challenges(net).issue(password_proof.SIGN_IN, subject, net.client, group=net.sign_in_group)
+    account = config.account_by_name(req.name)
+    stored = (account.password or None) if account is not None else None
+    return password_proof.challenge_answer(challenge, stored,
+                                           password_proof.made_up_salt(config.session_secret, subject))
+
+
+@router.post("/auth/confirm-challenge")
+def confirm_challenge(net: NetRequest = Depends(net_request), auth: Auth = Depends(current_auth)):
+    """A one-time challenge for confirming a change with your own password, for this sign-in only."""
+    config = net.store.current()
+    account = config.account_by_id(auth.account_id)
+    if account is None or not account.can_sign_in or account.role != auth.role:
+        return error(403, "account_changed")
+    challenge = _challenges(net).issue(password_proof.CONFIRM, confirm_subject(net, auth), net.client,
+                                       group=net.sign_in_group)
+    return password_proof.challenge_answer(
+        challenge, account.password or None,
+        password_proof.made_up_salt(config.session_secret, f"id:{auth.account_id}"))
+
+
+@router.post("/auth/login")
+def login(req: LoginRequest, response: Response, net: NetRequest = Depends(net_request)):
+    config = net.store.ensure_secret()
+    refusal = _sign_in_refusal(net, config)
+    if refusal is not None:
+        return refusal
+    try:
+        account = check_proof(net, password_proof.SIGN_IN, acct.name_key(req.name),
+                              Proof(challenge=req.challenge, proof=req.proof),
+                              lambda current: current.account_by_name(req.name))
+    except ChallengeExpired:
+        return error(401, "challenge_expired")
     if account is None:
         known = net.store.current().account_by_name(req.name)
         target = f" as {known.name}" if known is not None else ""
@@ -157,14 +229,14 @@ def get_session(net: NetRequest = Depends(net_request), auth: Optional[Auth] = D
 @router.post("/auth/password")
 def change_own_password(req: OwnPasswordRequest, response: Response, net: NetRequest = Depends(net_request),
                         auth: Auth = Depends(current_auth)):
-    """Any signed-in account changes its own password. Its other browsers are signed out; this one gets a
-    new cookie. Every change counts toward the account's attempt limit, even with the right password:
-    each one costs two hashes, and a viewer must not be able to keep the server busy with them."""
-    refusal = confirm_own_password(net, auth, req.current_password, refund=False)
+    """Any signed-in account changes its own password (sent already hashed). Its other browsers are
+    signed out; this one gets a new cookie. Every change counts toward the account's attempt limit, even
+    with the right password, so a viewer can't repeat it without limit."""
+    refusal = new_hash_refusal(req.password_hash) or confirm_own_password(net, auth, req.confirm, refund=False)
     if refusal is not None:
         return refusal
     try:
-        config = net.store.set_account_password(auth.account_id, req.new_password)
+        config = net.store.set_account_password(auth.account_id, password_hash=req.password_hash)
     except acct.AccountError as e:
         return account_error(e)
     except ServerConfigError:

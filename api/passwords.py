@@ -1,5 +1,8 @@
 """Password hashing for the network listener: scrypt from the standard library. A stored password
-is one string, scrypt$<log2 n>$<r>$<p>$<salt>$<key>, with salt and key in URL-safe base64."""
+is one string, scrypt$<log2 n>$<r>$<p>$<salt>$<key>, with salt and key in URL-safe base64.
+
+The command line hashes here. A browser hashes a new password itself and proves an existing one without
+sending it (password_proof.py), with the same derivation: UTF-8, scrypt, 32 bytes."""
 import base64
 import hashlib
 import hmac
@@ -46,10 +49,28 @@ def password_problem(password):
     return None
 
 
+SALT_BYTES = _SALT_BYTES
+KEY_BYTES = _KEY_BYTES
+
+
+def current_cost() -> tuple:
+    """(log2 n, r, p) of a new hash. A function, not a constant: tests lower n to run faster."""
+    return _LOG_N, _R, _P
+
+
+def encode_hash(log_n: int, r: int, p: int, salt: bytes, key: bytes) -> str:
+    return f"scrypt${log_n}${r}${p}${_b64(salt)}${_b64(key)}"
+
+
+def derive_key(password: str, salt: bytes, log_n: int, r: int, p: int) -> bytes:
+    """The key a stored hash holds for `password` (what a browser derives to prove it, password_proof.py)."""
+    return _derive(password, salt, log_n, r, p)
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(_SALT_BYTES)
     key = _derive(password, salt, _LOG_N, _R, _P)
-    return f"scrypt${_LOG_N}${_R}${_P}${_b64(salt)}${_b64(key)}"
+    return encode_hash(_LOG_N, _R, _P, salt, key)
 
 
 def _parse(encoded):
@@ -70,6 +91,11 @@ def _parse(encoded):
     if 128 * (1 << log_n) * r > _MAXMEM or len(salt) < 8 or len(key) != _KEY_BYTES:
         return None
     return log_n, r, p, salt, key
+
+
+def parse_hash(encoded):
+    """(log_n, r, p, salt, key) from a stored hash, or None when it isn't one this server accepts."""
+    return _parse(encoded)
 
 
 def is_password_hash(encoded) -> bool:

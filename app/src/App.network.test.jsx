@@ -4,9 +4,13 @@ import App from './App';
 import TitleBar from './TitleBar';
 import { FolderContentsModal } from './components/folders/FolderContentsModal';
 import { SessionProvider } from './session/SessionProvider';
+import { stubPageHost } from './test/pageHost';
+import { challengeAnswer, expectNoPlainPassword, fakeHash, fakeProof } from './test/passwordProofMock';
 
 // The terminal-theme logo needs canvas, which jsdom lacks.
 vi.mock('./components/common/AsciiLogo', () => ({ AsciiLogo: () => 'ascii-logo-stub' }));
+// Real scrypt is slow; the maths has its own test (utils/passwordProof.test.js).
+vi.mock('./utils/passwordProof', async () => (await import('./test/passwordProofMock')).passwordProofMock);
 
 const defaultStatus = {
   is_indexing: false,
@@ -86,6 +90,7 @@ const VIEWER_ROUTES = new Set([
   'GET /index/folder/contents',
   'GET /status',
   'GET /models',
+  'POST /auth/confirm-challenge',
   'POST /auth/password',
 ]);
 
@@ -179,6 +184,7 @@ describe('App in a browser', () => {
       if (key === 'POST /search' || key === 'POST /search/image') return json(searchPayload);
       if (key === 'GET /server/settings') return json({ accounts: { owners: 1, viewers: 2 }, library_roots: [], port: 8000, tls_mode: 'off', public_access: false, from_environment: [] });
       if (key === 'GET /server/accounts') return json(accountsPayload);
+      if (key === 'POST /auth/confirm-challenge') return json(challengeAnswer('challenge-1'));
       if (key === 'GET /image/cache/stats') {
         return json({
           images: { count: 0, bytes: 0, formatted: '0 B' },
@@ -295,10 +301,19 @@ describe('App in a browser', () => {
       fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'new-password-1' } });
       fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
       await waitFor(() => expect(calls).toContain('POST /auth/password'));
+      // The passwords never travel: a challenge is asked for, and the change carries a proof and a hash.
+      expect(calls).toContain('POST /auth/confirm-challenge');
+      const [, init] = fetchMock.mock.calls.find(([url, request]) => String(url).endsWith('/auth/password') && request?.method === 'POST');
+      expect(JSON.parse(init.body)).toEqual({
+        password_hash: fakeHash('new-password-1'),
+        confirm: { challenge: 'challenge-1', proof: fakeProof('confirm', 'challenge-1') },
+      });
+      expectNoPlainPassword(expect, fetchMock, 'old-password', 'new-password-1');
       expect(violations).toEqual([]);
     });
 
     it('warns about plain HTTP, with the viewer text, and never touches owner routes', async () => {
+      stubPageHost('192.168.1.5');
       renderApp({ ...viewer(), secure: false });
       expect(await screen.findByText(/This connection isn't encrypted\. Others on this network/)).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: /How to turn on HTTPS/ }));

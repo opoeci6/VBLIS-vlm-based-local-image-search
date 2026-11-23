@@ -70,7 +70,7 @@ For a server on Linux or in Docker, follow [SERVER.md](SERVER.md) instead. The r
 8. **Model Management**: You can download, switch, and delete models in the settings.
 9. **Index and Cache Management**: You can clear the index and cache in the settings (**Library**).
 10. **Language**: Choose English or Simplified Chinese in the settings, or let VBLIS follow Windows. Searching works best with English queries; in Chinese, use common words.
-11. **Share on Your Network**: Turn on **Share on my network** in the settings, add an account for each person with **Manage accounts**, and open one of the addresses it shows in a browser on a phone or another computer. Sharing lasts while the app is open. See [SERVER.md](SERVER.md) for HTTPS, permissions and running VBLIS as a server.
+11. **Share on Your Network**: Turn on **Share on my network** in the settings, add an account for each person with **Manage accounts**, and open one of the addresses it shows in a browser on a phone or another computer. Sharing uses HTTPS with a certificate the app makes itself, so each browser shows a warning on the first visit; the app explains how to continue. Sharing lasts while the app is open. See [SERVER.md](SERVER.md) for HTTPS, permissions and running VBLIS as a server.
 12. **Copy the Index to Another Device**: In the settings, **Library** → **Export for another device** writes the index into one file. Import it on the other machine with `import-index`, which maps your PC's folders to where the pictures are there; see [SERVER.md](SERVER.md).
 
 ## Upgrading
@@ -79,6 +79,7 @@ For a server on Linux or in Docker, follow [SERVER.md](SERVER.md) instead. The r
 - After upgrading from v0.2.0 or older, re-sync your folders once (the **Re-sync** button of each folder in the Indexed Folders panel). That picks up AVIF files, and turns portrait videos and photos that older versions indexed sideways upright. Only those files are embedded again.
 - If some HEIC photos showed up turned in v0.4.0 or older, re-sync their folder once and use **Clear Image Cache** in the settings. Only those photos are embedded again.
 - Upgrading from v0.5.0 or newer needs no re-indexing: the new PyTorch in v0.7.0 gives the same search results. Sharing stays off until you turn on **Share on my network**.
+- After updating to v0.7.1 or newer, reload VBLIS in any browser that had it open: signing in works differently (the password no longer leaves the browser). Sharing set up with plain HTTP stays on HTTP, and the app offers to switch to HTTPS.
 - Since v0.7.0 the GPU needs NVIDIA driver 580 or newer. With an older driver VBLIS uses the CPU, and the settings (**Models and GPU**) say so; update the driver to use the GPU again.
 - The date, place, orientation and resolution filters need media details that older versions didn't read. VBLIS reads them in the background the first time you open the Filters panel; no re-indexing is needed.
 

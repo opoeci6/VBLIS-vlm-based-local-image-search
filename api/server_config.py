@@ -25,6 +25,9 @@ DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
 DESKTOP_PORT = 8000
 TLS_MODES = ("off", "files", "self_signed")
+# A new setup uses HTTPS with a certificate the server makes itself. A server.json that already
+# holds a mode keeps it (every save writes the whole tls block).
+DEFAULT_TLS_MODE = "self_signed"
 # Viewer permissions the owner can grant per account, with the defaults of a new viewer
 VIEWER_PERMISSIONS = acct.PERMISSIONS
 
@@ -47,6 +50,13 @@ _RELOAD_INTERVAL = 1.0
 _LOCK_TIMEOUT = 5.0
 
 
+def _new_hash(password, password_hash) -> str:
+    """The hash to store: made here from a password (after the password rules), or given ready."""
+    if (password is None) == (password_hash is None):
+        raise ValueError("give either the password or its hash")
+    return acct.hash_new_password(password) if password is not None else password_hash
+
+
 class ServerConfigError(RuntimeError):
     """The config file exists but can't be used; it is never overwritten in that state."""
 
@@ -56,7 +66,7 @@ class ServerConfig:
     enabled: bool = False
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
-    tls_mode: str = "off"
+    tls_mode: str = DEFAULT_TLS_MODE
     cert_file: str = ""
     key_file: str = ""
     allowed_hosts: tuple = ()
@@ -154,8 +164,8 @@ def _parse_port(value, problems):
 def _parse_tls_mode(value, problems):
     text = value.strip().lower() if isinstance(value, str) else value
     if text not in TLS_MODES:
-        problems.append(f"tls: {value!r} is not one of {', '.join(TLS_MODES)}; using off")
-        return "off"
+        problems.append(f"tls: {value!r} is not one of {', '.join(TLS_MODES)}; using {DEFAULT_TLS_MODE}")
+        return DEFAULT_TLS_MODE
     return text
 
 
@@ -273,7 +283,7 @@ def config_from_json(data) -> ServerConfig:
         enabled=_parse_bool(data.get("enabled", False), "enabled", problems, False),
         host=_parse_host(data.get("host", DEFAULT_HOST), problems),
         port=_parse_port(data.get("port", DEFAULT_PORT), problems),
-        tls_mode=_parse_tls_mode(tls.get("mode", "off"), problems),
+        tls_mode=_parse_tls_mode(tls.get("mode", DEFAULT_TLS_MODE), problems),
         cert_file=_parse_file_path(tls.get("cert_file", ""), "tls.cert_file", problems),
         key_file=_parse_file_path(tls.get("key_file", ""), "tls.key_file", problems),
         allowed_hosts=_parse_names(data.get("allowed_hosts", []), problems),
@@ -566,9 +576,10 @@ class ServerConfigStore:
     # file can't be read. A new password is hashed before the lock is taken: the network listener reads
     # the config under the same lock on every request.
 
-    def add_account(self, name, role, password, permissions=None):
-        """(config, the new account)."""
-        password_hash = acct.hash_new_password(password)
+    def add_account(self, name, role, password=None, permissions=None, password_hash=None):
+        """(config, the new account). The command line gives the password; a browser gives its hash
+        (password_proof.new_hash_problem has checked its form)."""
+        password_hash = _new_hash(password, password_hash)
         with self._changing():
             changed, account = acct.add(self._stored().accounts, name, role, password_hash, permissions)
             return self.update(accounts=changed), account
@@ -581,8 +592,8 @@ class ServerConfigStore:
                                   keep_owner=keep_owner)
             return self.update(accounts=changed)
 
-    def set_account_password(self, account_id, password) -> ServerConfig:
-        password_hash = acct.hash_new_password(password)
+    def set_account_password(self, account_id, password=None, password_hash=None) -> ServerConfig:
+        password_hash = _new_hash(password, password_hash)
         with self._changing():
             return self.update(accounts=acct.set_password(self._stored().accounts, account_id, password_hash))
 

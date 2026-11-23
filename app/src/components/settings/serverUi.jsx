@@ -16,16 +16,19 @@ export function Fact({ label, children }) {
   );
 }
 
-// A labelled text field. `type` is "text" or "password"; the rest goes to the input.
-export function Field({ id, label, type = 'text', value, onChange, hint, ...inputProps }) {
+// A labelled text field. `type` is "text" or "password"; the rest goes to the input. Without `value` the input
+// is uncontrolled, read through `inputRef`: a password field is used that way, so the typed password never
+// reaches the input's `value` attribute, which the browser's developer tools show.
+export function Field({ id, label, type = 'text', value, onChange, inputRef, hint, ...inputProps }) {
   return (
     <div>
       <label htmlFor={id} className="block text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 mb-1">{label}</label>
       <input
         id={id}
+        ref={inputRef}
         type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        {...(value === undefined ? {} : { value })}
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
         className={inputClass}
         {...inputProps}
       />

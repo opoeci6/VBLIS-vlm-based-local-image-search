@@ -231,6 +231,9 @@ def run_light(args) -> int:
         elif args.command == "set":
             _set_field(store, args.name, args.value)
             print(f"{args.name} = {args.value}")
+            if args.name == "tls" and args.value.strip().lower() == "off":
+                print("Warning: without HTTPS, anyone on the same network can see the pictures that are "
+                      "opened and take over a signed-in session. Use it only on a network you trust.")
         elif args.command == "sign-out-everywhere":
             store.rotate_secret()
             print("Every browser has to sign in again.")

@@ -22,6 +22,7 @@ from account_admin import (
     accounts_view,
     describe_change,
     error,
+    new_hash_refusal,
     run_change,
 )
 from auth_context import local_owner
@@ -214,8 +215,12 @@ def list_accounts():
 
 @router.post("/sharing/accounts")
 def add_account(req: AddAccountRequest):
-    result, refusal = run_change(_store().add_account, req.name, req.role, req.password,
-                                 req.permissions.changes() if req.permissions else None)
+    refusal = new_hash_refusal(req.password_hash)
+    if refusal is not None:
+        return refusal
+    result, refusal = run_change(_store().add_account, req.name, req.role, None,
+                                 req.permissions.changes() if req.permissions else None,
+                                 password_hash=req.password_hash)
     if refusal is not None:
         return refusal
     config, account = result
@@ -249,7 +254,10 @@ def update_account(account_id: str, req: UpdateAccountRequest):
 
 @router.post("/sharing/accounts/{account_id}/password")
 def set_account_password(account_id: str, req: SetPasswordRequest):
-    config, refusal = run_change(_store().set_account_password, account_id, req.new_password)
+    refusal = new_hash_refusal(req.password_hash)
+    if refusal is not None:
+        return refusal
+    config, refusal = run_change(_store().set_account_password, account_id, password_hash=req.password_hash)
     if refusal is not None:
         return refusal
     _forget(account_id)

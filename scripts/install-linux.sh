@@ -173,12 +173,14 @@ Installed. Next steps:
        ${RUN[*]} add-account NAME --role viewer
   2. Allow the folders browsers may index:
        ${RUN[*]} add-library-folder /path/to/photos
-  3. Optional: HTTPS with a self-signed certificate, or see SERVER.md for other choices:
-       ${RUN[*]} set tls self_signed
+  3. HTTPS is on, with a certificate the server makes itself; browsers warn on the first visit.
+     Other choices (your own certificate, a reverse proxy) are in SERVER.md. Plain HTTP, only on a
+     network you trust:
+       ${RUN[*]} set tls off
   4. Start it:
        ${RUN[*]} serve
      or as a service:
        systemctl --user daemon-reload && systemctl --user enable --now vblis
        sudo loginctl enable-linger $USER    # keeps it running after you log out
-  5. Open http://<this machine's address>:8080 in a browser and sign in. Download a model in Settings.
+  5. Open https://<this machine's address>:8080 in a browser and sign in. Download a model in Settings.
 EOF

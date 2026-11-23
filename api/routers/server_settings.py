@@ -3,8 +3,8 @@ permissions) and a summary of the server's settings. The listen address, HTTPS a
 changed in server.json, from the command line or in the desktop app, not from a browser. Only the network
 app includes this router, and every route here is owner-only (network_app.ROUTE_TABLE).
 
-Changes that give access or could lock an owner out need the acting owner's own password as well as the
-session: adding, renaming, a role, a password, deleting, turning an owner on or off, turning any account
+Changes that give access or could lock an owner out need the acting owner's own password (proved without
+sending it, password_proof.py) as well as the session: adding, renaming, a role, a password, deleting, turning an owner on or off, turning any account
 back on, and switching a viewer's permission on. A stolen session alone then can't create a lasting way
 in or widen anyone's access. Switching a permission off, turning a viewer off and signing an account out
 only take access away, so the session is enough.
@@ -21,11 +21,13 @@ from fastapi import APIRouter, Depends, Response
 from account_admin import (
     AddAccountRequest,
     ConfirmRequest,
+    Proof,
     SetPasswordRequest,
     UpdateAccountRequest,
     accounts_view as _accounts_view,
     describe_change,
     error,
+    new_hash_refusal,
     run_change,
 )
 from auth_context import Auth, NetRequest, current_auth, net_request
@@ -59,22 +61,27 @@ def accounts_view(net: NetRequest, auth: Auth, config=None) -> dict:
                           remember_s=remember_s)
 
 
-def confirm_for_accounts(net: NetRequest, auth: Auth, password, remembered_ok=True) -> Optional[Response]:
-    """None when the change may go ahead: `password` is the caller's own password, or (remembered_ok) a
+def confirm_for_accounts(net: NetRequest, auth: Auth, proof: Optional[Proof], remembered_ok=True) -> Optional[Response]:
+    """None when the change may go ahead: `proof` proves the caller's own password, or (remembered_ok) a
     correct one was given a moment ago in this sign-in from this address. Else the refusal to answer with.
     A wrong password also forgets the remembered one."""
     memory, session = net.confirmations, net.session
-    if password:
-        refusal = confirm_own_password(net, auth, password)
+    if proof is not None:
+        refusal = confirm_own_password(net, auth, proof)
         if memory is not None and session is not None:
             if refusal is None:
                 memory.remember(net.store.current().account_by_id(auth.account_id), session.nonce, net.client)
-            else:
+            elif _is_wrong_password(refusal):
                 memory.forget(auth.account_id, session.nonce)
         return refusal
     if remembered_ok and _remembered(net, auth, net.store.current()) > 0:
         return None
     return error(403, "confirm_password")
+
+
+def _is_wrong_password(refusal) -> bool:
+    # An expired challenge says nothing about the password: keep what was remembered
+    return getattr(refusal, "code", None) != "challenge_expired"
 
 
 def _gives_owner_access(target, req: UpdateAccountRequest) -> bool:
@@ -120,11 +127,13 @@ def list_accounts(net: NetRequest = Depends(net_request), auth: Auth = Depends(c
 
 @router.post("/server/accounts")
 def add_account(req: AddAccountRequest, net: NetRequest = Depends(net_request), auth: Auth = Depends(current_auth)):
-    refusal = confirm_for_accounts(net, auth, req.current_password, remembered_ok=req.role != "owner")
+    refusal = new_hash_refusal(req.password_hash) or confirm_for_accounts(
+        net, auth, req.confirm, remembered_ok=req.role != "owner")
     if refusal is not None:
         return refusal
-    result, refusal = run_change(net.store.add_account, req.name, req.role, req.password,
-                                 req.permissions.changes() if req.permissions else None)
+    result, refusal = run_change(net.store.add_account, req.name, req.role, None,
+                                 req.permissions.changes() if req.permissions else None,
+                                 password_hash=req.password_hash)
     if refusal is not None:
         return refusal
     config, account = result
@@ -141,7 +150,7 @@ def update_account(account_id: str, req: UpdateAccountRequest, net: NetRequest =
         return error(404, "no_account")
     if _gives_access(target, req):
         remembered_ok = account_id != auth.account_id and not _gives_owner_access(target, req)
-        refusal = confirm_for_accounts(net, auth, req.current_password, remembered_ok=remembered_ok)
+        refusal = confirm_for_accounts(net, auth, req.confirm, remembered_ok=remembered_ok)
         if refusal is not None:
             return refusal
     config, refusal = run_change(
@@ -166,21 +175,24 @@ def update_account(account_id: str, req: UpdateAccountRequest, net: NetRequest =
 @router.post("/server/accounts/{account_id}/password")
 def set_account_password(account_id: str, req: SetPasswordRequest, response: Response,
                          net: NetRequest = Depends(net_request), auth: Auth = Depends(current_auth)):
+    refusal = new_hash_refusal(req.password_hash)
+    if refusal is not None:
+        return refusal
     if account_id == auth.account_id:
         # Your own password always asks: otherwise a stolen session could lock the owner out
-        if not req.current_password:
+        if req.confirm is None:
             return error(403, "confirm_password")
-        refusal = confirm_own_password(net, auth, req.current_password)
-        if refusal is not None and net.session is not None:
+        refusal = confirm_own_password(net, auth, req.confirm)
+        if refusal is not None and net.session is not None and _is_wrong_password(refusal):
             _forget(net, auth.account_id)
     else:
         # A new password for an owner account is a lasting owner login: always asks
         target = net.store.current().account_by_id(account_id)
         remembered_ok = target is not None and not target.is_owner
-        refusal = confirm_for_accounts(net, auth, req.current_password, remembered_ok=remembered_ok)
+        refusal = confirm_for_accounts(net, auth, req.confirm, remembered_ok=remembered_ok)
     if refusal is not None:
         return refusal
-    config, refusal = run_change(net.store.set_account_password, account_id, req.new_password)
+    config, refusal = run_change(net.store.set_account_password, account_id, password_hash=req.password_hash)
     if refusal is not None:
         return refusal
     _forget(net, account_id)
@@ -210,7 +222,7 @@ def delete_account(account_id: str, req: ConfirmRequest, net: NetRequest = Depen
     target = net.store.current().account_by_id(account_id)
     if target is None:
         return error(404, "no_account")
-    refusal = confirm_for_accounts(net, auth, req.current_password)
+    refusal = confirm_for_accounts(net, auth, req.confirm)
     if refusal is not None:
         return refusal
     config, refusal = run_change(net.store.remove_account, account_id, acting_id=auth.account_id)

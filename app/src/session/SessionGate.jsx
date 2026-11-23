@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE, IS_NETWORK } from '../config';
 import { apiFetch } from '../utils/api';
+import { fetchSignInProof } from '../utils/passwordRequests';
 import { onSignedOut } from '../utils/session';
 import { setCaseSensitivePaths } from '../utils/pathCase';
 import { SessionProvider } from './SessionProvider';
@@ -74,29 +75,43 @@ function NetworkGate({ children }) {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [signedIn, refresh]);
 
+  // One try: challenge, proof, login.
+  const trySignIn = useCallback(async (name, password) => {
+    const proof = await fetchSignInProof(name, password);
+    if (!proof.ok) {
+      if (proof.status === 0 && !proof.code) return { ok: false, kind: 'network' };
+      return { ok: false, kind: 'http', status: proof.status, detail: '', code: proof.code ?? '', retryAfter: null };
+    }
+    const res = await apiFetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, challenge: proof.challenge, proof: proof.proof })
+    });
+    if (res.ok) {
+      acceptSession(await res.json());
+      return { ok: true };
+    }
+    let detail = '';
+    let code = '';
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === 'string') detail = body.detail;
+      if (typeof body?.code === 'string') code = body.code;
+    } catch { /* no JSON body */ }
+    return { ok: false, kind: 'http', status: res.status, detail, code, retryAfter: readRetryAfter(res) };
+  }, [acceptSession]);
+
+  // The password never leaves the page: the server gets a proof that answers its challenge. A challenge the
+  // server no longer knew (too old, or used) is asked for again once, without the user noticing.
   const signIn = useCallback(async (name, password) => {
     try {
-      const res = await apiFetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, password })
-      });
-      if (res.ok) {
-        acceptSession(await res.json());
-        return { ok: true };
-      }
-      let detail = '';
-      let code = '';
-      try {
-        const body = await res.json();
-        if (typeof body?.detail === 'string') detail = body.detail;
-        if (typeof body?.code === 'string') code = body.code;
-      } catch { /* no JSON body */ }
-      return { ok: false, kind: 'http', status: res.status, detail, code, retryAfter: readRetryAfter(res) };
+      const result = await trySignIn(name, password);
+      if (result.code === 'challenge_expired') return await trySignIn(name, password);
+      return result;
     } catch {
       return { ok: false, kind: 'network' };
     }
-  }, [acceptSession]);
+  }, [trySignIn]);
 
   const signOut = useCallback(async () => {
     try {

@@ -251,7 +251,7 @@
       "off": "关闭",
       "selfSigned": "自签名",
       "files": "自有文件",
-      "selfSignedHint": "浏览器会对自签名证书发出警告，可对照下方的指纹进行核实。",
+      "selfSignedHint": "浏览器会对自签名证书发出警告：首次访问时会出现警告页面，这是正常现象。可对照下方的指纹进行核实。",
       "certificate": "证书文件",
       "key": "密钥文件",
       "chooseCertificate": "选择证书……",
@@ -300,8 +300,39 @@
       "title": "须知",
       "lifetime": "只有在 VBLIS 打开期间才会共享。",
       "firewall": "Windows 可能会询问是否允许 VBLIS 通过防火墙，请在专用网络中允许。",
-      "plainHttp": "未启用 HTTPS 时，密码和图片将以明文传输。在不可信的网络中请使用 HTTPS。",
+      "plainHttp": "未启用 HTTPS 时，图片和已登录的会话将以明文传输。在不完全可信的网络中请使用 HTTPS。",
       "noWebUi": "此版本未安装网页界面。"
+    },
+    "intro": {
+      "title": "共享前请先了解",
+      "lead": "开启共享后，同一 Wi-Fi 下的手机和电脑可以在网页浏览器中打开 VBLIS。每个人都需要使用在此创建的账户登录。",
+      "warningTitle": "首次访问时会出现安全警告",
+      "warningBody": "连接已通过 HTTPS 加密，但证书是由这台电脑自行生成的，并非由公共认证机构签发。浏览器无法确认其来源，因此首次访问时会显示警告页面，这是正常现象。继续访问的方法：",
+      "chrome": "Chrome 或 Edge：点击「高级」→「继续前往…（不安全）」",
+      "safari": "iPhone 或 Mac 上的 Safari：点击「显示详细信息」→「访问此网站」",
+      "firefox": "Firefox：点击「高级」→「接受风险并继续」",
+      "fingerprint": "如需确认访问的确实是这台电脑，可将本页显示的证书指纹与浏览器证书详情中的指纹进行对比。此步骤为可选。",
+      "firewall": "Windows 可能会询问是否允许 VBLIS 使用网络，请在专用网络中允许。",
+      "lifetime": "关闭 VBLIS 后，共享会随之停止。",
+      "turnOn": "开启共享"
+    },
+    "httpWarning": {
+      "title": {
+        "turnOn": "要在不加密的情况下共享吗？",
+        "switchOff": "要关闭 HTTPS 吗？",
+        "running": "当前的共享未加密"
+      },
+      "lead": "关闭 HTTPS 后，网络中传输的所有内容都是可直接读取的明文：",
+      "seePictures": "同一 Wi-Fi 或网络中的其他人可能看到被打开的图片。",
+      "copySession": "他们还可能复制已登录的会话，冒充该用户使用 VBLIS。",
+      "trusted": "仅在完全可信的网络中这样做，切勿在公共 Wi-Fi、合租住所或工作场所使用。",
+      "httpsIsFree": "使用自签名证书的 HTTPS 无需任何费用，浏览器只会在首次访问时显示一次警告。",
+      "dontWarn": "在这台电脑上不再提醒",
+      "useHttps": "改用 HTTPS",
+      "shareAnyway": "不加密共享",
+      "keepHttps": "保留 HTTPS",
+      "turnHttpsOff": "关闭 HTTPS",
+      "keepForNow": "暂时保持不变"
     }
   }
 }
