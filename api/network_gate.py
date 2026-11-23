@@ -25,6 +25,7 @@ import ratelimit
 import sessions
 from auth_context import NET_SCOPE_KEY, NETWORK, SCOPE_KEY, VIEWER, Auth, NetRequest
 from confirm_memory import RecentConfirmations
+from password_proof import ChallengeStore
 
 API_PREFIX = "/api"
 MAX_JSON_BODY = 1024 * 1024
@@ -101,7 +102,7 @@ def scan_web_dir(web_dir) -> dict:
 
 class NetworkGate:
     def __init__(self, app, route_table, store, web_dir=None, port=8080, hostname=None, limiter=None, log=print,
-                 require_owner=True, confirmations=None):
+                 require_owner=True, confirmations=None, challenges=None):
         self.app = app
         self.route_table = dict(route_table)
         self.store = store
@@ -111,6 +112,7 @@ class NetworkGate:
         self.log = log
         self.require_owner = require_owner
         self.confirmations = confirmations if confirmations is not None else RecentConfirmations()
+        self.challenges = challenges if challenges is not None else ChallengeStore()
         self._default_names = netaddr.default_host_names(socket.gethostname() if hostname is None else hostname)
         self._parsed_proxies = ((), ())
         self._parsed_local = ((), ())
@@ -118,6 +120,11 @@ class NetworkGate:
         self._api_slots = None  # created in the server's event loop on first use
 
     # ---------------------------------------------------------------- helpers
+
+    def allowed_host_names(self, config=None) -> frozenset:
+        """The names a Host header may use besides an address. tls_redirect uses the same check."""
+        config = config or self.store.current()
+        return self._default_names | frozenset(config.allowed_hosts)
 
     def _proxies(self, config):
         entries, networks = self._parsed_proxies
@@ -214,8 +221,7 @@ class NetworkGate:
             client = peer
 
         # 2. Host
-        names = self._default_names | frozenset(config.allowed_hosts)
-        if not netaddr.host_allowed(headers.get("host"), names):
+        if not netaddr.host_allowed(headers.get("host"), self.allowed_host_names(config)):
             self.log(f"[Network] Refused {client}: unknown host name {headers.get('host')!r}")
             await self._refuse(scope, receive, send, 400,
                                "Unknown host name. Use the server's address, or add the name to allowed_hosts.",
@@ -322,7 +328,7 @@ class NetworkGate:
                 auth = Auth(account.role, NETWORK, frozenset(grants), client, account.id, account.name)
         child[NET_SCOPE_KEY] = NetRequest(client, scheme, cookie_name, self.store, self.limiter,
                                           self.require_owner, session if auth is not None else None,
-                                          self.confirmations, sign_in_group)
+                                          self.confirmations, sign_in_group, self.challenges)
         if auth is not None:
             child[SCOPE_KEY] = auth
 

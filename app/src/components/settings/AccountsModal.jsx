@@ -10,6 +10,7 @@ import { useBackToClose } from '../../hooks/useBackToClose';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useSession } from '../../session/sessionContext';
 import { cn } from '../../utils/cn';
+import { passwordLength } from '../../utils/passwordProof';
 
 // One grid for the header and the rows, from 640 px up. Below that every account is a stacked card.
 const GRID = 'sm:grid sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_repeat(4,minmax(0,0.9fr))_auto] sm:items-center sm:gap-3';
@@ -63,9 +64,11 @@ const alwaysAsksPassword = (kind, account, isYou) => (
 function ConfirmStep({ kind, permission, account, isYou, limits, needsPassword, again, onSubmit, onCancel, onBusyChange }) {
   const { t } = useTranslation('session');
   const [newName, setNewName] = useState(account.name);
-  const [newPassword, setNewPassword] = useState('');
-  const [repeat, setRepeat] = useState('');
-  const [current, setCurrent] = useState('');
+  // The password fields are uncontrolled and read through refs: a controlled value would show in the input's
+  // `value` attribute, in the developer tools' Elements panel.
+  const newPasswordRef = useRef(null);
+  const repeatRef = useRef(null);
+  const currentRef = useRef(null);
   const [error, setError] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
   const backdropDismiss = useBackdropDismiss(() => { if (!isBusy) onCancel(); });
@@ -105,14 +108,16 @@ function ConfirmStep({ kind, permission, account, isYou, limits, needsPassword, 
     event.preventDefault();
     if (isBusy) return;
     const trimmedName = newName.trim();
+    const newPassword = newPasswordRef.current?.value ?? '';
+    const current = currentRef.current?.value ?? '';
     if (kind === 'rename') {
       if (!trimmedName) return setError(t('accounts.add.nameRequired'));
       if (trimmedName.length > limits.name_max) return setError(t('accounts.add.nameTooLong', { max: limits.name_max }));
     }
     if (kind === 'setPassword') {
-      if (newPassword !== repeat) return setError(t('passwordRules.mismatch'));
-      if (newPassword.length < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
-      if (newPassword.length > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
+      if (newPassword !== (repeatRef.current?.value ?? '')) return setError(t('passwordRules.mismatch'));
+      if (passwordLength(newPassword) < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
+      if (passwordLength(newPassword) > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
     }
     if (needsPassword && !current) return setError(t('accounts.confirm.passwordRequired'));
     setError(null);
@@ -144,8 +149,8 @@ function ConfirmStep({ kind, permission, account, isYou, limits, needsPassword, 
         )}
         {kind === 'setPassword' && (
           <>
-            <Field id="confirm-new-password" label={t('accounts.confirm.setPassword.new')} type="password" autoComplete="new-password" disabled={isBusy} value={newPassword} onChange={setNewPassword} />
-            <Field id="confirm-repeat-password" label={t('accounts.confirm.setPassword.repeat')} type="password" autoComplete="new-password" disabled={isBusy} value={repeat} onChange={setRepeat} />
+            <Field id="confirm-new-password" label={t('accounts.confirm.setPassword.new')} type="password" autoComplete="new-password" disabled={isBusy} inputRef={newPasswordRef} />
+            <Field id="confirm-repeat-password" label={t('accounts.confirm.setPassword.repeat')} type="password" autoComplete="new-password" disabled={isBusy} inputRef={repeatRef} />
           </>
         )}
         {needsPassword && again && <p className="text-xs text-amber-700 dark:text-amber-300" role="status">{t('accounts.confirm.again')}</p>}
@@ -157,8 +162,7 @@ function ConfirmStep({ kind, permission, account, isYou, limits, needsPassword, 
             autoComplete="current-password"
             autoFocus={kind !== 'rename' || again}
             disabled={isBusy}
-            value={current}
-            onChange={setCurrent}
+            inputRef={currentRef}
           />
         )}
         {error && <p className={errorClass} role="alert">{error}</p>}
@@ -181,10 +185,11 @@ function AddAccountCard({ limits, passwordFor, onAdd, onClose, uiTheme }) {
   const { t } = useTranslation('session');
   const [name, setName] = useState('');
   const [role, setRole] = useState('viewer');
-  const [password, setPassword] = useState('');
-  const [repeat, setRepeat] = useState('');
+  // Uncontrolled password fields, read through refs (see ConfirmStep)
+  const passwordRef = useRef(null);
+  const repeatRef = useRef(null);
+  const currentRef = useRef(null);
   const [permissions, setPermissions] = useState(DEFAULT_NEW_PERMISSIONS);
-  const [current, setCurrent] = useState('');
   const [error, setError] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
   const [again, setAgain] = useState(false);
@@ -194,11 +199,13 @@ function AddAccountCard({ limits, passwordFor, onAdd, onClose, uiTheme }) {
     event.preventDefault();
     if (isBusy) return;
     const trimmed = name.trim();
+    const password = passwordRef.current?.value ?? '';
+    const current = currentRef.current?.value ?? '';
     if (!trimmed) return setError(t('accounts.add.nameRequired'));
     if (trimmed.length > limits.name_max) return setError(t('accounts.add.nameTooLong', { max: limits.name_max }));
-    if (password !== repeat) return setError(t('passwordRules.mismatch'));
-    if (password.length < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
-    if (password.length > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
+    if (password !== (repeatRef.current?.value ?? '')) return setError(t('passwordRules.mismatch'));
+    if (passwordLength(password) < limits.password_min) return setError(t('passwordRules.tooShort', { min: limits.password_min }));
+    if (passwordLength(password) > limits.password_max) return setError(t('passwordRules.tooLong', { max: limits.password_max }));
     if (showPassword && !current) return setError(t('accounts.confirm.passwordRequired'));
     setError(null);
     setIsBusy(true);
@@ -232,8 +239,8 @@ function AddAccountCard({ limits, passwordFor, onAdd, onClose, uiTheme }) {
         <FilterToggle pressed={role === 'viewer'} onClick={() => setRole('viewer')} disabled={isBusy}>{t('role.viewer')}</FilterToggle>
         <FilterToggle pressed={role === 'owner'} onClick={() => setRole('owner')} disabled={isBusy}>{t('role.owner')}</FilterToggle>
       </div>
-      <Field id="add-account-password" label={t('accounts.add.password')} type="password" autoComplete="new-password" disabled={isBusy} value={password} onChange={setPassword} />
-      <Field id="add-account-repeat" label={t('accounts.add.repeat')} type="password" autoComplete="new-password" disabled={isBusy} value={repeat} onChange={setRepeat} />
+      <Field id="add-account-password" label={t('accounts.add.password')} type="password" autoComplete="new-password" disabled={isBusy} inputRef={passwordRef} />
+      <Field id="add-account-repeat" label={t('accounts.add.repeat')} type="password" autoComplete="new-password" disabled={isBusy} inputRef={repeatRef} />
       {role === 'viewer' && (
         <div className="space-y-2">
           <p className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">{t('accounts.add.permissions')}</p>
@@ -245,7 +252,7 @@ function AddAccountCard({ limits, passwordFor, onAdd, onClose, uiTheme }) {
       )}
       {showPassword && again && <p className="text-xs text-amber-700 dark:text-amber-300" role="status">{t('accounts.confirm.again')}</p>}
       {showPassword && (
-        <Field id="add-account-current" label={t('accounts.confirm.password')} type="password" autoComplete="current-password" disabled={isBusy} value={current} onChange={setCurrent} />
+        <Field id="add-account-current" label={t('accounts.confirm.password')} type="password" autoComplete="current-password" disabled={isBusy} inputRef={currentRef} />
       )}
       {error && <p className={errorClass} role="alert">{error}</p>}
       <div className="flex flex-col gap-2 sm:flex-row">

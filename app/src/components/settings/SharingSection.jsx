@@ -1,18 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Copy, Loader2, Plus, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FilterToggle } from '../search/filters/FilterToggle';
 import { PermissionSwitch } from './PermissionSwitch';
 import { SectionTitle } from './SectionTitle';
 import { AccountsModal } from './AccountsModal';
+import { HTTP_WARNING_OFF_KEY, HttpSharingWarningModal } from './HttpSharingWarningModal';
+import { SHARING_INTRO_SEEN_KEY, SharingIntroModal } from './SharingIntroModal';
+import { hasShownRunningWarning, markRunningWarningShown } from './sharingPrompts';
 import { Field, cardClass, dangerButton, errorClass, primaryButton, secondaryButton } from './serverUi';
 import { problemText, useSharing } from '../../hooks/useSharing';
 import { copyText, pickFile } from '../../utils/electron';
+import { readJson } from '../../utils/storage';
 import { cn } from '../../utils/cn';
 
 const warningClass = 'text-xs font-medium text-amber-700 dark:text-amber-300';
 const subtleClass = 'text-[11px] text-neutral-500 dark:text-neutral-400';
 const MAX_PORT = 65535;
+
+const isIntroSeen = () => readJson(SHARING_INTRO_SEEN_KEY, false) === true;
+const isHttpWarningOff = () => readJson(HTTP_WARNING_OFF_KEY, false) === true;
 
 function CopyButton({ label, onCopy, disabled }) {
   return (
@@ -91,6 +98,25 @@ export function SharingSection({ uiTheme, setToast, showTitle = true }) {
   const [keyDraft, setKeyDraft] = useState(null);
   const [folderDraft, setFolderDraft] = useState('');
   const [networkDraft, setNetworkDraft] = useState('');
+  // The pop-ups: the first-time intro, and the plain HTTP warning with the reason it opened for.
+  const [isIntroOpen, setIsIntroOpen] = useState(false);
+  const [httpReason, setHttpReason] = useState(null);
+  const openHttpWarning = (reason) => {
+    markRunningWarningShown();
+    setHttpReason(reason);
+  };
+  const openIntro = () => {
+    markRunningWarningShown();
+    setIsIntroOpen(true);
+  };
+
+  // Sharing that starts by itself over plain HTTP (a setup from before HTTPS became the default) is warned about
+  // once per app run, when the state first shows it running. Fixed settings (environment) can't be changed here.
+  const needsRunningWarning = Boolean(state?.running && state.tls_mode === 'off' && !state.from_environment?.includes('tls_mode'));
+  useEffect(() => {
+    if (!needsRunningWarning || hasShownRunningWarning() || isHttpWarningOff()) return;
+    openHttpWarning('running');
+  }, [needsRunningWarning]);
 
   const toast = (message, type = 'success') => setToast?.({ message, type });
 
@@ -168,10 +194,50 @@ export function SharingSection({ uiTheme, setToast, showTitle = true }) {
       setTlsDraft('files');
     } else if (mode === state.tls_mode) {
       setTlsDraft(null);
+    } else if (mode === 'off' && state.enabled && !isHttpWarningOff()) {
+      // Sharing is on and would lose its encryption: ask first.
+      openHttpWarning('switch_off');
     } else if (await run({ tls_mode: mode }, t('sharing.done.saved'))) {
       setTlsDraft(null);
     }
   };
+
+  // The switch: turning it on may first show the intro (once) or the plain HTTP warning.
+  const toggleSharing = (value) => {
+    if (!value) return run({ enabled: false }, t('sharing.done.stopped'));
+    if (!isIntroSeen()) {
+      openIntro();
+      return undefined;
+    }
+    if (state.tls_mode === 'off' && !isHttpWarningOff()) {
+      openHttpWarning('turn_on');
+      return undefined;
+    }
+    return run({ enabled: true }, t('sharing.done.started'));
+  };
+
+  const startSharing = () => {
+    setIsIntroOpen(false);
+    setHttpReason(null);
+    return run({ enabled: true }, t('sharing.done.started'));
+  };
+  const startWithHttps = () => {
+    setIsIntroOpen(false);
+    setHttpReason(null);
+    return run({ tls_mode: 'self_signed', enabled: true }, t('sharing.done.started'));
+  };
+  const closeHttpWarning = () => setHttpReason(null);
+  const turnHttpsOff = async () => {
+    setHttpReason(null);
+    if (await run({ tls_mode: 'off' }, t('sharing.done.saved'))) setTlsDraft(null);
+  };
+  const switchRunningToHttps = () => {
+    setHttpReason(null);
+    return run({ tls_mode: 'self_signed' }, t('sharing.done.saved'));
+  };
+
+  // What the intro says depends on the HTTPS mode; plain HTTP shows the warning unless it was switched off.
+  const introVariant = state.tls_mode === 'off' && !isHttpWarningOff() ? 'off' : state.tls_mode === 'self_signed' ? 'self_signed' : 'files';
 
   const useFiles = async () => {
     const saved = await run({ tls_mode: 'files', cert_file: certValue.trim(), key_file: keyValue.trim() }, t('sharing.done.saved'));
@@ -250,7 +316,7 @@ export function SharingSection({ uiTheme, setToast, showTitle = true }) {
           disabled={isBusy}
           busy={isBusy}
           uiTheme={uiTheme}
-          onChange={(value) => run({ enabled: value }, value ? t('sharing.done.started') : t('sharing.done.stopped'))}
+          onChange={toggleSharing}
         />
         <p
           className={cn('text-xs', state.running ? 'text-emerald-700 dark:text-emerald-300' : isStuck ? warningClass : 'text-neutral-600 dark:text-neutral-400')}
@@ -470,6 +536,27 @@ export function SharingSection({ uiTheme, setToast, showTitle = true }) {
         </ul>
       </div>
 
+      {isIntroOpen && (
+        <SharingIntroModal
+          variant={introVariant}
+          uiTheme={uiTheme}
+          isBusy={isBusy}
+          onTurnOn={startSharing}
+          onUseHttps={startWithHttps}
+          onShareAnyway={startSharing}
+          onCancel={() => setIsIntroOpen(false)}
+        />
+      )}
+      {httpReason && (
+        <HttpSharingWarningModal
+          reason={httpReason}
+          uiTheme={uiTheme}
+          isBusy={isBusy}
+          onUseHttps={httpReason === 'running' ? switchRunningToHttps : startWithHttps}
+          onContinue={httpReason === 'switch_off' ? turnHttpsOff : startSharing}
+          onCancel={closeHttpWarning}
+        />
+      )}
       {isManaging && <AccountsModal mode="desktop" uiTheme={uiTheme} setToast={setToast} onClose={closeAccounts} />}
     </div>
   );

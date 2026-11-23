@@ -6,6 +6,11 @@ import { setNetworkModeForTests } from '../config';
 import { apiFetch } from '../utils/api';
 import { foldPath, setCaseSensitivePaths } from '../utils/pathCase';
 import i18n from '../i18n';
+import { stubPageHost } from '../test/pageHost';
+import { challengeAnswer, expectNoPlainPassword, fakeProof } from '../test/passwordProofMock';
+
+// Real scrypt is slow; the maths has its own test (utils/passwordProof.test.js).
+vi.mock('../utils/passwordProof', async () => (await import('../test/passwordProofMock')).passwordProofMock);
 
 const signedOutInfo = (extra = {}) => ({
   signed_in: false,
@@ -157,10 +162,22 @@ describe('SessionGate', () => {
       expect(container.firstChild.className).toContain('terminal-theme');
     });
 
-    it('notes an unencrypted connection', async () => {
+    it('warns about an unencrypted connection above the name field', async () => {
+      stubPageHost('192.168.1.5');
       routes['GET /auth/session'] = () => reply(200, signedOutInfo({ secure: false }));
       renderGate();
-      expect(await screen.findByText("This connection isn't encrypted.")).toBeTruthy();
+      const note = await screen.findByTestId('insecure-note');
+      expect(note.textContent).toContain("This connection isn't encrypted");
+      expect(note.textContent).toContain('Others on this network could see the pictures you open and use your sign-in. Ask the owner to turn on HTTPS.');
+      expect(note.compareDocumentPosition(screen.getByLabelText('Name')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('does not warn on a page opened on this computer itself, as through an SSH tunnel', async () => {
+      stubPageHost('127.0.0.1');
+      routes['GET /auth/session'] = () => reply(200, signedOutInfo({ secure: false }));
+      renderGate();
+      await screen.findByLabelText('Password');
+      expect(screen.queryByTestId('insecure-note')).toBeNull();
     });
 
     it('offers a retry when the session cannot be read', async () => {
@@ -173,20 +190,100 @@ describe('SessionGate', () => {
     });
 
     describe('signing in', () => {
+      let challenges;
+
+      const posted = (path) => fetchMock.mock.calls
+        .filter(([url, init]) => String(url).endsWith(path) && init?.method === 'POST')
+        .map(([, init]) => ({ init, body: JSON.parse(init.body) }));
+
       beforeEach(() => {
         routes['GET /auth/session'] = () => reply(200, signedOutInfo());
+        // Each challenge is new: challenge-1, challenge-2, ...
+        challenges = 0;
+        routes['POST /auth/challenge'] = () => {
+          challenges += 1;
+          return reply(200, challengeAnswer(`challenge-${challenges}`));
+        };
       });
 
-      it('shows the app after a correct sign-in and sends the trimmed name and the password as JSON', async () => {
+      it('shows the app after a correct sign-in and sends a challenge request, then the trimmed name with a proof', async () => {
         routes['POST /auth/login'] = () => reply(200, signedInInfo({ role: 'owner' }));
         renderGate();
         await signIn('hunter2', '  alice  ');
         expect(await screen.findByText('app: network owner owner=true secure=true')).toBeTruthy();
         expect(screen.getByText('account: alice places=true')).toBeTruthy();
-        const [, init] = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/auth/login'));
-        expect(init.method).toBe('POST');
-        expect(JSON.parse(init.body)).toEqual({ name: 'alice', password: 'hunter2' });
+        expect(posted('/auth/challenge').map(({ body }) => body)).toEqual([{ name: 'alice' }]);
+        const [{ init, body }] = posted('/auth/login');
+        expect(body).toEqual({ name: 'alice', challenge: 'challenge-1', proof: fakeProof('sign_in', 'challenge-1') });
         expect(init.headers).not.toHaveProperty('X-VBLIS-Token');
+        expectNoPlainPassword(expect, fetchMock, 'hunter2');
+      });
+
+      it("never writes the typed password into the input's value attribute", async () => {
+        renderGate();
+        const field = await screen.findByLabelText('Password');
+        fireEvent.change(field, { target: { value: 'hunter2' } });
+        expect(field.value).toBe('hunter2');
+        expect(field.getAttribute('value')).toBeNull();
+        expect(document.body.innerHTML).not.toContain('hunter2');
+      });
+
+      it('asks for a new challenge once when the server no longer knew the first', async () => {
+        const answers = [
+          () => reply(401, { detail: 'Try again', code: 'challenge_expired' }),
+          () => reply(200, signedInInfo({ role: 'owner' }))
+        ];
+        routes['POST /auth/login'] = () => answers.shift()();
+        renderGate();
+        await signIn('hunter2');
+        expect(await screen.findByText('app: network owner owner=true secure=true')).toBeTruthy();
+        expect(posted('/auth/challenge')).toHaveLength(2);
+        expect(posted('/auth/login').map(({ body }) => body.challenge)).toEqual(['challenge-1', 'challenge-2']);
+        expect(posted('/auth/login')[1].body.proof).toBe(fakeProof('sign_in', 'challenge-2'));
+      });
+
+      it('shows that it took too long when the second challenge expires as well, and does not try a third time', async () => {
+        routes['POST /auth/login'] = () => reply(401, { detail: 'Try again', code: 'challenge_expired' });
+        renderGate();
+        await signIn('hunter2');
+        expect((await screen.findByRole('alert')).textContent).toBe('That took too long. Try again.');
+        expect(posted('/auth/login')).toHaveLength(2);
+        expect(posted('/auth/challenge')).toHaveLength(2);
+        expect(screen.getByRole('button', { name: 'Sign in' }).disabled).toBe(false);
+      });
+
+      it('does not ask again for a wrong password', async () => {
+        routes['POST /auth/login'] = () => reply(401, { detail: 'Wrong name or password', code: 'wrong_name_or_password' });
+        renderGate();
+        await signIn();
+        await screen.findByRole('alert');
+        expect(posted('/auth/challenge')).toHaveLength(1);
+        expect(posted('/auth/login')).toHaveLength(1);
+      });
+
+      it('says what the server said when it cannot give a challenge, without trying to sign in', async () => {
+        routes['POST /auth/challenge'] = () => reply(503, { detail: 'There is no owner account', code: 'no_owner_account' });
+        renderGate();
+        await signIn();
+        expect((await screen.findByRole('alert')).textContent)
+          .toBe('The server has no owner account yet. Add one on the server: add-account NAME --role owner');
+        expect(posted('/auth/login')).toHaveLength(0);
+      });
+
+      it('reports a network error when the challenge cannot be fetched', async () => {
+        routes['POST /auth/challenge'] = () => { throw new TypeError('offline'); };
+        renderGate();
+        await signIn();
+        expect((await screen.findByRole('alert')).textContent).toBe('Could not reach the server. Check your connection and try again.');
+        expect(posted('/auth/login')).toHaveLength(0);
+      });
+
+      it("refuses a challenge with cost values outside the server's bounds, without trying to sign in", async () => {
+        routes['POST /auth/challenge'] = () => reply(200, challengeAnswer('challenge-1', { log_n: 30 }));
+        renderGate();
+        await signIn();
+        expect((await screen.findByRole('alert')).textContent).toBe("The server's answer couldn't be used. Reload the page and try again.");
+        expect(posted('/auth/login')).toHaveLength(0);
       });
 
       it('does not submit with an empty name or an empty password', async () => {
@@ -340,6 +437,7 @@ describe('SessionGate', () => {
 
       it('can sign in again as someone else after signing out', async () => {
         routes['POST /auth/logout'] = () => reply(200, {});
+        routes['POST /auth/challenge'] = () => reply(200, challengeAnswer('challenge-1'));
         routes['POST /auth/login'] = () => reply(200, signedInInfo({ role: 'viewer', account: { id: 'v1', name: 'bob' } }));
         renderGate();
         fireEvent.click(await screen.findByText('out'));

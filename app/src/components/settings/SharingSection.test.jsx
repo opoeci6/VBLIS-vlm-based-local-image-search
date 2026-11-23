@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import i18n from '../../i18n';
+import { resetEscapeKeyForTests } from '../../hooks/useEscapeKey';
+import { HttpSharingWarningModal } from './HttpSharingWarningModal';
+import { SharingIntroModal } from './SharingIntroModal';
 import { SharingSection } from './SharingSection';
+import { resetSharingPromptsForTests } from './sharingPrompts';
 
 const VIEW = {
   enabled: false,
@@ -56,6 +60,12 @@ describe('SharingSection', () => {
   const theSwitch = () => screen.getByRole('switch', { name: 'Share on my network' });
 
   beforeEach(() => {
+    // The two pop-ups have their own describe blocks; everywhere else they are switched off, as for a person who
+    // has seen them and ticked "Don't warn me again".
+    localStorage.clear();
+    localStorage.setItem('sharing_intro_seen', 'true');
+    localStorage.setItem('sharing_http_warning_off', 'true');
+    resetSharingPromptsForTests();
     setToast = vi.fn();
     routes = {};
     fetchMock = vi.fn(async (url, init) => {
@@ -69,6 +79,7 @@ describe('SharingSection', () => {
 
   afterEach(() => {
     cleanup();
+    resetEscapeKeyForTests();
     delete window.electronAPI;
     vi.unstubAllGlobals();
   });
@@ -174,7 +185,7 @@ describe('SharingSection', () => {
       await renderSection(VIEW);
       expect(screen.getByText('Sharing lasts only while VBLIS is open.')).toBeTruthy();
       expect(screen.getByText('Windows may ask to allow VBLIS through the firewall. Allow it on private networks.')).toBeTruthy();
-      expect(screen.getByText("Without HTTPS, passwords and pictures travel unencrypted. Use HTTPS on networks you don't trust.")).toBeTruthy();
+      expect(screen.getByText("Without HTTPS, pictures and signed-in sessions travel unencrypted. Use HTTPS on any network you don't fully trust.")).toBeTruthy();
       cleanup();
       await renderSection({ ...VIEW, tls_mode: 'self_signed' });
       expect(screen.queryByText(/travel unencrypted/)).toBeNull();
@@ -588,6 +599,439 @@ describe('SharingSection', () => {
         message: "The server's settings file could not be read, so nothing was changed.",
         type: 'error',
       }));
+    });
+  });
+
+  describe('the first-time intro', () => {
+    const SELF_SIGNED = { ...VIEW, tls_mode: 'self_signed' };
+    const FILES = { ...VIEW, tls_mode: 'files', cert_file: 'C:\\c.pem', key_file: 'C:\\k.pem' };
+    const intro = () => screen.getByRole('dialog', { name: 'Before you share' });
+    const noPopUp = () => expect(screen.queryByRole('dialog')).toBeNull();
+
+    beforeEach(() => localStorage.clear());
+
+    it('opens on the first switch-on and sends nothing yet', async () => {
+      await renderSection(SELF_SIGNED);
+      noPopUp();
+      fireEvent.click(theSwitch());
+      expect(intro().getAttribute('aria-modal')).toBe('true');
+      expect(requests('POST /sharing')).toHaveLength(0);
+    });
+
+    it('Cancel sends nothing, leaves it unseen and asks again next time', async () => {
+      await renderSection(SELF_SIGNED);
+      fireEvent.click(theSwitch());
+      fireEvent.click(within(intro()).getByRole('button', { name: 'Cancel' }));
+      noPopUp();
+      expect(requests('POST /sharing')).toHaveLength(0);
+      expect(localStorage.getItem('sharing_intro_seen')).toBeNull();
+      fireEvent.click(theSwitch());
+      expect(intro()).toBeTruthy();
+    });
+
+    it('Escape and a click on the backdrop count as Cancel', async () => {
+      await renderSection(SELF_SIGNED);
+      fireEvent.click(theSwitch());
+      fireEvent.keyDown(window, { key: 'Escape' });
+      noPopUp();
+      fireEvent.click(theSwitch());
+      fireEvent.click(intro().parentElement);
+      noPopUp();
+      expect(requests('POST /sharing')).toHaveLength(0);
+      expect(localStorage.getItem('sharing_intro_seen')).toBeNull();
+    });
+
+    it('Turn on sharing stores that it was seen, sends enabled: true and never shows again', async () => {
+      routes['POST /sharing'] = () => reply({ ...RUNNING, tls_mode: 'self_signed' });
+      await renderSection(SELF_SIGNED);
+      fireEvent.click(theSwitch());
+      fireEvent.click(within(intro()).getByRole('button', { name: 'Turn on sharing' }));
+      noPopUp();
+      await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('true'));
+      expect(requests('POST /sharing')[0].body).toEqual({ enabled: true });
+      expect(JSON.parse(localStorage.getItem('sharing_intro_seen'))).toBe(true);
+      expect(setToast).toHaveBeenCalledWith({ message: 'Sharing is on.', type: 'success' });
+
+      cleanup();
+      await renderSection(SELF_SIGNED);
+      fireEvent.click(theSwitch());
+      noPopUp();
+      await waitFor(() => expect(requests('POST /sharing')).toHaveLength(2));
+      expect(requests('POST /sharing')[1].body).toEqual({ enabled: true });
+    });
+
+    it('does not open when the switch is turned off', async () => {
+      routes['POST /sharing'] = () => reply(SELF_SIGNED);
+      await renderSection({ ...RUNNING, tls_mode: 'self_signed' });
+      fireEvent.click(theSwitch());
+      noPopUp();
+      await waitFor(() => expect(requests('POST /sharing')[0].body).toEqual({ enabled: false }));
+    });
+
+    it('with a self-signed certificate it explains the browser warning and the fingerprint', async () => {
+      await renderSection(SELF_SIGNED);
+      fireEvent.click(theSwitch());
+      const dialog = within(intro());
+      expect(dialog.getByText(/Each person signs in with an account you create here/)).toBeTruthy();
+      expect(dialog.getByText('The first visit shows a warning')).toBeTruthy();
+      expect(dialog.getByText('Chrome or Edge: Advanced \u2192 Continue to the site')).toBeTruthy();
+      expect(dialog.getByText('Safari on iPhone or Mac: Show Details \u2192 visit this website')).toBeTruthy();
+      expect(dialog.getByText('Firefox: Advanced \u2192 Accept the Risk and Continue')).toBeTruthy();
+      expect(dialog.getByText(/compare the certificate fingerprint/)).toBeTruthy();
+      expect(dialog.getByText(/Allow it on private networks/)).toBeTruthy();
+      expect(dialog.getByText('Sharing stops when you close VBLIS.')).toBeTruthy();
+      expect(dialog.queryByRole('checkbox')).toBeNull();
+    });
+
+    it('with the owner\'s own files it leaves out the warning and the fingerprint', async () => {
+      await renderSection(FILES);
+      fireEvent.click(theSwitch());
+      const dialog = within(intro());
+      expect(dialog.queryByText('The first visit shows a warning')).toBeNull();
+      expect(dialog.queryByText(/compare the certificate fingerprint/)).toBeNull();
+      expect(dialog.getByText(/Allow it on private networks/)).toBeTruthy();
+      expect(dialog.getByText('Sharing stops when you close VBLIS.')).toBeTruthy();
+      expect(dialog.getByRole('button', { name: 'Turn on sharing' })).toBeTruthy();
+    });
+
+    it('over plain HTTP it carries the warning, with the choice of HTTPS', async () => {
+      await renderSection(VIEW);
+      fireEvent.click(theSwitch());
+      const dialog = within(intro());
+      expect(dialog.getByText(/With HTTPS off, everything travels across the network as readable text/)).toBeTruthy();
+      expect(dialog.queryByText('The first visit shows a warning')).toBeNull();
+      expect(dialog.queryByRole('button', { name: 'Turn on sharing' })).toBeNull();
+      expect(dialog.getByRole('checkbox', { name: "Don't warn me again on this computer" })).toBeTruthy();
+    });
+
+    it('over plain HTTP, Use HTTPS instead sends the mode with enabled: true', async () => {
+      routes['POST /sharing'] = () => reply({ ...RUNNING, tls_mode: 'self_signed' });
+      await renderSection(VIEW);
+      fireEvent.click(theSwitch());
+      fireEvent.click(within(intro()).getByRole('button', { name: 'Use HTTPS instead' }));
+      noPopUp();
+      await waitFor(() => expect(requests('POST /sharing')).toHaveLength(1));
+      expect(requests('POST /sharing')[0].body).toEqual({ tls_mode: 'self_signed', enabled: true });
+      expect(JSON.parse(localStorage.getItem('sharing_intro_seen'))).toBe(true);
+      expect(localStorage.getItem('sharing_http_warning_off')).toBeNull();
+      // The state now shows sharing over HTTPS: no warning about plain HTTP follows.
+      await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('true'));
+      noPopUp();
+    });
+
+    it('over plain HTTP, Share without encryption sends enabled: true, and no second warning follows', async () => {
+      routes['POST /sharing'] = () => reply(RUNNING);
+      await renderSection(VIEW);
+      fireEvent.click(theSwitch());
+      fireEvent.click(within(intro()).getByRole('button', { name: 'Share without encryption' }));
+      await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('true'));
+      expect(requests('POST /sharing')[0].body).toEqual({ enabled: true });
+      expect(JSON.parse(localStorage.getItem('sharing_intro_seen'))).toBe(true);
+      noPopUp();
+    });
+
+    it('over plain HTTP, the tick box is stored with a button but not with Cancel', async () => {
+      await renderSection(VIEW);
+      fireEvent.click(theSwitch());
+      fireEvent.click(within(intro()).getByRole('checkbox'));
+      fireEvent.click(within(intro()).getByRole('button', { name: 'Cancel' }));
+      expect(localStorage.getItem('sharing_http_warning_off')).toBeNull();
+      expect(localStorage.getItem('sharing_intro_seen')).toBeNull();
+
+      routes['POST /sharing'] = () => reply(RUNNING);
+      fireEvent.click(theSwitch());
+      fireEvent.click(within(intro()).getByRole('checkbox'));
+      fireEvent.click(within(intro()).getByRole('button', { name: 'Share without encryption' }));
+      expect(JSON.parse(localStorage.getItem('sharing_http_warning_off'))).toBe(true);
+      expect(JSON.parse(localStorage.getItem('sharing_intro_seen'))).toBe(true);
+    });
+
+    it('over plain HTTP with the warning switched off, it shows the plain version', async () => {
+      localStorage.setItem('sharing_http_warning_off', 'true');
+      await renderSection(VIEW);
+      fireEvent.click(theSwitch());
+      const dialog = within(intro());
+      expect(dialog.queryByText(/readable text/)).toBeNull();
+      expect(dialog.getByRole('button', { name: 'Turn on sharing' })).toBeTruthy();
+    });
+
+    it('disables its buttons while a request runs', () => {
+      render(<SharingIntroModal variant="files" uiTheme="modern" isBusy onTurnOn={vi.fn()} onCancel={vi.fn()} />);
+      expect(screen.getByRole('button', { name: 'Turn on sharing' }).disabled).toBe(true);
+      expect(screen.getByRole('button', { name: 'Cancel' }).disabled).toBe(true);
+    });
+
+    it('renders in the terminal style too', async () => {
+      await renderSection(SELF_SIGNED, 'terminal');
+      fireEvent.click(theSwitch());
+      expect(intro().className).toContain('border-white');
+      expect(within(intro()).getByRole('button', { name: 'Turn on sharing' })).toBeTruthy();
+    });
+
+    it('is in Chinese too', async () => {
+      await i18n.changeLanguage('zh-CN');
+      routes['GET /sharing'] = () => reply(SELF_SIGNED);
+      render(<SharingSection uiTheme="modern" setToast={setToast} />);
+      fireEvent.click(await screen.findByRole('switch', { name: '在我的网络上共享' }));
+      const dialog = within(screen.getByRole('dialog', { name: '共享前请先了解' }));
+      expect(dialog.getByText('Firefox：点击「高级」→「接受风险并继续」')).toBeTruthy();
+      await i18n.changeLanguage('en');
+    });
+  });
+
+  describe('the plain HTTP warning', () => {
+    const SELF_SIGNED_RUNNING = { ...RUNNING, tls_mode: 'self_signed' };
+    const warning = (name) => screen.getByRole('dialog', { name });
+    const noPopUp = () => expect(screen.queryByRole('dialog')).toBeNull();
+
+    beforeEach(() => {
+      localStorage.clear();
+      localStorage.setItem('sharing_intro_seen', 'true');
+    });
+
+    describe('turning sharing on', () => {
+      it('opens with the three buttons and sends nothing yet', async () => {
+        await renderSection(VIEW);
+        fireEvent.click(theSwitch());
+        const dialog = within(warning('Share without encryption?'));
+        expect(dialog.getByText(/With HTTPS off, everything travels across the network as readable text/)).toBeTruthy();
+        expect(dialog.getByText('Anyone on the same Wi-Fi or network could see the pictures that are opened.')).toBeTruthy();
+        expect(dialog.getByText('They could also copy a signed-in session and use VBLIS as that person.')).toBeTruthy();
+        expect(dialog.getByText(/Never on public Wi-Fi/)).toBeTruthy();
+        expect(dialog.getByRole('button', { name: 'Use HTTPS instead' })).toBeTruthy();
+        expect(dialog.getByRole('button', { name: 'Share without encryption' })).toBeTruthy();
+        expect(dialog.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+        expect(requests('POST /sharing')).toHaveLength(0);
+      });
+
+      it('Use HTTPS instead sends the mode and enabled: true', async () => {
+        routes['POST /sharing'] = () => reply(SELF_SIGNED_RUNNING);
+        await renderSection(VIEW);
+        fireEvent.click(theSwitch());
+        fireEvent.click(within(warning('Share without encryption?')).getByRole('button', { name: 'Use HTTPS instead' }));
+        await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('true'));
+        expect(requests('POST /sharing')[0].body).toEqual({ tls_mode: 'self_signed', enabled: true });
+        expect(setToast).toHaveBeenCalledWith({ message: 'Sharing is on.', type: 'success' });
+        noPopUp();
+      });
+
+      it('Share without encryption sends enabled: true, and the running warning does not follow', async () => {
+        routes['POST /sharing'] = () => reply(RUNNING);
+        await renderSection(VIEW);
+        fireEvent.click(theSwitch());
+        fireEvent.click(within(warning('Share without encryption?')).getByRole('button', { name: 'Share without encryption' }));
+        await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('true'));
+        expect(requests('POST /sharing')[0].body).toEqual({ enabled: true });
+        noPopUp();
+      });
+
+      it('Cancel, Escape and the backdrop send nothing', async () => {
+        await renderSection(VIEW);
+        fireEvent.click(theSwitch());
+        fireEvent.click(within(warning('Share without encryption?')).getByRole('button', { name: 'Cancel' }));
+        noPopUp();
+        fireEvent.click(theSwitch());
+        fireEvent.keyDown(window, { key: 'Escape' });
+        noPopUp();
+        fireEvent.click(theSwitch());
+        fireEvent.click(warning('Share without encryption?').parentElement);
+        noPopUp();
+        expect(requests('POST /sharing')).toHaveLength(0);
+      });
+
+      it('does not open over HTTPS', async () => {
+        routes['POST /sharing'] = () => reply(SELF_SIGNED_RUNNING);
+        await renderSection({ ...VIEW, tls_mode: 'self_signed' });
+        fireEvent.click(theSwitch());
+        noPopUp();
+        await waitFor(() => expect(requests('POST /sharing')[0].body).toEqual({ enabled: true }));
+      });
+    });
+
+    describe('the tick box', () => {
+      it('is stored when a button is pressed, and then no pop-up opens for any trigger', async () => {
+        routes['POST /sharing'] = () => reply(RUNNING);
+        await renderSection(VIEW);
+        fireEvent.click(theSwitch());
+        const dialog = within(warning('Share without encryption?'));
+        const box = dialog.getByRole('checkbox', { name: "Don't warn me again on this computer" });
+        expect(box.checked).toBe(false);
+        fireEvent.click(box);
+        fireEvent.click(dialog.getByRole('button', { name: 'Share without encryption' }));
+        await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('true'));
+        expect(JSON.parse(localStorage.getItem('sharing_http_warning_off'))).toBe(true);
+
+        // Turn on again over HTTP: no pop-up. Choose Off while sharing: no pop-up. Open with it running: none.
+        routes['POST /sharing'] = () => reply(VIEW);
+        fireEvent.click(theSwitch());
+        await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('false'));
+        routes['POST /sharing'] = () => reply(RUNNING);
+        fireEvent.click(theSwitch());
+        await waitFor(() => expect(theSwitch().getAttribute('aria-checked')).toBe('true'));
+        noPopUp();
+
+        cleanup();
+        resetSharingPromptsForTests();
+        await renderSection({ ...SELF_SIGNED_RUNNING });
+        routes['POST /sharing'] = () => reply({ ...SELF_SIGNED_RUNNING, tls_mode: 'off' });
+        fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+        await waitFor(() => expect(requests('POST /sharing').at(-1).body).toEqual({ tls_mode: 'off' }));
+        noPopUp();
+
+        cleanup();
+        resetSharingPromptsForTests();
+        await renderSection(RUNNING);
+        noPopUp();
+      });
+
+      it('is also stored by Cancel', async () => {
+        await renderSection(VIEW);
+        fireEvent.click(theSwitch());
+        fireEvent.click(within(warning('Share without encryption?')).getByRole('checkbox'));
+        fireEvent.click(within(warning('Share without encryption?')).getByRole('button', { name: 'Cancel' }));
+        expect(JSON.parse(localStorage.getItem('sharing_http_warning_off'))).toBe(true);
+        expect(requests('POST /sharing')).toHaveLength(0);
+      });
+
+      it('is not stored when it was not ticked', async () => {
+        await renderSection(VIEW);
+        fireEvent.click(theSwitch());
+        fireEvent.click(within(warning('Share without encryption?')).getByRole('button', { name: 'Cancel' }));
+        expect(localStorage.getItem('sharing_http_warning_off')).toBeNull();
+      });
+    });
+
+    describe('choosing HTTPS Off while sharing is on', () => {
+      const off = () => screen.getByRole('button', { name: 'Off' });
+
+      it('asks first; Keep HTTPS sends nothing', async () => {
+        await renderSection(SELF_SIGNED_RUNNING);
+        fireEvent.click(off());
+        const dialog = within(warning('Turn HTTPS off?'));
+        expect(dialog.getByText(/readable text/)).toBeTruthy();
+        expect(requests('POST /sharing')).toHaveLength(0);
+        fireEvent.click(dialog.getByRole('button', { name: 'Keep HTTPS' }));
+        noPopUp();
+        expect(requests('POST /sharing')).toHaveLength(0);
+        expect(screen.getByRole('button', { name: 'Self-signed' }).getAttribute('aria-pressed')).toBe('true');
+      });
+
+      it('Turn HTTPS off saves the mode, and the running warning does not follow', async () => {
+        routes['POST /sharing'] = () => reply({ ...SELF_SIGNED_RUNNING, tls_mode: 'off' });
+        await renderSection(SELF_SIGNED_RUNNING);
+        fireEvent.click(off());
+        fireEvent.click(within(warning('Turn HTTPS off?')).getByRole('button', { name: 'Turn HTTPS off' }));
+        await waitFor(() => expect(off().getAttribute('aria-pressed')).toBe('true'));
+        expect(requests('POST /sharing')[0].body).toEqual({ tls_mode: 'off' });
+        expect(setToast).toHaveBeenCalledWith({ message: 'Saved.', type: 'success' });
+        noPopUp();
+      });
+
+      it('Escape and the backdrop keep HTTPS', async () => {
+        await renderSection(SELF_SIGNED_RUNNING);
+        fireEvent.click(off());
+        fireEvent.keyDown(window, { key: 'Escape' });
+        noPopUp();
+        fireEvent.click(off());
+        fireEvent.click(warning('Turn HTTPS off?').parentElement);
+        noPopUp();
+        expect(requests('POST /sharing')).toHaveLength(0);
+      });
+
+      it('saves at once while sharing is off', async () => {
+        routes['POST /sharing'] = () => reply(VIEW);
+        await renderSection({ ...VIEW, tls_mode: 'self_signed' });
+        fireEvent.click(off());
+        noPopUp();
+        await waitFor(() => expect(requests('POST /sharing')).toHaveLength(1));
+        expect(requests('POST /sharing')[0].body).toEqual({ tls_mode: 'off' });
+      });
+    });
+
+    describe('sharing that is already running over plain HTTP', () => {
+      // It opens in an effect after the state loaded.
+      const runningWarning = () => screen.findByRole('dialog', { name: 'Sharing is not encrypted' });
+
+      it('opens once the state has loaded, and Use HTTPS instead saves the mode', async () => {
+        routes['POST /sharing'] = () => reply(SELF_SIGNED_RUNNING);
+        await renderSection(RUNNING);
+        const dialog = within(await runningWarning());
+        expect(dialog.getByRole('button', { name: 'Keep it for now' })).toBeTruthy();
+        expect(dialog.queryByRole('button', { name: 'Share without encryption' })).toBeNull();
+        fireEvent.click(dialog.getByRole('button', { name: 'Use HTTPS instead' }));
+        await waitFor(() => expect(requests('POST /sharing')).toHaveLength(1));
+        expect(requests('POST /sharing')[0].body).toEqual({ tls_mode: 'self_signed' });
+        expect(setToast).toHaveBeenCalledWith({ message: 'Saved.', type: 'success' });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Self-signed' }).getAttribute('aria-pressed')).toBe('true'));
+        noPopUp();
+      });
+
+      it('Keep it for now closes it, and it shows only once per run', async () => {
+        await renderSection(RUNNING);
+        fireEvent.click(within(await runningWarning()).getByRole('button', { name: 'Keep it for now' }));
+        noPopUp();
+        expect(requests('POST /sharing')).toHaveLength(0);
+
+        cleanup();
+        await renderSection(RUNNING);
+        noPopUp();
+
+        resetSharingPromptsForTests();
+        cleanup();
+        await renderSection(RUNNING);
+        expect(await runningWarning()).toBeTruthy();
+      });
+
+      it('Escape closes it without sending anything', async () => {
+        await renderSection(RUNNING);
+        await runningWarning();
+        fireEvent.keyDown(window, { key: 'Escape' });
+        noPopUp();
+        expect(requests('POST /sharing')).toHaveLength(0);
+      });
+
+      it('does not open for HTTPS, for sharing that is off, or for a mode the environment fixes', async () => {
+        await renderSection(SELF_SIGNED_RUNNING);
+        noPopUp();
+        cleanup();
+        await renderSection(VIEW);
+        noPopUp();
+        cleanup();
+        await renderSection({ ...RUNNING, from_environment: ['tls_mode'] });
+        noPopUp();
+      });
+
+      it('does not open once the tick box was ticked', async () => {
+        localStorage.setItem('sharing_http_warning_off', 'true');
+        await renderSection(RUNNING);
+        noPopUp();
+      });
+    });
+
+    it('disables its buttons while a request runs', () => {
+      render(<HttpSharingWarningModal reason="turn_on" uiTheme="modern" isBusy onUseHttps={vi.fn()} onContinue={vi.fn()} onCancel={vi.fn()} />);
+      for (const name of ['Use HTTPS instead', 'Share without encryption', 'Cancel']) {
+        expect(screen.getByRole('button', { name }).disabled).toBe(true);
+      }
+      expect(screen.getByRole('checkbox').disabled).toBe(true);
+    });
+
+    it('renders in the terminal style too', async () => {
+      await renderSection(VIEW, 'terminal');
+      fireEvent.click(theSwitch());
+      expect(warning('Share without encryption?').className).toContain('border-white');
+    });
+
+    it('is in Chinese too', async () => {
+      await i18n.changeLanguage('zh-CN');
+      routes['GET /sharing'] = () => reply(VIEW);
+      render(<SharingSection uiTheme="modern" setToast={setToast} />);
+      fireEvent.click(await screen.findByRole('switch', { name: '在我的网络上共享' }));
+      const dialog = within(screen.getByRole('dialog', { name: '要在不加密的情况下共享吗？' }));
+      expect(dialog.getByRole('button', { name: '改用 HTTPS' })).toBeTruthy();
+      expect(dialog.getByRole('button', { name: '不加密共享' })).toBeTruthy();
+      expect(dialog.getByRole('checkbox', { name: '在这台电脑上不再提醒' })).toBeTruthy();
+      await i18n.changeLanguage('en');
     });
   });
 

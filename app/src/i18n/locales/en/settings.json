@@ -258,7 +258,7 @@
       "off": "Off",
       "selfSigned": "Self-signed",
       "files": "Own files",
-      "selfSignedHint": "Browsers warn about a self-signed certificate. Compare the fingerprint below to check it.",
+      "selfSignedHint": "Browsers warn about a self-signed certificate: the first visit shows a warning page, which is expected. Compare the fingerprint below to check it.",
       "certificate": "Certificate file",
       "key": "Key file",
       "chooseCertificate": "Choose certificate...",
@@ -307,8 +307,39 @@
       "title": "Good to know",
       "lifetime": "Sharing lasts only while VBLIS is open.",
       "firewall": "Windows may ask to allow VBLIS through the firewall. Allow it on private networks.",
-      "plainHttp": "Without HTTPS, passwords and pictures travel unencrypted. Use HTTPS on networks you don't trust.",
+      "plainHttp": "Without HTTPS, pictures and signed-in sessions travel unencrypted. Use HTTPS on any network you don't fully trust.",
       "noWebUi": "The web interface isn't installed in this build."
+    },
+    "intro": {
+      "title": "Before you share",
+      "lead": "Sharing lets phones and computers on your Wi-Fi open VBLIS in a web browser. Each person signs in with an account you create here.",
+      "warningTitle": "The first visit shows a warning",
+      "warningBody": "The connection is encrypted with HTTPS, but the certificate was made by this PC instead of being issued by a public authority. Browsers can't vouch for it, so the first time they show a warning page. That is expected. To continue:",
+      "chrome": "Chrome or Edge: Advanced → Continue to the site",
+      "safari": "Safari on iPhone or Mac: Show Details → visit this website",
+      "firefox": "Firefox: Advanced → Accept the Risk and Continue",
+      "fingerprint": "To be sure it's really this PC, you can compare the certificate fingerprint shown in this section with the one in the browser's certificate details. This is optional.",
+      "firewall": "Windows may ask whether VBLIS may use the network. Allow it on private networks.",
+      "lifetime": "Sharing stops when you close VBLIS.",
+      "turnOn": "Turn on sharing"
+    },
+    "httpWarning": {
+      "title": {
+        "turnOn": "Share without encryption?",
+        "switchOff": "Turn HTTPS off?",
+        "running": "Sharing is not encrypted"
+      },
+      "lead": "With HTTPS off, everything travels across the network as readable text:",
+      "seePictures": "Anyone on the same Wi-Fi or network could see the pictures that are opened.",
+      "copySession": "They could also copy a signed-in session and use VBLIS as that person.",
+      "trusted": "Only do this on a network you fully trust. Never on public Wi-Fi, in a shared flat or at work.",
+      "httpsIsFree": "HTTPS with a self-signed certificate costs nothing: browsers show one warning on the first visit.",
+      "dontWarn": "Don't warn me again on this computer",
+      "useHttps": "Use HTTPS instead",
+      "shareAnyway": "Share without encryption",
+      "keepHttps": "Keep HTTPS",
+      "turnHttpsOff": "Turn HTTPS off",
+      "keepForNow": "Keep it for now"
     }
   }
 }

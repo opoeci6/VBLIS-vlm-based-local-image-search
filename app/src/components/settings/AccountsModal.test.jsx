@@ -6,6 +6,22 @@ import { resetEscapeKeyForTests, useEscapeKey } from '../../hooks/useEscapeKey';
 import i18n from '../../i18n';
 import { SessionContext } from '../../session/sessionContext';
 import { AccountsModal } from './AccountsModal';
+import { challengeAnswer, expectNoPlainPassword, fakeHash, fakeProof } from '../../test/passwordProofMock';
+
+// Real scrypt is slow; the maths has its own test (utils/passwordProof.test.js).
+vi.mock('../../utils/passwordProof', async () => (await import('../../test/passwordProofMock')).passwordProofMock);
+
+// What a request carries for the password the owner typed: the answer to challenge `n` of the test.
+const confirmOf = (n = 1) => ({ challenge: `challenge-${n}`, proof: fakeProof('confirm', `challenge-${n}`) });
+
+// A route answering a new challenge each time: challenge-1, challenge-2, ...
+const challengeRoute = () => {
+  let count = 0;
+  return () => {
+    count += 1;
+    return reply(challengeAnswer(`challenge-${count}`));
+  };
+};
 
 const ALL = { originals: true, image_search: true, places: true };
 
@@ -77,7 +93,7 @@ describe('AccountsModal', () => {
     onClose = vi.fn();
     setToast = vi.fn();
     session = { ...SESSION, signOut: vi.fn(), refresh: vi.fn() };
-    routes = { 'GET /server/accounts': () => reply(LIST) };
+    routes = { 'GET /server/accounts': () => reply(LIST), 'POST /auth/confirm-challenge': challengeRoute() };
     fetchMock = vi.fn(async (url, init) => {
       const key = `${init?.method || 'GET'} ${new URL(String(url)).pathname}`;
       const handler = routes[key];
@@ -249,7 +265,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Allow');
       await waitFor(() => expect(screen.queryByRole('dialog', { name: title })).toBeNull());
-      expect(requests(`PATCH /server/accounts/${id}`)[0].body).toEqual({ permissions: { [api]: true }, current_password: 'mine-1234' });
+      expect(requests(`PATCH /server/accounts/${id}`)[0].body).toEqual({ permissions: { [api]: true }, confirm: confirmOf(1) });
     });
 
     it('turning a viewer back on', async () => {
@@ -261,7 +277,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Turn on');
       await waitFor(() => expect(requests('PATCH /server/accounts/v2')).toHaveLength(1));
-      expect(requests('PATCH /server/accounts/v2')[0].body).toEqual({ disabled: false, current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/v2')[0].body).toEqual({ disabled: false, confirm: confirmOf(1) });
     });
 
     it('sends nothing when cancelled, and shows a refusal in the step', async () => {
@@ -298,7 +314,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Turn off');
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Turn off olivia?' })).toBeNull());
-      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ disabled: true, current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ disabled: true, confirm: confirmOf(1) });
       expect(within(rowOf('olivia')).getByText('off')).toBeTruthy();
     });
 
@@ -312,7 +328,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Turn on');
       await waitFor(() => expect(requests('PATCH /server/accounts/o2')).toHaveLength(1));
-      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ disabled: false, current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ disabled: false, confirm: confirmOf(1) });
     });
 
     it('shows the refusal in the step and keeps it open', async () => {
@@ -505,7 +521,7 @@ describe('AccountsModal', () => {
       fireEvent.change(field, { target: { value: '  robert  ' } });
       submitStep('Rename');
       await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(1));
-      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ name: 'robert', current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ name: 'robert', confirm: confirmOf(1) });
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Rename bob' })).toBeNull());
       expect(session.refresh).not.toHaveBeenCalled();
     });
@@ -528,7 +544,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Rename');
       await waitFor(() => expect(session.refresh).toHaveBeenCalledTimes(1));
-      expect(requests('PATCH /server/accounts/a1')[0].body).toEqual({ name: 'alicia', current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/a1')[0].body).toEqual({ name: 'alicia', confirm: confirmOf(1) });
     });
 
     it('shows name_taken in the step and keeps it open', async () => {
@@ -555,7 +571,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Make owner');
       await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(1));
-      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ role: 'owner', current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ role: 'owner', confirm: confirmOf(1) });
     });
 
     it('demotes an owner to viewer', async () => {
@@ -566,7 +582,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Make viewer');
       await waitFor(() => expect(requests('PATCH /server/accounts/o2')).toHaveLength(1));
-      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ role: 'viewer', current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/o2')[0].body).toEqual({ role: 'viewer', confirm: confirmOf(1) });
     });
 
     it('shows last_owner in the step', async () => {
@@ -613,8 +629,37 @@ describe('AccountsModal', () => {
       fill();
       submitStep('Set password');
       await waitFor(() => expect(setToast).toHaveBeenCalledWith({ message: 'The password of bob was set.', type: 'success' }));
-      expect(requests('POST /server/accounts/v1/password')[0].body).toEqual({ new_password: 'new-password-1', current_password: 'mine-1234' });
+      expect(requests('POST /server/accounts/v1/password')[0].body).toEqual({ password_hash: fakeHash('new-password-1'), confirm: confirmOf(1) });
+      expect(requests('POST /auth/confirm-challenge')).toHaveLength(1);
+      expectNoPlainPassword(expect, fetchMock, 'new-password-1', 'mine-1234');
       expect(screen.queryByRole('dialog', { name: 'Set a password for bob' })).toBeNull();
+    });
+
+    it('counts characters in code points: 8 emoji pass, 7 do not', async () => {
+      routes['POST /server/accounts/v1/password'] = () => reply(LIST);
+      await renderModal();
+      await open();
+      fill({ next: '😀'.repeat(7) });
+      submitStep('Set password');
+      expect((await screen.findByRole('alert')).textContent).toBe('The password must be at least 8 characters.');
+      expect(requests('POST /server/accounts/v1/password')).toHaveLength(0);
+      fill({ next: '😀'.repeat(8) });
+      submitStep('Set password');
+      await waitFor(() => expect(requests('POST /server/accounts/v1/password')).toHaveLength(1));
+      expect(requests('POST /server/accounts/v1/password')[0].body.password_hash).toBe(fakeHash('😀'.repeat(8)));
+    });
+
+    it('never writes a typed password into the value attribute of its fields', async () => {
+      await renderModal();
+      await open();
+      fill();
+      for (const label of ['New password', 'Repeat the new password', 'Your current password']) {
+        const field = screen.getByLabelText(label);
+        expect(field.value).not.toBe('');
+        expect(field.getAttribute('value')).toBeNull();
+      }
+      expect(document.body.innerHTML).not.toContain('new-password-1');
+      expect(document.body.innerHTML).not.toContain('mine-1234');
     });
 
     it('explains the effect on your own browsers for your own account', async () => {
@@ -645,7 +690,7 @@ describe('AccountsModal', () => {
       password('mine-1234');
       submitStep('Delete account');
       await waitFor(() => expect(screen.queryByText('bob', { selector: 'span.truncate' })).toBeNull());
-      expect(requests('POST /server/accounts/v1/delete')[0].body).toEqual({ current_password: 'mine-1234' });
+      expect(requests('POST /server/accounts/v1/delete')[0].body).toEqual({ confirm: confirmOf(1) });
       expect(screen.queryByRole('dialog', { name: 'Delete bob?' })).toBeNull();
     });
 
@@ -707,6 +752,55 @@ describe('AccountsModal', () => {
     });
   });
 
+  describe('confirming with the password', () => {
+    const rename = async () => {
+      await renderModal();
+      pick('bob', 'Rename');
+      await stepDialog('Rename bob');
+      password('mine-1234');
+      submitStep('Rename');
+    };
+
+    it('asks for a new challenge once when the server no longer knew the first, and then succeeds', async () => {
+      const answers = [refusal('challenge_expired', 'English', 403), () => reply(LIST)];
+      routes['PATCH /server/accounts/v1'] = () => answers.shift()();
+      await rename();
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Rename bob' })).toBeNull());
+      expect(requests('POST /auth/confirm-challenge')).toHaveLength(2);
+      expect(requests('PATCH /server/accounts/v1').map(({ body }) => body.confirm)).toEqual([confirmOf(1), confirmOf(2)]);
+    });
+
+    it('says it took too long, and keeps the step open, when the second challenge expires as well', async () => {
+      routes['PATCH /server/accounts/v1'] = refusal('challenge_expired', 'English', 403);
+      await rename();
+      expect((await screen.findByRole('alert')).textContent).toBe('That took too long. Try again.');
+      expect(screen.getByRole('dialog', { name: 'Rename bob' })).toBeTruthy();
+      expect(requests('PATCH /server/accounts/v1')).toHaveLength(2);
+    });
+
+    it('shows a refused hash as the server says', async () => {
+      routes['POST /server/accounts/v1/password'] = refusal('password_hash_invalid', 'English', 400);
+      await renderModal();
+      pick('bob', 'Set password');
+      await stepDialog('Set a password for bob');
+      password('new-password-1', 'New password');
+      password('new-password-1', 'Repeat the new password');
+      password('mine-1234');
+      submitStep('Set password');
+      expect((await screen.findByRole('alert')).textContent).toBe("The new password couldn't be read. Reload the page and try again.");
+    });
+
+    it('does not write the typed password into the value attribute in a confirmation step either', async () => {
+      await renderModal();
+      pick('bob', 'Rename');
+      await stepDialog('Rename bob');
+      password('mine-1234');
+      const field = screen.getByLabelText('Your current password');
+      expect(field.value).toBe('mine-1234');
+      expect(field.getAttribute('value')).toBeNull();
+    });
+  });
+
   describe('add account', () => {
     const openCard = () => fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
     const fillCard = ({ name = 'dave', pw = 'pass-word-1', repeat = pw, current = 'mine-1234' } = {}) => {
@@ -746,10 +840,11 @@ describe('AccountsModal', () => {
       expect(requests('POST /server/accounts')[0].body).toEqual({
         name: 'dave',
         role: 'viewer',
-        password: 'pass-word-1',
+        password_hash: fakeHash('pass-word-1'),
         permissions: { originals: true, image_search: true, places: false },
-        current_password: 'mine-1234',
+        confirm: confirmOf(1),
       });
+      expectNoPlainPassword(expect, fetchMock, 'pass-word-1', 'mine-1234');
       expect(screen.queryByRole('form', { name: 'New account' })).toBeNull();
       expect(rowOf('dave')).toBeTruthy();
       openCard();
@@ -765,7 +860,7 @@ describe('AccountsModal', () => {
       fillCard({ name: 'erin' });
       submitCard();
       await waitFor(() => expect(requests('POST /server/accounts')).toHaveLength(1));
-      expect(requests('POST /server/accounts')[0].body).toEqual({ name: 'erin', role: 'owner', password: 'pass-word-1', current_password: 'mine-1234' });
+      expect(requests('POST /server/accounts')[0].body).toEqual({ name: 'erin', role: 'owner', password_hash: fakeHash('pass-word-1'), confirm: confirmOf(1) });
     });
 
     it('shows the location hint while originals is on and places is off', async () => {
@@ -800,6 +895,44 @@ describe('AccountsModal', () => {
       fillCard({ current: '' });
       await expectAlert('Enter your current password to confirm.');
       expect(requests('POST /server/accounts')).toHaveLength(0);
+    });
+
+    it('counts characters in code points: 8 emoji pass, 7 do not', async () => {
+      routes['POST /server/accounts'] = () => reply(LIST);
+      await renderModal();
+      openCard();
+      fillCard({ pw: '😀'.repeat(7) });
+      submitCard();
+      await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('The password must be at least 8 characters.'));
+      expect(requests('POST /server/accounts')).toHaveLength(0);
+      fillCard({ pw: '😀'.repeat(8) });
+      submitCard();
+      await waitFor(() => expect(requests('POST /server/accounts')).toHaveLength(1));
+      expect(requests('POST /server/accounts')[0].body.password_hash).toBe(fakeHash('😀'.repeat(8)));
+    });
+
+    it('never writes a typed password into the value attribute of its fields', async () => {
+      await renderModal();
+      openCard();
+      fillCard();
+      for (const label of ['Password', 'Repeat the password', 'Your current password']) {
+        const field = screen.getByLabelText(label);
+        expect(field.value).not.toBe('');
+        expect(field.getAttribute('value')).toBeNull();
+      }
+      expect(document.body.innerHTML).not.toContain('pass-word-1');
+      expect(document.body.innerHTML).not.toContain('mine-1234');
+    });
+
+    it('retries once with a new challenge when the server no longer knew the first', async () => {
+      const answers = [refusal('challenge_expired', 'English', 403), () => reply(LIST)];
+      routes['POST /server/accounts'] = () => answers.shift()();
+      await renderModal();
+      openCard();
+      fillCard();
+      submitCard();
+      await waitFor(() => expect(setToast).toHaveBeenCalledWith({ message: 'The account dave was added.', type: 'success' }));
+      expect(requests('POST /server/accounts').map(({ body }) => body.confirm)).toEqual([confirmOf(1), confirmOf(2)]);
     });
 
     it('shows name_taken in the card and keeps the fields', async () => {
@@ -1022,7 +1155,7 @@ describe('AccountsModal by mode', () => {
 
   beforeEach(() => {
     setToast = vi.fn();
-    routes = {};
+    routes = { 'POST /auth/confirm-challenge': challengeRoute() };
     fetchMock = vi.fn(async (url, init) => {
       const key = `${init?.method || 'GET'} ${new URL(String(url)).pathname}`;
       const handler = routes[key];
@@ -1061,7 +1194,9 @@ describe('AccountsModal by mode', () => {
       expect(within(card).queryByLabelText(PASSWORD)).toBeNull();
       fireEvent.click(within(card).getByRole('button', { name: 'Add account' }));
       await waitFor(() => expect(requests('POST /sharing/accounts')).toHaveLength(1));
-      expect(requests('POST /sharing/accounts')[0].body).toEqual({ name: 'dave', role: 'owner', password: 'pass-word-1' });
+      expect(requests('POST /sharing/accounts')[0].body).toEqual({ name: 'dave', role: 'owner', password_hash: fakeHash('pass-word-1') });
+      expectNoPlainPassword(expect, fetchMock, 'pass-word-1');
+      expect(requests('POST /auth/confirm-challenge')).toHaveLength(0);
     });
 
     it('switches a permission on at once, with no step and no password', async () => {
@@ -1142,7 +1277,9 @@ describe('AccountsModal by mode', () => {
       fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'new-password-1' } });
       submitStep('Set password');
       await waitFor(() => expect(setToast).toHaveBeenCalledWith({ message: 'The password of bob was set.', type: 'success' }));
-      expect(requests('POST /sharing/accounts/v1/password')[0].body).toEqual({ new_password: 'new-password-1' });
+      expect(requests('POST /sharing/accounts/v1/password')[0].body).toEqual({ password_hash: fakeHash('new-password-1') });
+      expectNoPlainPassword(expect, fetchMock, 'new-password-1');
+      expect(requests('POST /auth/confirm-challenge')).toHaveLength(0);
     });
 
     it('still checks the new password in the set-password step', async () => {
@@ -1253,7 +1390,7 @@ describe('AccountsModal by mode', () => {
       fireEvent.change(screen.getByLabelText('Repeat the new password'), { target: { value: 'new-password-1' } });
       submitStep('Set password');
       await waitFor(() => expect(requests('POST /server/accounts/v1/password')).toHaveLength(1));
-      expect(requests('POST /server/accounts/v1/password')[0].body).toEqual({ new_password: 'new-password-1' });
+      expect(requests('POST /server/accounts/v1/password')[0].body).toEqual({ password_hash: fakeHash('new-password-1') });
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Set a password for bob' })).toBeNull());
 
       pick('bob', 'Delete');
@@ -1274,7 +1411,7 @@ describe('AccountsModal by mode', () => {
       fireEvent.change(screen.getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
       submitStep('Make owner');
       await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(1));
-      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ role: 'owner', current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/v1')[0].body).toEqual({ role: 'owner', confirm: confirmOf(1) });
     });
 
     it('still asks for the password to set an owner password, and to change your own account', async () => {
@@ -1323,7 +1460,7 @@ describe('AccountsModal by mode', () => {
       expect(requests('POST /server/accounts')[0].body).toEqual({
         name: 'dave',
         role: 'viewer',
-        password: 'pass-word-1',
+        password_hash: fakeHash('pass-word-1'),
         permissions: { originals: false, image_search: true, places: true },
       });
     });
@@ -1342,7 +1479,7 @@ describe('AccountsModal by mode', () => {
       fireEvent.change(within(dialog).getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
       submitStep('Allow');
       await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(2));
-      expect(requests('PATCH /server/accounts/v1')[1].body).toEqual({ permissions: { originals: true }, current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/v1')[1].body).toEqual({ permissions: { originals: true }, confirm: confirmOf(1) });
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Let bob open and download original files?' })).toBeNull());
     });
 
@@ -1377,7 +1514,7 @@ describe('AccountsModal by mode', () => {
       fireEvent.change(within(dialog).getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
       submitStep('Rename');
       await waitFor(() => expect(requests('PATCH /server/accounts/v1')).toHaveLength(2));
-      expect(requests('PATCH /server/accounts/v1')[1].body).toEqual({ name: 'robert', current_password: 'mine-1234' });
+      expect(requests('PATCH /server/accounts/v1')[1].body).toEqual({ name: 'robert', confirm: confirmOf(1) });
     });
 
     it('re-opens the add card with the field when the server asks for the password', async () => {
@@ -1397,7 +1534,7 @@ describe('AccountsModal by mode', () => {
       fireEvent.change(within(card).getByLabelText(PASSWORD), { target: { value: 'mine-1234' } });
       fireEvent.click(within(card).getByRole('button', { name: 'Add account' }));
       await waitFor(() => expect(requests('POST /server/accounts')).toHaveLength(2));
-      expect(requests('POST /server/accounts')[1].body.current_password).toBe('mine-1234');
+      expect(requests('POST /server/accounts')[1].body.confirm).toEqual(confirmOf(1));
     });
 
     it('a memory that has run out behaves as before', async () => {

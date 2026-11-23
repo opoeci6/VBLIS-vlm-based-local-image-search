@@ -113,6 +113,7 @@ ALLOWED_ROUTES = {
     ("POST", "/queue/reorder"): "queue state", ("POST", "/queue/{task_id}/cancel"): "queue state",
     ("POST", "/queue/{task_id}/move"): "queue state", ("POST", "/queue/{task_id}/pause"): "queue state",
     ("POST", "/queue/{task_id}/resume"): "queue state",
+    ("POST", "/auth/challenge"): "accounts", ("POST", "/auth/confirm-challenge"): "accounts",
     ("POST", "/auth/login"): "accounts", ("POST", "/auth/logout"): "accounts",
     ("POST", "/auth/password"): "accounts", ("POST", "/auth/sign-out-everywhere"): "accounts",
     ("POST", "/server/accounts"): "accounts", ("PATCH", "/server/accounts/{account_id}"): "accounts",

@@ -3,17 +3,19 @@ import { ShieldAlert, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSession } from '../../session/sessionContext';
 import { readJson, writeJson } from '../../utils/storage';
+import { isLoopbackPage } from '../../utils/session';
 
 export const HTTP_WARNING_DISMISSED_KEY = 'http_warning_dismissed';
 
 // A slim warning for a signed-in browser on a plain HTTP connection. Closing it is remembered in this
-// browser. The owner gets the ways to turn HTTPS on, a viewer is told to ask the owner.
+// browser. The owner gets the ways to turn HTTPS on, a viewer is told to ask the owner. It stays hidden on a
+// page opened on this computer itself (an SSH tunnel is already encrypted).
 export function HttpWarningBanner() {
   const { t } = useTranslation('session');
   const { mode, secure, isOwner } = useSession();
   const [dismissed, setDismissed] = useState(() => readJson(HTTP_WARNING_DISMISSED_KEY, false) === true);
   const [expanded, setExpanded] = useState(false);
-  if (mode !== 'network' || secure || dismissed) return null;
+  if (mode !== 'network' || secure || dismissed || isLoopbackPage()) return null;
 
   const dismiss = () => {
     writeJson(HTTP_WARNING_DISMISSED_KEY, true);

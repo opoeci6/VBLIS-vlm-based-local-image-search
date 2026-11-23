@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Image as ImageIcon, Loader2, AlertTriangle } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Image as ImageIcon, Loader2, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
 import { SessionThemeControl } from '../components/layout/SessionThemeControl';
 import { useThemePreferences } from '../hooks/useThemePreferences';
 import { cn } from '../utils/cn';
+import { isLoopbackPage } from '../utils/session';
 
 // The page behind the sign-in, loading and connection-error screens. It follows the saved theme and
 // style like the app does. These screens only show in a browser, which has no title bar, so a small
@@ -72,6 +73,8 @@ function FailureMessage({ failure }) {
   const { t } = useTranslation('session');
   if (failure.kind === 'network') return t('signIn.errors.network');
   const { status, code, retryAfter } = failure;
+  if (code === 'challenge_expired') return t('signIn.errors.challengeExpired');
+  if (code === 'challenge_invalid') return t('signIn.errors.challengeInvalid');
   if (status === 401) return t('signIn.errors.wrongNameOrPassword');
   if (status === 403 && code === 'account_off') return t('signIn.errors.accountOff');
   if (status === 429) {
@@ -88,16 +91,22 @@ function FailureMessage({ failure }) {
 }
 
 // `onSignIn(name, password)` resolves to { ok: true } or a failure (see FailureMessage). `expired` is true when
-// the user was signed in and the server ended the session. `secure` is false on a plain HTTP connection.
+// the user was signed in and the server ended the session. `secure` is false on a plain HTTP connection; the
+// warning for it stays out of a page opened on this computer itself (an SSH tunnel is already encrypted).
 export function SignInScreen({ onSignIn, secure = true, expired = false }) {
   const { t } = useTranslation('session');
   const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
+  // The password field is uncontrolled: React would write a controlled value into the input's `value` attribute,
+  // and the typed password would show in the developer tools' Elements panel. Only "is it empty" is kept.
+  const passwordRef = useRef(null);
+  const [hasPassword, setHasPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failure, setFailure] = useState(null);
+  const showInsecure = !secure && !isLoopbackPage();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    const password = passwordRef.current?.value ?? '';
     if (isSubmitting || !name.trim() || !password) return;
     setIsSubmitting(true);
     setFailure(null);
@@ -115,6 +124,19 @@ export function SignInScreen({ onSignIn, secure = true, expired = false }) {
         <h2 className="text-lg font-bold text-neutral-900 dark:text-white">{t('signIn.title')}</h2>
         {expired && !failure && (
           <p className="text-sm text-amber-700 dark:text-amber-300 font-medium" role="status">{t('signIn.expired')}</p>
+        )}
+        {showInsecure && (
+          <div
+            className="flex items-start gap-2.5 border border-amber-300 dark:border-amber-500/30 bg-amber-50/90 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 rounded-2xl px-4 py-3 text-sm"
+            role="note"
+            data-testid="insecure-note"
+          >
+            <ShieldAlert className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0 space-y-1">
+              <p className="font-bold">{t('signIn.insecureTitle')}</p>
+              <p className="font-medium">{t('signIn.insecureBody')}</p>
+            </div>
+          </div>
         )}
         <div>
           <label htmlFor="vblis-name" className="block text-sm font-semibold text-neutral-500 dark:text-neutral-400 mb-2">
@@ -142,8 +164,8 @@ export function SignInScreen({ onSignIn, secure = true, expired = false }) {
             name="password"
             type="password"
             autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            ref={passwordRef}
+            onChange={(event) => setHasPassword(event.target.value !== '')}
             className={inputClass}
           />
         </div>
@@ -154,17 +176,12 @@ export function SignInScreen({ onSignIn, secure = true, expired = false }) {
         )}
         <button
           type="submit"
-          disabled={isSubmitting || !name.trim() || !password}
+          disabled={isSubmitting || !name.trim() || !hasPassword}
           className="w-full flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
           {isSubmitting ? t('signIn.submitting') : t('signIn.submit')}
         </button>
-        {!secure && (
-          <p className="text-xs text-amber-700 dark:text-amber-300 font-medium" data-testid="insecure-note">
-            {t('signIn.insecure')}
-          </p>
-        )}
       </form>
     </ScreenShell>
   );

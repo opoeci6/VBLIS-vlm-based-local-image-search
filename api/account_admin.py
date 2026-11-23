@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import accounts as acct
+import password_proof
 import passwords
 from server_config import ServerConfigError
 
@@ -21,6 +22,8 @@ MESSAGES = {
     "no_accounts": "No account can sign in yet. Add one in the VBLIS app.",
     "wrong_password": "The current password is wrong.",
     "confirm_password": "Enter your password to confirm this change.",
+    "challenge_expired": "That took too long. Try again.",
+    "password_hash_invalid": "The new password couldn't be read. Reload the page and try again.",
     "account_changed": "Your account was changed a moment ago. Reload the page and try again.",
     "config_unreadable": "server.json can't be read, so nothing was changed.",
     "from_environment": "This setting is set by an environment variable, so it can't be changed here.",
@@ -30,14 +33,21 @@ MESSAGES = {
 }
 _CONFLICTS = {"name_taken", "too_many", "last_owner", "own_account"}
 
-_PASSWORD_FIELD = Field(..., max_length=passwords.MAX_LENGTH)
-# Missing is answered with 403 confirm_password on the network; the desktop app never sends it
-_CONFIRM_FIELD = Field(None, max_length=passwords.MAX_LENGTH)
+# A new password arrives hashed by the browser (password_proof.py); never as the password itself
+_PASSWORD_HASH_FIELD = Field(..., max_length=password_proof.HASH_FIELD_MAX)
 
 
 def error(status: int, code: str, headers=None, detail=None, **extra):
     body = {"detail": detail or MESSAGES.get(code, code), "code": code, **extra}
-    return JSONResponse(body, status_code=status, headers=headers)
+    response = JSONResponse(body, status_code=status, headers=headers)
+    response.code = code  # for callers deciding by the refusal's code
+    return response
+
+
+def new_hash_refusal(password_hash):
+    """None when `password_hash` is a new password hash this server accepts, else the 400 to answer."""
+    problem = password_proof.new_hash_problem(password_hash)
+    return error(400, problem) if problem else None
 
 
 def account_error(exc: acct.AccountError):
@@ -64,12 +74,20 @@ class Permissions(BaseModel):
         return self.model_dump(exclude_none=True)
 
 
+class Proof(BaseModel):
+    """Your own password, proved without sending it: a challenge from /auth/challenge or
+    /auth/confirm-challenge and the answer to it (password_proof.py)."""
+    challenge: str = Field(..., max_length=password_proof.FIELD_MAX)
+    proof: str = Field(..., max_length=password_proof.FIELD_MAX)
+
+
+# `confirm`: missing is answered with 403 confirm_password on the network; the desktop app never sends it
 class AddAccountRequest(BaseModel):
     name: str = Field(..., max_length=NAME_INPUT_MAX)
     role: Literal["owner", "viewer"]
-    password: str = _PASSWORD_FIELD
+    password_hash: str = _PASSWORD_HASH_FIELD
     permissions: Optional[Permissions] = None
-    current_password: Optional[str] = _CONFIRM_FIELD
+    confirm: Optional[Proof] = None
 
 
 class UpdateAccountRequest(BaseModel):
@@ -77,16 +95,16 @@ class UpdateAccountRequest(BaseModel):
     role: Optional[Literal["owner", "viewer"]] = None
     permissions: Optional[Permissions] = None
     disabled: Optional[bool] = None
-    current_password: Optional[str] = _CONFIRM_FIELD
+    confirm: Optional[Proof] = None
 
 
 class SetPasswordRequest(BaseModel):
-    new_password: str = _PASSWORD_FIELD
-    current_password: Optional[str] = _CONFIRM_FIELD
+    password_hash: str = _PASSWORD_HASH_FIELD
+    confirm: Optional[Proof] = None
 
 
 class ConfirmRequest(BaseModel):
-    current_password: Optional[str] = _CONFIRM_FIELD
+    confirm: Optional[Proof] = None
 
 
 def accounts_view(config, you=None, remembered_s=0, remember_s=0) -> dict:

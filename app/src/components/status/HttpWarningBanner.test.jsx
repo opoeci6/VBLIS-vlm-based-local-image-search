@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { HttpWarningBanner, HTTP_WARNING_DISMISSED_KEY } from './HttpWarningBanner';
 import { SessionProvider } from '../../session/SessionProvider';
+import { stubPageHost } from '../../test/pageHost';
 
 const info = (role, secure) => ({
   signed_in: true,
@@ -16,14 +17,35 @@ const inSession = (session) => render(
   <SessionProvider info={session} onSignOut={vi.fn()}><HttpWarningBanner /></SessionProvider>
 );
 
-const MESSAGE = "This connection isn't encrypted. Others on this network could see your password and pictures.";
+const MESSAGE = "This connection isn't encrypted. Others on this network could see your pictures and use your sign-in.";
 
 describe('HttpWarningBanner', () => {
-  beforeEach(() => localStorage.clear());
-  afterEach(cleanup);
+  beforeEach(() => {
+    localStorage.clear();
+    stubPageHost('192.168.1.5');
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
 
   it('shows on plain HTTP', () => {
     inSession(info('owner', false));
+    expect(screen.getByText(MESSAGE)).toBeTruthy();
+  });
+
+  it.each(['localhost', 'app.localhost', '127.0.0.1', '127.1.2.3', '[::1]', '::1'])(
+    'is not shown on a page opened on this computer itself (%s), as through an SSH tunnel',
+    (hostname) => {
+      stubPageHost(hostname);
+      const { container } = inSession(info('owner', false));
+      expect(container.firstChild).toBeNull();
+    }
+  );
+
+  it('is shown on the network address of the server', () => {
+    stubPageHost('my-server.lan');
+    inSession(info('viewer', false));
     expect(screen.getByText(MESSAGE)).toBeTruthy();
   });
 
@@ -44,6 +66,7 @@ describe('HttpWarningBanner', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(/in the VBLIS app on the server PC, choose Settings → Network sharing → HTTPS: Self-signed/)).toBeTruthy();
     expect(document.querySelector('code').textContent).toBe('set tls self_signed');
     expect(screen.getByText(/certificate and key files/)).toBeTruthy();
     expect(screen.getByText(/reverse proxy/)).toBeTruthy();

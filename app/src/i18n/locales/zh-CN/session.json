@@ -12,7 +12,8 @@
     "submit": "登录",
     "submitting": "正在登录……",
     "expired": "登录已失效，请重新登录。",
-    "insecure": "此连接未加密。",
+    "insecureTitle": "此连接未加密",
+    "insecureBody": "同一网络中的其他人可能看到所打开的图片，并冒用登录状态。请联系所有者开启 HTTPS。",
     "errors": {
       "wrongNameOrPassword": "账户名或密码不正确。",
       "accountOff": "此账户已停用。请联系服务器的所有者启用。",
@@ -23,7 +24,9 @@
       "noOwnerAccount": "服务器尚未添加所有者账户。请在服务器上执行：<code>add-account NAME --role owner</code>",
       "network": "无法连接到服务器。请检查网络连接后重试。",
       "generic": "登录失败（HTTP {{status}}）。",
-      "noAccounts": "目前没有可以登录的账户。请在共享的电脑上的 VBLIS 应用中添加账户。"
+      "noAccounts": "目前没有可以登录的账户。请在共享的电脑上的 VBLIS 应用中添加账户。",
+      "challengeExpired": "操作超时，请重试。",
+      "challengeInvalid": "服务器的回复无法处理。请重新加载页面后再试。"
     }
   },
   "role": {
@@ -104,6 +107,9 @@
         "wrong_password": "当前密码不正确。",
         "confirm_password": "请输入当前账户的密码以确认此更改。",
         "account_changed": "当前账户刚刚被更改。请刷新页面后重试。",
+        "challenge_expired": "操作超时，请重试。",
+        "challenge_invalid": "服务器的回复无法处理。请重新加载页面后再试。",
+        "password_hash_invalid": "无法读取新密码，请重新加载页面后再试。",
         "empty": "密码不能为空。",
         "too_short": "密码太短。",
         "too_long": "密码太长。",
@@ -242,11 +248,11 @@
     }
   },
   "httpBanner": {
-    "message": "此连接未加密。同一网络中的其他人可能看到密码和图片。",
+    "message": "此连接未加密。同一网络中的其他人可能看到图片，并冒用登录状态。",
     "howTo": "如何开启 HTTPS",
     "hideHowTo": "收起",
     "dismiss": "关闭",
-    "ownerSelfSigned": "最简单：在服务器上运行 <code>set tls self_signed</code>。",
+    "ownerSelfSigned": "最简单：在服务器电脑的 VBLIS 应用中，依次选择「设置」→「网络共享」→ HTTPS：「自签名」。没有应用的服务器上，请运行 <code>set tls self_signed</code>。",
     "ownerFiles": "使用自己的证书：让服务器使用证书文件和密钥文件。",
     "ownerProxy": "或者将服务器置于提供 HTTPS 的反向代理之后。",
     "ownerDocs": "具体步骤见 SERVER.md。",

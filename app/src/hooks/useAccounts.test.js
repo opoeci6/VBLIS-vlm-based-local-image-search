@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { useAccounts } from './useAccounts';
+import { challengeAnswer, expectNoPlainPassword, fakeHash, fakeProof } from '../test/passwordProofMock';
+
+// Real scrypt is slow; the maths has its own test (utils/passwordProof.test.js).
+vi.mock('../utils/passwordProof', async () => (await import('../test/passwordProofMock')).passwordProofMock);
+
+// What a request carries for a password the owner typed: the answer to challenge `n`.
+const confirmOf = (n) => ({ challenge: `challenge-${n}`, proof: fakeProof('confirm', `challenge-${n}`) });
 
 const ALL = { originals: true, image_search: true, places: true };
 
@@ -34,6 +41,11 @@ describe('useAccounts', () => {
 
   beforeEach(() => {
     routes = { 'GET /server/accounts': () => reply(LIST) };
+    let challenges = 0;
+    routes['POST /auth/confirm-challenge'] = () => {
+      challenges += 1;
+      return reply(challengeAnswer(`challenge-${challenges}`));
+    };
     fetchMock = vi.fn(async (url, init) => {
       const key = `${init?.method || 'GET'} ${new URL(String(url)).pathname}`;
       const handler = routes[key];
@@ -93,10 +105,12 @@ describe('useAccounts', () => {
       expect(result).toEqual({ ok: true });
       expect(calls('POST /server/accounts')).toEqual([
         expect.objectContaining({
-          body: { name: 'carol', role: 'viewer', password: 'pw-12345', permissions, current_password: 'mine' },
+          body: { name: 'carol', role: 'viewer', password_hash: fakeHash('pw-12345'), permissions, confirm: confirmOf(1) },
           init: expect.objectContaining({ headers: { 'Content-Type': 'application/json' } }),
         }),
       ]);
+      expect(calls('POST /auth/confirm-challenge')).toHaveLength(1);
+      expectNoPlainPassword(expect, fetchMock, 'pw-12345', 'mine');
       expect(view.result.current.accounts).toHaveLength(3);
     });
 
@@ -106,16 +120,19 @@ describe('useAccounts', () => {
       await act(async () => {
         await view.result.current.add({ name: 'dan', role: 'owner', password: 'pw-12345', permissions: { originals: true }, currentPassword: 'mine' });
       });
-      expect(calls('POST /server/accounts')[0].body).toEqual({ name: 'dan', role: 'owner', password: 'pw-12345', current_password: 'mine' });
+      expect(calls('POST /server/accounts')[0].body).toEqual({ name: 'dan', role: 'owner', password_hash: fakeHash('pw-12345'), confirm: confirmOf(1) });
     });
 
-    it('update patches only what changed, with the id encoded and no password unless given', async () => {
+    it('update patches only what changed, with the id encoded and a confirmation only when the password is given', async () => {
       routes['PATCH /server/accounts/v%2F1'] = () => reply(LIST);
       const view = await renderAccounts();
       await act(async () => { await view.result.current.update('v/1', { permissions: { places: false } }); });
       expect(calls('PATCH /server/accounts/v%2F1')[0].body).toEqual({ permissions: { places: false } });
+      expect(calls('POST /auth/confirm-challenge')).toHaveLength(0);
       await act(async () => { await view.result.current.update('v/1', { name: 'robert' }, 'mine'); });
-      expect(calls('PATCH /server/accounts/v%2F1')[1].body).toEqual({ name: 'robert', current_password: 'mine' });
+      expect(calls('PATCH /server/accounts/v%2F1')[1].body).toEqual({ name: 'robert', confirm: confirmOf(1) });
+      expect(calls('POST /auth/confirm-challenge')).toHaveLength(1);
+      expectNoPlainPassword(expect, fetchMock, 'mine');
     });
 
     it('update replaces the list from the answer', async () => {
@@ -126,13 +143,14 @@ describe('useAccounts', () => {
       expect(view.result.current.accounts[1].disabled).toBe(true);
     });
 
-    it('setPassword posts the new and the current password', async () => {
+    it('setPassword posts the hash of the new password and the proof of the current one', async () => {
       routes['POST /server/accounts/v1/password'] = () => reply(LIST);
       const view = await renderAccounts();
       let result;
       await act(async () => { result = await view.result.current.setPassword('v1', 'new-pass-1', 'mine'); });
       expect(result).toEqual({ ok: true });
-      expect(calls('POST /server/accounts/v1/password')[0].body).toEqual({ new_password: 'new-pass-1', current_password: 'mine' });
+      expect(calls('POST /server/accounts/v1/password')[0].body).toEqual({ password_hash: fakeHash('new-pass-1'), confirm: confirmOf(1) });
+      expectNoPlainPassword(expect, fetchMock, 'new-pass-1', 'mine');
     });
 
     it('signOut posts with no body and no Content-Type', async () => {
@@ -143,12 +161,71 @@ describe('useAccounts', () => {
       expect(call.init).toEqual({ method: 'POST' });
     });
 
-    it('remove posts the current password to /delete and takes the shorter list', async () => {
+    it('remove posts the confirmation to /delete and takes the shorter list', async () => {
       routes['POST /server/accounts/v1/delete'] = () => reply({ ...LIST, accounts: [LIST.accounts[0]] });
       const view = await renderAccounts();
       await act(async () => { await view.result.current.remove('v1', 'mine'); });
-      expect(calls('POST /server/accounts/v1/delete')[0].body).toEqual({ current_password: 'mine' });
+      expect(calls('POST /server/accounts/v1/delete')[0].body).toEqual({ confirm: confirmOf(1) });
       expect(view.result.current.accounts).toHaveLength(1);
+    });
+
+    it('asks for a new challenge once when the server no longer knew the first, and succeeds', async () => {
+      const answers = [() => reply({ detail: 'x', code: 'challenge_expired' }, 403), () => reply(LIST)];
+      routes['PATCH /server/accounts/v1'] = () => answers.shift()();
+      const view = await renderAccounts();
+      let result;
+      await act(async () => { result = await view.result.current.update('v1', { name: 'robert' }, 'mine'); });
+      expect(result).toEqual({ ok: true });
+      expect(calls('POST /auth/confirm-challenge')).toHaveLength(2);
+      expect(calls('PATCH /server/accounts/v1').map(({ body }) => body.confirm)).toEqual([confirmOf(1), confirmOf(2)]);
+    });
+
+    it('retries a new password with the same hash, not a new one', async () => {
+      const answers = [() => reply({ detail: 'x', code: 'challenge_expired' }, 403), () => reply(LIST)];
+      routes['POST /server/accounts/v1/password'] = () => answers.shift()();
+      const view = await renderAccounts();
+      await act(async () => { await view.result.current.setPassword('v1', 'new-pass-1', 'mine'); });
+      expect(calls('POST /server/accounts/v1/password').map(({ body }) => body)).toEqual([
+        { password_hash: fakeHash('new-pass-1'), confirm: confirmOf(1) },
+        { password_hash: fakeHash('new-pass-1'), confirm: confirmOf(2) },
+      ]);
+    });
+
+    it('gives up with the translated message when the second challenge expires as well', async () => {
+      routes['POST /server/accounts/v1/delete'] = () => reply({ detail: 'x', code: 'challenge_expired' }, 403);
+      const view = await renderAccounts();
+      let result;
+      await act(async () => { result = await view.result.current.remove('v1', 'mine'); });
+      expect(result).toEqual({ ok: false, status: 403, code: 'challenge_expired', message: 'That took too long. Try again.' });
+      expect(calls('POST /server/accounts/v1/delete')).toHaveLength(2);
+      expect(view.result.current.accounts).toEqual(LIST.accounts);
+    });
+
+    it('does not ask again after a wrong password', async () => {
+      routes['POST /server/accounts/v1/delete'] = () => reply({ detail: 'x', code: 'wrong_password' }, 403);
+      const view = await renderAccounts();
+      await act(async () => { await view.result.current.remove('v1', 'nope'); });
+      expect(calls('POST /server/accounts/v1/delete')).toHaveLength(1);
+    });
+
+    it('returns the refusal of the challenge request itself, and sends no change', async () => {
+      routes['POST /auth/confirm-challenge'] = () => reply({ detail: 'x', code: 'account_changed' }, 403);
+      routes['POST /server/accounts/v1/delete'] = () => reply(LIST);
+      const view = await renderAccounts();
+      let result;
+      await act(async () => { result = await view.result.current.remove('v1', 'mine'); });
+      expect(result).toEqual(expect.objectContaining({ ok: false, status: 403, code: 'account_changed' }));
+      expect(calls('POST /server/accounts/v1/delete')).toHaveLength(0);
+    });
+
+    it('refuses a challenge outside the server\'s bounds without sending the change', async () => {
+      routes['POST /auth/confirm-challenge'] = () => reply(challengeAnswer('challenge-1', { log_n: 40 }));
+      routes['POST /server/accounts/v1/delete'] = () => reply(LIST);
+      const view = await renderAccounts();
+      let result;
+      await act(async () => { result = await view.result.current.remove('v1', 'mine'); });
+      expect(result).toEqual(expect.objectContaining({ ok: false, code: 'challenge_invalid' }));
+      expect(calls('POST /server/accounts/v1/delete')).toHaveLength(0);
     });
   });
 
@@ -257,14 +334,14 @@ describe('useAccounts by mode', () => {
       expect(view.result.current.you).toBeNull();
     });
 
-    it('adds with POST and sends no current_password', async () => {
+    it('adds with POST, sends the hash of the password and no confirmation', async () => {
       routes['POST /sharing/accounts'] = () => reply(DESKTOP_LIST);
       const view = await renderAccounts('desktop');
       const permissions = { originals: false, image_search: true, places: false };
       await act(async () => {
         await view.result.current.add({ name: 'carol', role: 'viewer', password: 'pw-12345', permissions, currentPassword: 'ignored' });
       });
-      expect(calls('POST /sharing/accounts')[0].body).toEqual({ name: 'carol', role: 'viewer', password: 'pw-12345', permissions });
+      expect(calls('POST /sharing/accounts')[0].body).toEqual({ name: 'carol', role: 'viewer', password_hash: fakeHash('pw-12345'), permissions });
     });
 
     it('updates with POST (not PATCH) and never sends a password', async () => {
@@ -280,7 +357,7 @@ describe('useAccounts by mode', () => {
       routes['POST /sharing/accounts/v1/delete'] = () => reply({ ...DESKTOP_LIST, accounts: [LIST.accounts[0]] });
       const view = await renderAccounts('desktop');
       await act(async () => { await view.result.current.setPassword('v1', 'new-pass-1', 'ignored'); });
-      expect(calls('POST /sharing/accounts/v1/password')[0].body).toEqual({ new_password: 'new-pass-1' });
+      expect(calls('POST /sharing/accounts/v1/password')[0].body).toEqual({ password_hash: fakeHash('new-pass-1') });
       await act(async () => { await view.result.current.signOut('v1'); });
       expect(calls('POST /sharing/accounts/v1/sign-out')[0].init).toEqual({ method: 'POST' });
       await act(async () => { await view.result.current.remove('v1', 'ignored'); });
@@ -288,7 +365,7 @@ describe('useAccounts by mode', () => {
       expect(view.result.current.accounts).toHaveLength(1);
     });
 
-    it('has no request body with a current_password anywhere', async () => {
+    it('has no request body with a password, a current_password, a new_password or a confirm anywhere, and asks for no challenge', async () => {
       routes['POST /sharing/accounts'] = () => reply(DESKTOP_LIST);
       routes['POST /sharing/accounts/a1'] = () => reply(DESKTOP_LIST);
       routes['POST /sharing/accounts/a1/password'] = () => reply(DESKTOP_LIST);
@@ -298,8 +375,10 @@ describe('useAccounts by mode', () => {
         await view.result.current.update('a1', { disabled: true }, 'p');
         await view.result.current.setPassword('a1', 'pw-12345', 'p');
       });
+      expectNoPlainPassword(expect, fetchMock, 'pw-12345', 'new-pass-1');
       const bodies = fetchMock.mock.calls.map(([, init]) => init?.body ?? '');
-      expect(bodies.some((body) => body.includes('current_password'))).toBe(false);
+      expect(bodies.some((body) => body.includes('current_password') || body.includes('confirm'))).toBe(false);
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/auth/'))).toBe(false);
     });
 
     it('never counts a password as remembered', async () => {
@@ -311,6 +390,11 @@ describe('useAccounts by mode', () => {
   describe('network', () => {
     beforeEach(() => {
       routes['GET /server/accounts'] = () => reply(LIST);
+      let challenges = 0;
+      routes['POST /auth/confirm-challenge'] = () => {
+        challenges += 1;
+        return reply(challengeAnswer(`challenge-${challenges}`));
+      };
     });
 
     it('remembers a password for as long as the answer says, counted from now', async () => {

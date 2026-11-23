@@ -53,6 +53,7 @@ class NetRequest(NamedTuple):
     # The client's sign-in group (ratelimit.PRIVATE, LOCAL_NETWORKS or PUBLIC), as the gate placed it; None:
     # from the address alone
     sign_in_group: Optional[str] = None
+    challenges: object = None  # password_proof.ChallengeStore of this listener
 
 
 def current_auth(request: Request) -> Auth:

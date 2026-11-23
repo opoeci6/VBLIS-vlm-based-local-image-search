@@ -57,6 +57,7 @@ app = FastAPI(title="Local Image Search API", lifespan=desktop_lifespan)
 
 # Only clients holding the token (the Electron app passes it via env) may call the API
 security.install(app, API_TOKEN)
+security.install_validation_errors(app)
 # A read-only copy of another machine's index answers writes to it with 409
 replica.install(app)
 
