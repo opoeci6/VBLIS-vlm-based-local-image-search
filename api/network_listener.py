@@ -6,7 +6,10 @@ uvicorn needs three adjustments for that:
   quietly unless the socket asks for exclusive use.
 - The configuration is loaded here first, so a bad certificate becomes a message.
 - Embedded next to the desktop listener, it must not touch signal handlers or logging, which
-  belong to the desktop listener."""
+  belong to the desktop listener.
+
+With HTTPS on, uvicorn gets the plain socket and tls_redirect looks at each connection first: TLS goes
+on to uvicorn, plain HTTP gets a redirect to https:// on the same port."""
 import asyncio
 import contextlib
 import hashlib
@@ -23,6 +26,7 @@ import netaddr
 import paths
 import security
 import server_config
+import tls_redirect
 from confirm_memory import RecentConfirmations
 from network_app import build_network_app
 
@@ -186,6 +190,7 @@ class NetworkListener:
         self._server = None
         self._task = None
         self._gate = None
+        self._router = None  # tls_redirect.TlsRouter while HTTPS runs
         self._info = {}
         self._started_with = None  # the RESTART_FIELDS values the running listener uses
         self._lock = None
@@ -369,6 +374,12 @@ class NetworkListener:
             sock.close()
             self.problems = [("tls_invalid", f"The certificate or key can't be used: {e}")]
             return self.problems
+        router = None
+        if cert:
+            # uvicorn gets the plain socket: TLS connections are handed on to it, plain HTTP is redirected
+            router = tls_redirect.TlsRouter(uv_config.ssl, gate.allowed_host_names)
+            uv_config.http_protocol_class = router.protocol_factory(uv_config.http_protocol_class)
+            uv_config.ssl = None
 
         security.redact_paths_in_access_log(True)
         security.install_access_log_redaction()  # again: a standalone Config just reset the loggers
@@ -390,6 +401,7 @@ class NetworkListener:
         lan = await asyncio.to_thread(lan_addresses) if config.host in ("0.0.0.0", "::") else []
         urls = listen_urls(scheme, config.host, config.port, config.allowed_hosts, lan=lan)
         self._gate = gate
+        self._router = router
         self._started_with = tuple(getattr(config, name) for name in RESTART_FIELDS)
         self._info = {
             "scheme": scheme,
@@ -400,7 +412,7 @@ class NetworkListener:
         for url in urls:
             self.log(f"[Network] Serving VBLIS on {url}")
         if scheme == "http":
-            self.log("[Network] Plain HTTP: passwords and pictures travel unencrypted. See SERVER.md for HTTPS.")
+            self.log("[Network] Plain HTTP: pictures and sign-ins travel unencrypted. See SERVER.md for HTTPS.")
         if self._info["fingerprint"]:
             self.log(f"[Network] Certificate fingerprint (SHA-256): {self._info['fingerprint']}")
         return []
@@ -412,11 +424,16 @@ class NetworkListener:
                 await asyncio.shield(self._task)
 
     async def _stop(self) -> None:
-        task, server = self._task, self._server
+        task, server, router = self._task, self._server, self._router
         self._task = None
         self._gate = None
+        self._router = None
         self._started_with = None
         self.problems = []
+        if router is not None:
+            # First: connections uvicorn doesn't know about yet (no first bytes, or mid-handshake) can't
+            # slip in after its shutdown went through its own connections
+            router.close()
         if task is None or server is None:
             return
         server.should_exit = True

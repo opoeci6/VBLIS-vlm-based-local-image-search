@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import ratelimit
 import replica
+import security
 from network_gate import OWNER_ROUTE, PUBLIC, VIEWER_ROUTE, NetworkGate
 from routers import auth, fs, indexing, media, models, original, queue, search, server_settings, settings
 
@@ -21,9 +22,11 @@ _VIEWER_ORIGINALS = VIEWER_ROUTE + ":originals"
 
 ROUTE_TABLE = {
     # Signing in
+    ("POST", "/auth/challenge"): PUBLIC,  # the salt and a one-time challenge for signing in
     ("POST", "/auth/login"): PUBLIC,
     ("POST", "/auth/logout"): PUBLIC,
     ("GET", "/auth/session"): PUBLIC,
+    ("POST", "/auth/confirm-challenge"): VIEWER_ROUTE,  # a challenge for confirming with your own password
     ("POST", "/auth/password"): VIEWER_ROUTE,  # any signed-in account, its own password
     ("POST", "/auth/sign-out-everywhere"): OWNER_ROUTE,
     # Search and browse
@@ -89,6 +92,7 @@ def build_core_app() -> FastAPI:
     for module in SHARED_ROUTERS + NETWORK_ROUTERS:
         app.include_router(module.router)
     replica.install(app)
+    security.install_validation_errors(app)
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request: Request, exc: StarletteHTTPException):

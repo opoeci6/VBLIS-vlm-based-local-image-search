@@ -12,7 +12,8 @@
     "submit": "Sign in",
     "submitting": "Signing in...",
     "expired": "Your session ended. Sign in again.",
-    "insecure": "This connection isn't encrypted.",
+    "insecureTitle": "This connection isn't encrypted",
+    "insecureBody": "Others on this network could see the pictures you open and use your sign-in. Ask the owner to turn on HTTPS.",
     "errors": {
       "wrongNameOrPassword": "Wrong name or password.",
       "accountOff": "This account is turned off. Ask the server's owner to turn it on.",
@@ -25,7 +26,9 @@
       "noOwnerAccount": "The server has no owner account yet. Add one on the server: <code>add-account NAME --role owner</code>",
       "network": "Could not reach the server. Check your connection and try again.",
       "generic": "Sign-in failed (HTTP {{status}}).",
-      "noAccounts": "No account can sign in yet. Add one in the VBLIS app on the computer that shares."
+      "noAccounts": "No account can sign in yet. Add one in the VBLIS app on the computer that shares.",
+      "challengeExpired": "That took too long. Try again.",
+      "challengeInvalid": "The server's answer couldn't be used. Reload the page and try again."
     }
   },
   "role": {
@@ -108,6 +111,9 @@
         "wrong_password": "The current password is wrong.",
         "confirm_password": "Enter your current password to confirm this change.",
         "account_changed": "Your account was changed a moment ago. Reload the page and try again.",
+        "challenge_expired": "That took too long. Try again.",
+        "challenge_invalid": "The server's answer couldn't be used. Reload the page and try again.",
+        "password_hash_invalid": "The new password couldn't be read. Reload the page and try again.",
         "empty": "The password can't be empty.",
         "too_short": "The password is too short.",
         "too_long": "The password is too long.",
@@ -247,11 +253,11 @@
     }
   },
   "httpBanner": {
-    "message": "This connection isn't encrypted. Others on this network could see your password and pictures.",
+    "message": "This connection isn't encrypted. Others on this network could see your pictures and use your sign-in.",
     "howTo": "How to turn on HTTPS",
     "hideHowTo": "Hide",
     "dismiss": "Dismiss",
-    "ownerSelfSigned": "Quickest: run <code>set tls self_signed</code> on the server.",
+    "ownerSelfSigned": "Quickest: in the VBLIS app on the server PC, choose Settings → Network sharing → HTTPS: Self-signed. On a server without the app, run <code>set tls self_signed</code>.",
     "ownerFiles": "Your own certificate: point the server at your certificate and key files.",
     "ownerProxy": "Or put the server behind a reverse proxy that provides HTTPS.",
     "ownerDocs": "See SERVER.md for the steps.",

@@ -7,7 +7,8 @@
 #   2. docker compose build
 #   3. docker compose run --rm vblis add-account NAME --role owner       (asks for the password twice)
 #   4. docker compose up -d
-#   5. Open http://<this machine's address>:8080, sign in, and download a model in Settings.
+#   5. Open https://<this machine's address>:8080, sign in, and download a model in Settings.
+#      The certificate is self-signed, so the browser warns on the first visit (SERVER.md, "HTTPS").
 #
 # Set VBLIS_PHOTOS to the folder with your pictures (default ./photos). It is mounted read-only
 # at /photos and is the only library folder the browser may index.

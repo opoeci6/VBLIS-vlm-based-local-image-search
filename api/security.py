@@ -136,6 +136,20 @@ def install(app, token: str) -> None:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 
+async def _validation_error(_request, exc):
+    # FastAPI's own answer repeats each wrong value, and for a missing field the whole request body;
+    # say which field and why, never what was sent
+    errors = [{"type": e.get("type"), "loc": list(e.get("loc", ())), "msg": e.get("msg")} for e in exc.errors()]
+    return JSONResponse({"detail": errors}, status_code=422)
+
+
+def install_validation_errors(app) -> None:
+    """Answer a request that doesn't fit its model with 422 and the fields at fault, without their values."""
+    from fastapi.exceptions import RequestValidationError
+
+    app.add_exception_handler(RequestValidationError, _validation_error)
+
+
 class RedactTokenFilter(logging.Filter):
     """uvicorn's access log prints the request path with its query string; hide ?token= in it."""
 

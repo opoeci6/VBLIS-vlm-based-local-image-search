@@ -33,7 +33,7 @@ A browser can only index folders inside the **library folders** you list in the 
 3. Turn on **Share on my network**. Windows asks once whether to let VBLIS through the firewall: allow it on private networks.
 4. On another device on the same network, open one of the addresses listed under **Addresses to open** (the most likely one first) and sign in.
 
-The same section sets the port (8080 by default), HTTPS (off, self-signed or your own certificate files; see [HTTPS](#https)) and the library folders, and has **Sign out every browser**. While sharing runs, the title bar shows a **Sharing** badge; it turns amber when sharing should be on but isn't running. Click it to open the settings.
+The same section sets the port (8080 by default), HTTPS (self-signed by default, your own certificate files, or off; see [HTTPS](#https)) and the library folders, and has **Sign out every browser**. While sharing runs, the title bar shows a **Sharing** badge; it turns amber when sharing should be on but isn't running. Click it to open the settings.
 
 Sharing lasts while the app is open and starts again the next time you open it. The app and the browsers share one library: indexing started in either shows up in both. The app listens on every network of the PC (`0.0.0.0`); the `set host` command (see [Settings](#settings)) changes that while the app is closed. Settings set by `VBLIS_SERVER_*` environment variables are shown locked.
 
@@ -64,7 +64,7 @@ vblis add-library-folder /srv/photos           # one or more
 vblis serve                                    # or: systemctl --user enable --now vblis
 ```
 
-Open `http://<the server's address>:8080` in a browser, sign in with the owner account, download a model in **Settings**, and add folders with **Add Folders**. **Settings → Manage accounts** adds more accounts and sets each viewer's permissions.
+Open `https://<the server's address>:8080` in a browser, sign in with the owner account, download a model in **Settings**, and add folders with **Add Folders**. The connection uses HTTPS with a certificate the server made itself, so the browser shows a warning on the first visit; see [HTTPS](#https) for how to continue. **Settings → Manage accounts** adds more accounts and sets each viewer's permissions.
 
 To keep the service running after you log out: `sudo loginctl enable-linger $USER`.
 
@@ -85,7 +85,7 @@ docker compose up -d
 
 If you would rather run the container as yourself, skip the `chown` and set `VBLIS_UID=$(id -u)` and `VBLIS_GID=$(id -g)` instead. Keep them set for every later `docker compose` command.
 
-Open `http://<the server's address>:8080`, sign in, and download a model in **Settings**. The models are downloaded from the browser into `/data/models` (the `vblis-data/models` folder). Nothing is downloaded while the image is built.
+Open `https://<the server's address>:8080`, sign in, and download a model in **Settings**. The connection uses HTTPS with a certificate the server made itself, so the browser shows a warning on the first visit; see [HTTPS](#https) for how to continue. The models are downloaded from the browser into `/data/models` (the `vblis-data/models` folder). Nothing is downloaded while the image is built.
 
 The photo folder is mounted read-only at `/photos`, and it is the library folder: browsers can index it and everything inside it. To list other folders, mount them and set `VBLIS_SERVER_LIBRARY_ROOTS` in `compose.yml` (separated by `:`).
 
@@ -168,7 +168,7 @@ The settings live in `data/server.json` inside the data folder. Change them with
 | `add-library-folder PATH` / `remove-library-folder PATH` | Folders a browser may index (and everything inside them). |
 | `set port 8080` | The port (never 8000; the desktop app uses it). |
 | `set host 0.0.0.0` | The address to listen on: `0.0.0.0` (all IPv4), `::` (IPv4 and IPv6), or one address. |
-| `set tls off\|self_signed\|files` | HTTPS; see below. `set cert-file PATH` and `set key-file PATH` for `files`. |
+| `set tls off\|self_signed\|files` | HTTPS (`self_signed` by default); see below. `set cert-file PATH` and `set key-file PATH` for `files`. |
 | `set allowed-hosts photos.example.com,nas.lan` | Extra host names browsers may use. The machine's own name, `<name>.local`, `localhost` and any IP address always work. |
 | `set trusted-proxies 127.0.0.1` | Reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` headers are believed. |
 | `set public-access true` | Allow clients from the internet; needs HTTPS. |
@@ -184,9 +184,11 @@ For Docker or systemd, these environment variables override the file: `VBLIS_SER
 
 ## HTTPS
 
-Over plain HTTP, anyone on the same network can read the password and the pictures as they travel. That is acceptable on a home network you trust; the interface shows a warning. Otherwise choose one of these:
+A new setup uses HTTPS with a self-signed certificate. Setups saved by VBLIS 0.7.0 or earlier keep plain HTTP until you change it; the Windows app then warns when sharing starts.
 
-1. **Self-signed certificate** (`set tls self_signed`). The server makes its own certificate on the first start, for its host name and current network addresses (on Linux, container and VM bridges such as `docker0` are left out), and prints its SHA-256 fingerprint. Each browser shows a warning once; compare the fingerprint in the certificate details with the one the server printed, then continue. The certificate is kept, so the warning doesn't return, until it renews itself after about a year or the server gets a new network address.
+Over plain HTTP (`set tls off`), anyone on the same network can see the pictures as they travel and take over a signed-in session. Use it only on a network you fully trust; the interface shows a warning. The choices:
+
+1. **Self-signed certificate** (`set tls self_signed`, the default). The server makes its own certificate on the first start, for its host name and current network addresses (on Linux, container and VM bridges such as `docker0` are left out), and prints its SHA-256 fingerprint. Each browser shows a warning once, because no public authority vouches for the certificate. To continue: in Chrome or Edge, **Advanced** → **Continue**; in Safari (iPhone, iPad, Mac), **Show Details** → **visit this website**; in Firefox, **Advanced** → **Accept the Risk and Continue**. To be sure it is your server, compare the fingerprint in the certificate details with the one the server printed (the Windows app shows it in **Settings** → **Network sharing**). The certificate is kept, so the warning doesn't return, until it renews itself after about a year or the server gets a new network address.
 2. **Your own certificate** (`set tls files`, `set cert-file /path/fullchain.pem`, `set key-file /path/privkey.pem`), for example from Let's Encrypt. Restart the server after renewing it.
 3. **A reverse proxy** that handles HTTPS, such as Caddy. Let VBLIS listen on the proxy's machine only and trust it:
 
@@ -204,6 +206,8 @@ Over plain HTTP, anyone on the same network can read the password and the pictur
    }
    ```
 
+With HTTPS on (choices 1 and 2), a browser that opens `http://` on the server's port is sent on to `https://` on the same port, so typed addresses and old bookmarks keep working. The redirect is temporary (307) and the server sends no HSTS, so turning HTTPS off later leaves `http://` working again.
+
 ## Access from outside your home
 
 By default the server refuses clients from outside private networks (home and office networks, VPN ranges such as Tailscale's, and the machine itself).
@@ -213,7 +217,7 @@ By default the server refuses clients from outside private networks (home and of
 The safest ways to reach the server from elsewhere:
 
 - **A VPN** such as Tailscale or WireGuard: the server sees a private address, and nothing is exposed to the internet.
-- **An SSH tunnel:** `ssh -L 8080:127.0.0.1:8080 you@server`, then open `http://localhost:8080`.
+- **An SSH tunnel:** `ssh -L 8080:127.0.0.1:8080 you@server`, then open `https://localhost:8080` (or `http://` after `set tls off`: the tunnel already encrypts).
 - **The internet directly:** `set public-access true` with HTTPS (directly or through a trusted proxy). Prefer a reverse proxy for this; VBLIS limits sign-in attempts but has no other protection against floods of requests.
 
 The server can't tell whether it is reachable from the internet (inside Docker or behind a router it only sees private addresses); it decides by the address of each client. A proxy on the same machine makes every client look local unless it is listed in `trusted-proxies`; VBLIS refuses requests that carry proxy headers from a proxy it doesn't trust.
@@ -226,6 +230,7 @@ The interface fits a phone's screen. The search buttons sit in a row under the s
 
 - Viewers see file and folder names (they are part of every search result), and, with **Places** on, place names from the GPS data of photos.
 - A browser remembers the sign-in for 30 days. Changing a password signs that account out everywhere.
+- Passwords never leave the browser. To sign in or to confirm a change, the browser answers a one-time challenge from the server with a proof made from the password; a new password is sent already hashed (scrypt). So neither the network, even over plain HTTP, nor the browser's developer tools show a password. The server stores only scrypt hashes, and the browser checks the password length rules. A copy of `server.json` is enough to sign in, as it always was (it also holds the key that signs sign-ins), so keep it private.
 - Names typed in full-width letters (as a Chinese or Japanese input method may) count as the same name in normal letters.
 - Each browser keeps its own interface settings (theme, language, search sliders).
 - The server keeps working when no browser is open; indexing continues in the background.

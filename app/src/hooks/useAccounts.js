@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { requestJson } from '../utils/serverRequest';
+import { hashPassword, requestConfirmed } from '../utils/passwordRequests';
 import { useSession } from '../session/sessionContext';
 
 const DEFAULT_LIMITS = { max_accounts: 50, name_max: 32, password_min: 8, password_max: 256 };
@@ -12,10 +12,9 @@ const ROUTES = {
   network: { base: '/server/accounts', updateMethod: 'PATCH' }
 };
 
-// The desktop never sends a password, whatever the caller passes; the network sends the one it was given.
-const withPassword = (isDesktop, body, currentPassword) => (
-  isDesktop || currentPassword === undefined ? body : { ...body, current_password: currentPassword }
-);
+// The owner's own password is never sent: the network proves it with `confirm` (a challenge and its proof),
+// and only when the caller was given the password. The desktop never confirms, whatever the caller passes.
+// A new password is never sent either, only its hash.
 
 // Refusals after which the server no longer remembers the owner's password.
 const FORGETTING_CODES = new Set(['wrong_password', 'confirm_password']);
@@ -61,10 +60,10 @@ export const useAccounts = ({ mode: modeOption } = {}) => {
     }
   }, []);
 
-  const call = useCallback(async (method, path, body) => {
+  const call = useCallback(async (method, path, body, currentPassword) => {
     startedRef.current += 1;
     const number = startedRef.current;
-    const result = await requestJson(method, path, body);
+    const result = await requestConfirmed(method, path, body, currentPassword);
     if (!result.ok) {
       if (FORGETTING_CODES.has(result.code)) confirmUntilRef.current = 0;
       return result;
@@ -88,29 +87,34 @@ export const useAccounts = ({ mode: modeOption } = {}) => {
     return () => { isMountedRef.current = false; };
   }, [reload]);
 
-  const add = useCallback(({ name, role, password, permissions, currentPassword }) => call('POST', base, withPassword(isDesktop, {
+  // Hashes `password`, then sends `body` with the hash as `password_hash` (and the confirmation, on the network).
+  const sendHashed = useCallback(async (path, body, password, currentPassword) => {
+    const hashed = await hashPassword(password);
+    if (!hashed.ok) return hashed;
+    return call('POST', path, { ...body, password_hash: hashed.hash }, isDesktop ? undefined : currentPassword);
+  }, [call, isDesktop]);
+
+  const add = useCallback(({ name, role, password, permissions, currentPassword }) => sendHashed(base, {
     name,
     role,
-    password,
     ...(role === 'viewer' && permissions ? { permissions } : {})
-  }, currentPassword)), [call, base, isDesktop]);
+  }, password, currentPassword), [sendHashed, base]);
 
-  const update = useCallback((id, changes, currentPassword) => call(updateMethod, accountPath(id), {
-    ...changes,
-    ...(!isDesktop && currentPassword ? { current_password: currentPassword } : {})
-  }), [call, updateMethod, accountPath, isDesktop]);
+  const update = useCallback((id, changes, currentPassword) => call(
+    updateMethod, accountPath(id), changes, isDesktop ? undefined : currentPassword
+  ), [call, updateMethod, accountPath, isDesktop]);
 
-  const setPassword = useCallback((id, newPassword, currentPassword) => call('POST', accountPath(id, '/password'), withPassword(isDesktop, {
-    new_password: newPassword
-  }, currentPassword)), [call, accountPath, isDesktop]);
+  const setPassword = useCallback((id, newPassword, currentPassword) => sendHashed(
+    accountPath(id, '/password'), {}, newPassword, currentPassword
+  ), [sendHashed, accountPath]);
 
   const signOut = useCallback((id) => call('POST', accountPath(id, '/sign-out')), [call, accountPath]);
 
-  // The desktop's delete takes no body at all; the network's takes the password (or `{}` while remembered).
+  // The desktop's delete takes no body at all; the network's takes the confirmation (or `{}` while remembered).
   const remove = useCallback((id, currentPassword) => (
     isDesktop
       ? call('POST', accountPath(id, '/delete'))
-      : call('POST', accountPath(id, '/delete'), withPassword(isDesktop, {}, currentPassword))
+      : call('POST', accountPath(id, '/delete'), {}, currentPassword)
   ), [call, accountPath, isDesktop]);
 
   return {
