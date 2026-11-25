@@ -87,8 +87,13 @@
   },
   "picker": {
     "title": "添加服务器上的文件夹",
+    "titleLocal": "添加此电脑上的文件夹",
     "subtitle": "选择服务器上要添加到媒体库的文件夹。",
+    "subtitleLocal": "选择此电脑上要添加到媒体库的文件夹。",
     "roots": "媒体库文件夹",
+    "thisComputer": "此电脑",
+    "home": "主文件夹",
+    "disk": "整个磁盘",
     "up": "上一级",
     "loading": "正在加载……",
     "empty": "此处没有子文件夹。",
@@ -104,6 +109,10 @@
     "truncated": "仅显示前一部分文件夹。请打开子文件夹查看更多。",
     "skipped_other": "有 {{count}} 个文件夹名称无法显示。",
     "readFailed": "无法读取此文件夹。",
+    "noPermission": "服务器没有读取此文件夹的权限。",
+    "macosPrivacy": "macOS 未允许 VBLIS 读取此文件夹。如果 Mac 弹出询问，请点按“允许”；或者在“系统设置”→“隐私与安全性”→“文件和文件夹”中允许“终端”，然后重试。",
+    "droppedNamed": "已拖入 {{names}}。浏览器不会告诉 VBLIS 拖入的文件夹在哪里，请在下方找到并勾选它。",
+    "droppedUnnamed": "浏览器不会告诉 VBLIS 拖入的文件夹在哪里，请在下方找到并勾选它。",
     "add_other": "添加 {{count}} 个文件夹",
     "adding": "正在添加……"
   }

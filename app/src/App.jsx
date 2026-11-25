@@ -52,6 +52,8 @@ function App() {
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   // The picker for folders on the server, which is how the owner adds folders from a browser.
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  // The names of folders dropped onto the page when that opened the picker (a browser can't say where they are)
+  const [droppedFolderNames, setDroppedFolderNames] = useState(null);
   const { theme, setTheme, uiTheme, setUiTheme } = useThemePreferences();
   const { toast, setToast } = useToast();
   const queue = useTaskQueue(API_BASE, setToast);
@@ -65,6 +67,10 @@ function App() {
     setSelectedVideoPath(group ? group.path : null);
   }, []);
   const closeFolderPicker = useCallback(() => setShowFolderPicker(false), []);
+  const openFolderPickerForDrop = useCallback((names) => {
+    setDroppedFolderNames(names);
+    setShowFolderPicker(true);
+  }, []);
   // Opens Settings, on a group when one is named (an id from settingsGroups.js); a click event or nothing opens it
   // on the group used last. Every call makes a new request object, so the window tells a new request even for the
   // same group.
@@ -201,7 +207,8 @@ function App() {
     setToast,
     onFolders: queue.enqueueFolderIndexing,
     onImage: handleImageDrop,
-    readOnly
+    readOnly,
+    onBrowserFolders: openFolderPickerForDrop
   });
   const {
     indexedFolders,
@@ -257,7 +264,10 @@ function App() {
     // Folders are indexed on the computer the copy came from.
     if (readOnly) return;
     if (!window.electronAPI) {
-      if (mode === 'network' && isOwner) setShowFolderPicker(true);
+      if (mode === 'network' && isOwner) {
+        setDroppedFolderNames(null);
+        setShowFolderPicker(true);
+      }
       return;
     }
     const paths = await window.electronAPI.openDirectory();
@@ -369,7 +379,7 @@ function App() {
       />
 
       {showFolderPicker && !readOnly && (
-        <FolderPickerModal uiTheme={uiTheme} onClose={closeFolderPicker} onConfirm={queue.enqueueFolderIndexing} />
+        <FolderPickerModal uiTheme={uiTheme} onClose={closeFolderPicker} onConfirm={queue.enqueueFolderIndexing} droppedNames={droppedFolderNames} />
       )}
 
       {/* Folder Contents Modal */}

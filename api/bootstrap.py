@@ -35,9 +35,18 @@ except paths.DataLockedError as e:
 API_TOKEN = security.resolve_api_token()
 # Same for the network listener's VBLIS_SERVER_* settings: server_config reads them on import
 import server_config  # noqa: E402,F401
+def configure_mps_fallback(platform: str = sys.platform, env=None) -> None:
+    """Enable CPU fallback for ops MPS lacks on macOS, unless already set."""
+    if env is None:
+        env = os.environ
+    if platform == "darwin":
+        env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
+
 load_dotenv(paths.ENV_FILE, override=True)
 os.environ["HF_HOME"] = str(paths.MODELS_DIR)
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "30"
 os.environ["HF_HUB_ENABLE_EMERGENCY_RETRY"] = "False"
+configure_mps_fallback()
 
 paths.ensure_dirs()

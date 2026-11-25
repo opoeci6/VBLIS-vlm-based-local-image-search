@@ -2,11 +2,14 @@
 Only the network app includes this router, and only the owner may use it."""
 import os
 import stat
+import sys
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 import app_state
-from auth_context import NetRequest, net_request
+import local_places
+from auth_context import Auth, NetRequest, current_auth, net_request
 from media_image import is_skipped_dir
 from routers.guards import real_path_inside
 from security import is_within
@@ -36,25 +39,67 @@ def _root_for(path: str, roots):
     return None
 
 
+def _local_root_for(path: str, library_roots) -> str:
+    candidates = [place["path"] for place in local_places.computer_places(library_roots)]
+    candidates.extend(root for root in library_roots if root)
+    matching = [candidate for candidate in candidates if is_within(path, [candidate])]
+    if matching:
+        return max(matching, key=lambda candidate: len(os.path.normpath(os.path.abspath(candidate))))
+    drive, _ = os.path.splitdrive(path)
+    return (drive + os.sep) if drive else os.sep
+
+
+def _permission_denied() -> JSONResponse:
+    if sys.platform == "darwin":
+        return JSONResponse(
+            {
+                "detail": (
+                    "The server isn't allowed to read this folder. "
+                    "macOS asks before Terminal may read Desktop, Documents, Downloads or a removable drive: "
+                    "click Allow, or allow Terminal in System Settings → Privacy & Security → Files and Folders."
+                ),
+                "code": "macos_privacy",
+            },
+            status_code=403,
+        )
+    return JSONResponse({"detail": "The server isn't allowed to read this folder.", "code": "no_permission"}, status_code=403)
+
+
 @router.get("/fs/roots")
-def list_roots(net: NetRequest = Depends(net_request)):
-    roots = net.store.current().library_roots
+def list_roots(net: NetRequest = Depends(net_request), auth: Auth = Depends(current_auth)):
+    library_roots = net.store.current().library_roots
+    if auth.on_this_computer:
+        return {"local": True, "roots": local_places.computer_places(library_roots)}
     return {
+        "local": False,
         "roots": [
-            {"path": root, "name": os.path.basename(root.rstrip(os.sep)) or root, "available": os.path.isdir(root)}
-            for root in roots
-        ]
+            {
+                "path": root,
+                "name": os.path.basename(root.rstrip(os.sep)) or root,
+                "kind": "library",
+                "available": os.path.isdir(root),
+            }
+            for root in library_roots
+        ],
     }
 
 
 @router.get("/fs/list")
-def list_folder(path: str = Query(..., max_length=4096), net: NetRequest = Depends(net_request)):
+def list_folder(
+    path: str = Query(..., max_length=4096),
+    net: NetRequest = Depends(net_request),
+    auth: Auth = Depends(current_auth),
+):
     if "\0" in path or not os.path.isabs(path):
         raise HTTPException(status_code=400, detail="The folder path must be absolute.")
     normalized = os.path.abspath(os.path.normpath(path))
-    root = _root_for(normalized, net.store.current().library_roots)
-    if root is None:
-        raise HTTPException(status_code=403, detail="This folder is outside the library folders set on the server.")
+    library_roots = net.store.current().library_roots
+    if auth.on_this_computer:
+        root = _local_root_for(normalized, library_roots)
+    else:
+        root = _root_for(normalized, library_roots)
+        if root is None:
+            raise HTTPException(status_code=403, detail="This folder is outside the library folders set on the server.")
     if not os.path.isdir(normalized):
         raise HTTPException(status_code=404, detail="Folder not found.")
 
@@ -75,7 +120,7 @@ def list_folder(path: str = Query(..., max_length=4096), net: NetRequest = Depen
                 except UnicodeEncodeError:
                     skipped += 1  # a Linux name that isn't valid UTF-8 can't travel as JSON
                     continue
-                if _is_link(entry) and not real_path_inside(entry.path, [root]):
+                if not auth.on_this_computer and _is_link(entry) and not real_path_inside(entry.path, [root]):
                     continue
                 folders.append({
                     "name": entry.name,
@@ -86,7 +131,7 @@ def list_folder(path: str = Query(..., max_length=4096), net: NetRequest = Depen
                     truncated = True
                     break
     except PermissionError:
-        raise HTTPException(status_code=403, detail="The server can't read this folder.")
+        return _permission_denied()
     except OSError:
         raise HTTPException(status_code=404, detail="Folder not found.")
 

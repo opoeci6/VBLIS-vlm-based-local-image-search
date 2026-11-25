@@ -19,6 +19,7 @@ class Auth(NamedTuple):
     client: Optional[str] = None
     account_id: Optional[str] = None  # the signed-in network account; None for the desktop app
     account_name: Optional[str] = None
+    on_this_computer: bool = False
 
     @property
     def is_network(self) -> bool:

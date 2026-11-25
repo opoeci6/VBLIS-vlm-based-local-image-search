@@ -24,7 +24,7 @@ In **Manage accounts**, a change that gives someone access (adding an account, a
 
 Original files keep the location data the camera wrote. So a viewer with **Originals** on can still read where a photo was taken from a downloaded file, even with **Places** off.
 
-A browser can only index folders inside the **library folders** you list in the server settings, so nobody can reach other folders through the browser.
+A browser can only index folders inside the **library folders** you list in the server settings, so nobody can reach other folders through the browser. When the server listens only on this computer (`set host 127.0.0.1`) and you open it there as `localhost`, the owner's **Add folders** shows the home folder, connected drives and the whole disk, and can add any folder; through a proxy, another address or another device, only the library folders apply. Plainly: an owner session used on this computer (an SSH tunnel counts) can index any folder the server can read.
 
 ## Share from the Windows app
 
@@ -67,6 +67,40 @@ vblis serve                                    # or: systemctl --user enable --n
 Open `https://<the server's address>:8080` in a browser, sign in with the owner account, download a model in **Settings**, and add folders with **Add Folders**. The connection uses HTTPS with a certificate the server made itself, so the browser shows a warning on the first visit; see [HTTPS](#https) for how to continue. **Settings → Manage accounts** adds more accounts and sets each viewer's permissions.
 
 To keep the service running after you log out: `sudo loginctl enable-linger $USER`.
+
+## macOS (Apple Silicon, from source)
+
+Requirements: a Mac with Apple Silicon and macOS 14 or newer. No admin rights, no Xcode and no Homebrew are needed.
+
+In Terminal:
+
+1. Download the source archive and unzip it. Replace `<branch>` with the branch name, for example `main`. GitHub names the unzipped folder after the branch, turning each `/` into `-`.
+
+   ```bash
+   curl -L -o vblis.zip https://github.com/opoeci6/VBLIS-vlm-based-local-image-search/archive/refs/heads/<branch>.zip
+   unzip -q vblis.zip
+   cd VBLIS-vlm-based-local-image-search-*/
+   ```
+
+2. Download `VBLIS-web-<version>.zip` from the latest release.
+3. Install into a private Python environment (downloads a standalone Python 3.11 into `~/.local/share/vblis/python`):
+
+   ```bash
+   bash scripts/install-linux.sh --fetch-python --web-zip /path/to/VBLIS-web-<version>.zip
+   ```
+
+4. Add an owner account, choose where the server listens, and start it (`serve`), as in [Install on Linux](#install-on-linux). For a Mac you use yourself, run `vblis set host 127.0.0.1` instead of `add-library-folder`: it keeps the server on this Mac and lets **Add folders** reach your folders and drives directly. To open it from other devices on your network, skip `set host` and allow folders with `add-library-folder`.
+5. Open the address it prints. On the Mac itself, open `https://localhost:8080`.
+
+Good to know on macOS:
+- macOS asks before Terminal may read Desktop, Documents, Downloads or a USB drive; click **Allow**, or allow Terminal in **System Settings → Privacy & Security → Files and Folders**.
+- A harmless `objc[...] Class AVFFrameReceiver is implemented in both ...` warning appears at start (PyAV and OpenCV each bundle FFmpeg's device library; VBLIS doesn't use it).
+- The Apple GPU (Metal / MPS) is used automatically.
+- **Auto** precision runs in fp32 on the Apple GPU (an explicit fp16 choice is still honoured).
+- The macOS firewall may ask whether to allow incoming connections; only other devices on your network need that.
+- Video decoding runs on the CPU.
+- On a shared Mac, start the install command with `PIP_NO_CACHE_DIR=1`, so pip leaves no download cache in `~/Library/Caches/pip`.
+- macOS disks usually ignore upper and lower case in file and folder names, while VBLIS on macOS compares paths exactly.
 
 ## Docker
 

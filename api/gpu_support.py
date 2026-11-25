@@ -10,6 +10,7 @@ The check reads the card's compute capability against torch.cuda.get_arch_list()
 runs one tiny operation on the card. The probe creates a CUDA context (a few hundred MB of VRAM), so it only
 runs when the GPU is actually wanted."""
 import re
+import subprocess
 import threading
 import warnings
 from typing import NamedTuple, Optional, Sequence, Tuple
@@ -19,6 +20,7 @@ import torch
 DRIVER_TOO_OLD = "driver_too_old"    # an NVIDIA driver older than the CUDA version of this build
 UNSUPPORTED_GPU = "unsupported_gpu"  # a card this build has no code for (GTX 10-series and older)
 CUDA_FAILED = "cuda_failed"          # anything else that stops CUDA from starting
+MPS_FAILED = "mps_failed"            # Apple Metal (MPS) failed to run a probe operation
 
 _DETAIL_LIMIT = 300
 _ARCH = re.compile(r"(sm|compute)_(\d+)(\d)([a-z]?)")
@@ -31,6 +33,14 @@ class CudaCheck(NamedTuple):
     capability: Optional[str]  # "sm_86"
     detail: Optional[str]      # the first line of the warning or error, for the log
     probed: bool               # whether one operation ran on the card
+
+
+class MpsCheck(NamedTuple):
+    usable: bool
+    code: Optional[str]        # None when usable, and when MPS is missing or not available
+    gpu_name: Optional[str]
+    detail: Optional[str]      # the first line of the error, for the log
+    probed: bool               # whether one operation ran on the GPU
 
 
 def supports(capability: Tuple[int, int], arch_list: Sequence[str]) -> bool:
@@ -150,7 +160,55 @@ def _run_check(probe: bool) -> CudaCheck:
 
 
 _lock = threading.Lock()
-_results = {}  # probe flag -> CudaCheck; a probed result also answers an unprobed question
+_results = {}      # probe flag -> CudaCheck; a probed result also answers an unprobed question
+_mps_results = {}  # probe flag -> MpsCheck; a probed result also answers an unprobed question
+
+
+def _mps_gpu_name() -> str:
+    """'<chip> GPU (Metal)', using sysctl machdep.cpu.brand_string, falling back to 'Apple'."""
+    chip = ""
+    try:
+        proc = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        if proc.returncode == 0:
+            chip = (proc.stdout or "").strip()
+    except Exception:
+        chip = ""
+    if not chip:
+        chip = "Apple"
+    return f"{chip} GPU (Metal)"
+
+
+def _run_mps_check(probe: bool) -> MpsCheck:
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps_backend is None:
+        return MpsCheck(False, None, None, None, False)
+    try:
+        available = bool(mps_backend.is_available())
+    except Exception as e:
+        return MpsCheck(False, MPS_FAILED, None, _first_line(e), False)
+    if not available:
+        return MpsCheck(False, None, None, None, False)
+
+    name = _mps_gpu_name()
+    if not probe:
+        return MpsCheck(True, None, name, None, False)
+
+    try:
+        values = torch.ones(8, device="mps") * 2
+        torch.mps.synchronize()
+        total = float(values.sum().item())
+        del values
+        if total != 16.0:
+            raise RuntimeError(f"a test operation on the GPU returned {total} instead of 16")
+    except Exception as e:
+        return MpsCheck(False, MPS_FAILED, name, _first_line(e), True)
+    return MpsCheck(True, None, name, None, True)
 
 
 def check_cuda(probe: bool = False) -> CudaCheck:
@@ -165,7 +223,31 @@ def check_cuda(probe: bool = False) -> CudaCheck:
         return result
 
 
+def check_mps(probe: bool = False) -> MpsCheck:
+    """The cached MpsCheck of this process. probe=True also runs one operation on the GPU (once)."""
+    with _lock:
+        result = _mps_results.get(True) or (None if probe else _mps_results.get(False))
+        if result is None:
+            result = _run_mps_check(probe)
+            _mps_results[probe] = result
+            if result.code:
+                print(f"[GPU] Not using the GPU ({result.code}): {result.detail}")
+        return result
+
+
+def pick_device(want_gpu: bool, probe: bool = False) -> str:
+    """Pick the PyTorch device to run on: 'cuda', 'mps', or 'cpu'."""
+    if not want_gpu:
+        return "cpu"
+    if check_cuda(probe=probe).usable:
+        return "cuda"
+    if check_mps(probe=probe).usable:
+        return "mps"
+    return "cpu"
+
+
 def reset_cache():
     """Forgets the cached checks (tests)."""
     with _lock:
         _results.clear()
+        _mps_results.clear()

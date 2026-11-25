@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Install the Python packages of the VBLIS server into an existing virtual environment.
+# Install the Python packages of the VBLIS server into an existing virtual environment (Linux and macOS).
 # Shared by scripts/install-linux.sh and deploy/Dockerfile. See SERVER.md.
 #
 #   scripts/linux-deps.sh --python PY [--torch cpu|cuda] [--api DIR]
 #
 #   --python   the Python of an existing virtual environment (it needs pip)
-#   --torch    cpu: PyTorch without a GPU (the default; the only choice on ARM64)
-#              cuda: PyTorch with NVIDIA CUDA 13.0 (x86-64 only; GTX 16 / RTX 20 or newer and NVIDIA
+#   --torch    cpu: PyTorch without CUDA (the default; on macOS Apple Silicon this includes Apple GPU / MPS,
+#                   and on Linux ARM64 it is the only choice)
+#              cuda: PyTorch with NVIDIA CUDA 13.0 (Linux x86-64 only; GTX 16 / RTX 20 or newer and NVIDIA
 #                    driver 580 or newer; a few GB more to download)
 #   --api      the folder with requirements.txt and constraints.txt (default: ../api next to this script)
 #
@@ -28,7 +29,7 @@ while [ $# -gt 0 ]; do
     --python) PY="${2:-}"; shift 2 ;;
     --torch) TORCH="${2:-}"; shift 2 ;;
     --api) API="${2:-}"; shift 2 ;;
-    -h|--help) sed -n "2,13p" "$0"; exit 0 ;;
+    -h|--help) sed -n "2,14p" "$0"; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -38,13 +39,23 @@ done
 [ -f "$API/requirements.txt" ] && [ -f "$API/constraints.txt" ] \
   || fail "requirements.txt and constraints.txt were not found in $API"
 
+OS="$(uname -s)"
 ARCH="$(uname -m)"
+TORCH_INDEX=""
 case "$TORCH" in
   cpu)
-    # The CPU index on both architectures: PyPI's Linux builds pull in the CUDA 13 libraries (several GB),
-    # on ARM64 too
-    TORCH_INDEX="https://download.pytorch.org/whl/cpu" ;;
+    if [ "$OS" = "Darwin" ]; then
+      # PyPI's macOS arm64 wheel includes Apple GPU (MPS) support
+      TORCH_INDEX=""
+    else
+      # The CPU index on both architectures: PyPI's Linux builds pull in the CUDA 13 libraries (several GB),
+      # on ARM64 too
+      TORCH_INDEX="https://download.pytorch.org/whl/cpu"
+    fi ;;
   cuda)
+    if [ "$OS" = "Darwin" ]; then
+      fail "CUDA builds of PyTorch are not available on macOS (use --torch cpu; it includes Apple GPU / MPS)."
+    fi
     [ "$ARCH" = "x86_64" ] || fail "CUDA builds of PyTorch exist for x86-64 only."
     TORCH_INDEX="https://download.pytorch.org/whl/cu130" ;;
   *) fail "--torch must be cpu or cuda" ;;

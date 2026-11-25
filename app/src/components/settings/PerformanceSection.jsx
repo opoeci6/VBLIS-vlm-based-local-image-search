@@ -4,7 +4,7 @@ import { SettingsSelect } from '../common/SettingsSelect';
 import { cn } from '../../utils/cn';
 import { SectionTitle } from './SectionTitle';
 
-// Why a present NVIDIA GPU isn't used: a card or driver this PyTorch build can't run (api/gpu_support.py)
+// Why a present GPU isn't used: a card, driver, or Apple Metal probe this PyTorch build can't run (api/gpu_support.py)
 const gpuProblemText = (t, problem) => {
   if (problem.code === 'unsupported_gpu') {
     return problem.gpu_name
@@ -12,13 +12,18 @@ const gpuProblemText = (t, problem) => {
       : t('performance.problem.unsupportedGpuUnnamed');
   }
   if (problem.code === 'driver_too_old') return t('performance.problem.driverTooOld');
+  if (problem.code === 'mps_failed') return t('performance.problem.mpsFailed');
   return t('performance.problem.cudaFailed');
 };
 
 export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGpu, handleToggleGpu, handleUpdatePerformanceSettings }) => {
   const { t } = useTranslation('settings');
+  const apple = gpuSettings.gpu_family === 'apple';
   const gpuProblem = gpuSettings.gpu_problem || null;
   const autoPrecisionLabel = t('performance.precision.auto', { precision: gpuSettings.active_precision ? gpuSettings.active_precision.toUpperCase() : 'FP32' });
+  const toggleLabel = gpuSettings.use_gpu
+    ? (apple ? t('performance.apple.gpuDisable') : t('performance.gpuDisable'))
+    : (apple ? t('performance.apple.gpuEnable') : t('performance.gpuEnable'));
   return (
     <div>
       <SectionTitle className="mb-3">{t('performance.title')}</SectionTitle>
@@ -31,15 +36,21 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
         )}
       >
         <div className="flex flex-col">
-          <span className="text-sm font-bold text-neutral-700 dark:text-neutral-200">{t('performance.gpuSupport')}</span>
+          <span className="text-sm font-bold text-neutral-700 dark:text-neutral-200">
+            {apple ? t('performance.apple.gpuSupport') : t('performance.gpuSupport')}
+          </span>
           <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-medium">
             {gpuSettings.cuda_available 
               ? (gpuSettings.use_gpu 
-                  ? (gpuSettings.gpu_name ? t('performance.gpuUsing', { name: gpuSettings.gpu_name }) : t('performance.gpuUsingCuda')) 
+                  ? (gpuSettings.gpu_name
+                      ? t('performance.gpuUsing', { name: gpuSettings.gpu_name })
+                      : (apple ? t('performance.apple.gpuUsing') : t('performance.gpuUsingCuda'))) 
                   : t('performance.gpuDirects')) 
               : gpuProblem
-                ? (gpuProblem.gpu_name ? t('performance.gpuUnusable', { name: gpuProblem.gpu_name }) : t('performance.gpuUnusableUnnamed'))
-                : t('performance.gpuNotDetected')}
+                ? (gpuProblem.gpu_name
+                    ? t('performance.gpuUnusable', { name: gpuProblem.gpu_name })
+                    : (apple ? t('performance.apple.gpuUnusableUnnamed') : t('performance.gpuUnusableUnnamed')))
+                : (apple ? t('performance.apple.gpuNotDetected') : t('performance.gpuNotDetected'))}
           </span>
         </div>
         {uiTheme === 'modern' ? (
@@ -51,7 +62,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
               "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-40 cursor-pointer flex-shrink-0 max-sm:before:absolute max-sm:before:-inset-2",
               gpuSettings.use_gpu ? "bg-indigo-600" : "bg-gray-200 dark:bg-neutral-700"
             )}
-            aria-label={gpuSettings.use_gpu ? t('performance.gpuDisable') : t('performance.gpuEnable')}
+            aria-label={toggleLabel}
           >
             <span
               className={cn(
@@ -71,7 +82,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
             onClick={handleToggleGpu}
             disabled={!gpuSettings.cuda_available || isSwitchingGpu}
             className="relative inline-flex h-7 w-7 items-center justify-center bg-black border border-white focus:outline-none disabled:cursor-not-allowed flex-shrink-0 max-sm:before:absolute max-sm:before:-inset-2.5"
-            aria-label={gpuSettings.use_gpu ? t('performance.gpuDisable') : t('performance.gpuEnable')}
+            aria-label={toggleLabel}
           >
             {isSwitchingGpu
               ? <Loader2 className="w-4 h-4 text-white animate-spin" />
@@ -82,7 +93,7 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
 
       {!gpuSettings.cuda_available && (
         <p className="text-[10px] text-amber-500 font-medium mt-1 mb-3 px-1 flex items-start gap-1" role={gpuProblem ? 'status' : undefined}>
-          <AlertTriangle className="w-3 h-3 mt-px flex-shrink-0" /> {gpuProblem ? gpuProblemText(t, gpuProblem) : t('performance.cudaRequired')}
+          <AlertTriangle className="w-3 h-3 mt-px flex-shrink-0" /> {gpuProblem ? gpuProblemText(t, gpuProblem) : (apple ? t('performance.apple.required') : t('performance.cudaRequired'))}
         </p>
       )}
 
@@ -158,7 +169,9 @@ export const PerformanceSection = ({ gpuSettings, status, uiTheme, isSwitchingGp
             </select>
           )}
           <span className="block text-[9px] text-neutral-400 dark:text-neutral-500 mt-1.5">
-            {gpuSettings.fp16_supported ? t('performance.precision.fp16Supported') : t('performance.precision.fallback')}
+            {apple
+              ? t('performance.apple.precisionAuto')
+              : (gpuSettings.fp16_supported ? t('performance.precision.fp16Supported') : t('performance.precision.fallback'))}
           </span>
         </div>
       </div>

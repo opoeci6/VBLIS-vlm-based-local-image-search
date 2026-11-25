@@ -154,4 +154,58 @@ describe('PerformanceSection', () => {
       expect(screen.getByText(/OOM \/ Memory Safety Fallback Triggered/)).toBeTruthy();
     });
   });
+
+  describe('Apple GPU wording', () => {
+    const makeApple = (overrides = {}) => makeGpu({
+      gpu_family: 'apple',
+      gpu_backend: 'mps',
+      device: 'mps',
+      fp16_supported: false,
+      ...overrides,
+    });
+
+    it('shows Apple GPU title, using line, switch labels, and precision note', () => {
+      render(<PerformanceSection {...makeProps({ gpuSettings: makeApple({ use_gpu: true, gpu_name: 'Apple M4 GPU (Metal)' }) })} />);
+      expect(screen.getByText('Apple GPU (Metal)')).toBeTruthy();
+      expect(screen.getByText('Using Apple M4 GPU (Metal)')).toBeTruthy();
+      expect(screen.getByLabelText('Disable Apple GPU acceleration')).toBeTruthy();
+      expect(screen.getByText('Auto uses FP32 on Apple GPUs')).toBeTruthy();
+    });
+
+    it.each(['modern', 'terminal'])('shows unnamed Apple GPU using and enable label (%s)', (uiTheme) => {
+      render(<PerformanceSection {...makeProps({ uiTheme, gpuSettings: makeApple({ use_gpu: true, gpu_name: '' }) })} />);
+      expect(screen.getByText('Using the Apple GPU')).toBeTruthy();
+      expect(screen.getByLabelText('Disable Apple GPU acceleration')).toBeTruthy();
+    });
+
+    it('shows Apple not-detected and requirement notice when unavailable', () => {
+      render(<PerformanceSection {...makeProps({ gpuSettings: makeApple({ cuda_available: false, device: 'cpu' }) })} />);
+      expect(screen.getByText('No usable Apple GPU found')).toBeTruthy();
+      expect(screen.getByText(/GPU acceleration on a Mac needs Apple silicon/)).toBeTruthy();
+      expect(screen.getByLabelText('Enable Apple GPU acceleration').disabled).toBe(true);
+    });
+
+    it('explains mps_failed for Apple GPUs', () => {
+      render(<PerformanceSection {...makeProps({
+        gpuSettings: makeApple({
+          cuda_available: false,
+          device: 'cpu',
+          gpu_problem: { code: 'mps_failed', gpu_name: null, capability: null },
+        }),
+      })} />);
+      expect(screen.getByText("The Apple GPU can't be used")).toBeTruthy();
+      expect(screen.getByRole('status').textContent.trim()).toBe(
+        "The Apple GPU couldn't be started, so VBLIS runs on the CPU."
+      );
+    });
+
+    it('keeps NVIDIA wording when gpu_family is nvidia', () => {
+      render(<PerformanceSection {...makeProps({ gpuSettings: makeGpu({ gpu_family: 'nvidia', cuda_available: false }) })} />);
+      expect(screen.getByText('NVIDIA GPU Support')).toBeTruthy();
+      expect(screen.getByText('No NVIDIA GPU detected')).toBeTruthy();
+      expect(screen.getByText(/CUDA-capable GPU is required/)).toBeTruthy();
+      expect(screen.getByLabelText('Enable NVIDIA GPU support').disabled).toBe(true);
+      expect(screen.getByText('FP16 Tensor Cores supported')).toBeTruthy();
+    });
+  });
 });

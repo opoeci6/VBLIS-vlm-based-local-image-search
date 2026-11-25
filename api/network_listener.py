@@ -345,7 +345,7 @@ class NetworkListener:
 
         gate = build_network_app(self.store, web_dir=self.web_dir, port=config.port,
                                  hostname=self.hostname, log=self.log, require_owner=self.require_owner,
-                                 confirmations=RecentConfirmations())
+                                 confirmations=RecentConfirmations(), listen_host=config.host)
         try:
             sock = bind_socket(config.host, config.port)
         except OSError as e:

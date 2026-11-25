@@ -209,6 +209,66 @@ describe('useFileDrop', () => {
       expect(onImage).not.toHaveBeenCalled();
     });
 
+    describe('with a folder picker to open', () => {
+      let onBrowserFolders;
+      const renderWithPicker = (info, { enabled = true, readOnly = false } = {}) => renderHook(
+        () => useFileDrop({ enabled, setToast, onFolders, onImage, readOnly, onBrowserFolders }),
+        { wrapper: ({ children }) => createElement(SessionProvider, { info, onSignOut: vi.fn() }, children) },
+      );
+
+      beforeEach(() => {
+        onBrowserFolders = vi.fn();
+      });
+
+      it('opens the picker with the names of the folders an owner dropped', async () => {
+        const { result } = renderWithPicker(sessionInfo('owner'));
+        const other = { type: '', name: 'Trip 2024' };
+        await act(async () => { await result.current.handleDrop(makeEvent({ files: [folder, other] })); });
+        expect(onBrowserFolders).toHaveBeenCalledWith(['photos', 'Trip 2024']);
+        expect(setToast).not.toHaveBeenCalled();
+        expect(onFolders).not.toHaveBeenCalled();
+      });
+
+      it('opens the picker without names when the browser hands over an empty drop of files', async () => {
+        const { result } = renderWithPicker(sessionInfo('owner'));
+        await act(async () => { await result.current.handleDrop(makeEvent({ files: [] })); });
+        expect(onBrowserFolders).toHaveBeenCalledWith([]);
+        expect(setToast).not.toHaveBeenCalled();
+      });
+
+      it('ignores an empty drop that carried no files', async () => {
+        const { result } = renderWithPicker(sessionInfo('owner'));
+        await act(async () => { await result.current.handleDrop(makeEvent({ types: ['text/plain'], files: [] })); });
+        expect(onBrowserFolders).not.toHaveBeenCalled();
+        expect(setToast).not.toHaveBeenCalled();
+      });
+
+      it('says a model is needed first, for an empty drop as for any other', async () => {
+        const { result } = renderWithPicker(sessionInfo('owner'), { enabled: false });
+        await act(async () => { await result.current.handleDrop(makeEvent({ files: [] })); });
+        expect(onBrowserFolders).not.toHaveBeenCalled();
+        expect(setToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+      });
+
+      it('still searches with an image dropped together with a folder', async () => {
+        const { result } = renderWithPicker(sessionInfo('owner'));
+        await act(async () => { await result.current.handleDrop(makeEvent({ files: [folder, pic] })); });
+        expect(onImage).toHaveBeenCalledWith(pic);
+        expect(onBrowserFolders).not.toHaveBeenCalled();
+      });
+
+      it('opens nothing for a viewer or on a read-only copy', async () => {
+        const viewer = renderWithPicker(sessionInfo('viewer'));
+        await act(async () => { await viewer.result.current.handleDrop(makeEvent({ files: [folder] })); });
+        await act(async () => { await viewer.result.current.handleDrop(makeEvent({ files: [] })); });
+        const copy = renderWithPicker(sessionInfo('owner'), { readOnly: true });
+        await act(async () => { await copy.result.current.handleDrop(makeEvent({ files: [folder] })); });
+        await act(async () => { await copy.result.current.handleDrop(makeEvent({ files: [] })); });
+        expect(onBrowserFolders).not.toHaveBeenCalled();
+        expect(setToast).not.toHaveBeenCalled();
+      });
+    });
+
     it('lets a viewer with image search drop an image but ignores a dropped folder', async () => {
       const { result } = renderIn(sessionInfo('viewer'));
       await act(async () => { await result.current.handleDrop(makeEvent({ files: [pic] })); });
