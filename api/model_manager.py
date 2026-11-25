@@ -28,6 +28,11 @@ except ImportError:  # the pre-resize is then simply skipped
 # The only models the API will download, switch to or delete (model_list.py, importable without torch)
 from model_list import AVAILABLE_MODELS  # noqa: E402,F401
 
+_OOM_TYPES = tuple(
+    t for t in (getattr(torch, "OutOfMemoryError", None), getattr(torch.cuda, "OutOfMemoryError", None))
+    if isinstance(t, type)
+)
+
 
 class PreparedImage(NamedTuple):
     """CPU-side processor output for one image, tagged with the model it was prepared for."""
@@ -56,11 +61,10 @@ class ModelManager:
         
         # Read device and performance preferences from environment
         env_use_gpu = os.getenv("USE_GPU", "True").lower() == "true"
-        # A card or driver this PyTorch build can't run falls back to the CPU (gpu_support); the one test
-        # operation on the card only runs when the GPU is wanted
-        cuda_available = gpu_support.check_cuda(probe=env_use_gpu).usable
-        self.use_gpu = env_use_gpu and cuda_available
-        self.device = "cuda" if self.use_gpu else "cpu"
+        # A GPU this PyTorch build can't run falls back to the CPU (gpu_support); the one test
+        # operation on the GPU only runs when the GPU is wanted
+        self.device = gpu_support.pick_device(env_use_gpu, probe=env_use_gpu)
+        self.use_gpu = self.device != "cpu"
         
         try:
             val = int(os.getenv("BATCH_SIZE", "0"))
@@ -74,7 +78,7 @@ class ModelManager:
             hub_path = paths.HUB_DIR
         self.downloader = ModelDownloader(hub_path)
         
-        print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Available: {cuda_available}, Configured Batch: {self.batch_size}, Precision Mode: {self.precision_mode})")
+        print(f"ModelManager initialized on {self.device} (Request GPU: {env_use_gpu}, Configured Batch: {self.batch_size}, Precision Mode: {self.precision_mode})")
         self.is_loading_model = False
         self.oom_triggered = False
         self.oom_triggered_count = 0
@@ -88,19 +92,41 @@ class ModelManager:
     def active_model(self, value: Optional[str]):
         self.current_model_id = value
 
+    def _empty_device_cache(self):
+        if self.device == "cuda":
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        elif self.device == "mps":
+            mps = getattr(torch, "mps", None)
+            if mps is not None and hasattr(mps, "empty_cache"):
+                mps.empty_cache()
+
+    @staticmethod
+    def _is_gpu_oom(exc: BaseException) -> bool:
+        if _OOM_TYPES and isinstance(exc, _OOM_TYPES):
+            return True
+        return isinstance(exc, RuntimeError) and "mps backend out of memory" in str(exc).lower()
+
     def get_effective_batch_size(self) -> int:
         """Calculate effective working batch size based on settings and available hardware/model."""
         if self.batch_size > 0:
             return self.batch_size
             
         # batch_size == 0 -> Auto Dynamic Calculation
-        if not self.use_gpu or not torch.cuda.is_available():
+        if not self.use_gpu or self.device == "cpu":
             return 8  # CPU processing default
-            
+
+        model_id = (self.current_model_id or "").lower()
+        is_large_model = "so400m" in model_id or "384" in model_id or "naflex" in model_id
+
+        if self.device == "mps":
+            return 8 if is_large_model else 16
+
+        if not torch.cuda.is_available():
+            return 8  # CPU processing default
+
         try:
             total_vram_mb = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
-            model_id = (self.current_model_id or "").lower()
-            is_large_model = "so400m" in model_id or "384" in model_id or "naflex" in model_id
             
             if total_vram_mb >= 11000:   # 12GB+ GPUs
                 return 32 if is_large_model else 64
@@ -112,6 +138,8 @@ class ModelManager:
             return 16
 
     def check_fp16_support(self) -> bool:
+        if self.device == "mps":
+            return False
         if not torch.cuda.is_available() or not gpu_support.check_cuda().usable:
             return False
         try:
@@ -122,8 +150,13 @@ class ModelManager:
             return False
 
     def get_gpu_name(self) -> str:
+        if self.device == "mps":
+            return gpu_support.check_mps().gpu_name or "N/A"
         if torch.cuda.is_available():
             return torch.cuda.get_device_name(0)
+        mps = gpu_support.check_mps()
+        if mps.usable and mps.gpu_name:
+            return mps.gpu_name
         return "N/A"
 
     def get_active_precision(self) -> str:
@@ -230,8 +263,7 @@ class ModelManager:
                 self.current_model_id = None
                 del old_model
                 del old_processor
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                self._empty_device_cache()
                 gc.collect()
 
             self.is_loading_model = True
@@ -301,14 +333,19 @@ class ModelManager:
         return {"status": "success", "message": f"Precision set to {mode}"}
 
     def set_device(self, use_gpu: bool):
-        """Toggle GPU usage and reload current model if necessary. A card or driver this build can't run
+        """Toggle GPU usage and reload current model if necessary. A GPU this build can't run
         keeps the CPU: the answer then has status "unusable" and the gpu_support code."""
-        check = gpu_support.check_cuda(probe=use_gpu)
-        if use_gpu and not check.usable and check.code:
-            return {"status": "unusable", "code": check.code, "device": self.device,
-                    "message": f"The GPU can't be used ({check.code}): {check.detail}"}
-        new_use_gpu = use_gpu and check.usable
-        new_device = "cuda" if new_use_gpu else "cpu"
+        new_device = gpu_support.pick_device(use_gpu, probe=use_gpu)
+        if use_gpu and new_device == "cpu":
+            cuda_check = gpu_support.check_cuda(probe=True)
+            if cuda_check.code:
+                return {"status": "unusable", "code": cuda_check.code, "device": self.device,
+                        "message": f"The GPU can't be used ({cuda_check.code}): {cuda_check.detail}"}
+            mps_check = gpu_support.check_mps(probe=True)
+            if mps_check.code:
+                return {"status": "unusable", "code": mps_check.code, "device": self.device,
+                        "message": f"The GPU can't be used ({mps_check.code}): {mps_check.detail}"}
+        new_use_gpu = new_device != "cpu"
         
         if self.device == new_device:
             return {"status": "success", "message": f"Device already set to {self.device}", "device": self.device}
@@ -350,8 +387,7 @@ class ModelManager:
             if old_model is not None:
                 del old_model
                 del old_processor
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                self._empty_device_cache()
                 gc.collect()
             print("Model unloaded successfully.")
 
@@ -476,7 +512,7 @@ class ModelManager:
 
         # VRAM Guard: Prevent Windows WDDM from spilling dedicated VRAM allocations into System Shared Memory
         run_singly = False
-        if self.use_gpu and torch.cuda.is_available() and len(items) > 1:
+        if self.use_gpu and self.device == "cuda" and torch.cuda.is_available() and len(items) > 1:
             try:
                 free_bytes, total_bytes = torch.cuda.mem_get_info()
                 reserved_bytes = torch.cuda.memory_reserved()
@@ -488,7 +524,7 @@ class ModelManager:
                 min_free = max(850 * 1024 * 1024, int(total_bytes * 0.15))
 
                 if free_bytes < min_free or usable_free < min_free:
-                    torch.cuda.empty_cache()
+                    self._empty_device_cache()
                     gc.collect()
                     free_bytes, total_bytes = torch.cuda.mem_get_info()
                     reserved_bytes = torch.cuda.memory_reserved()
@@ -520,7 +556,7 @@ class ModelManager:
 
     @torch.no_grad()
     def _embed_chunk(self, model, items: list[PreparedImage], task_context=None) -> list[list[float]]:
-        """Forward one chunk of prepared images; on CUDA OOM, halve recursively (a single item re-raises)."""
+        """Forward one chunk of prepared images; on GPU OOM, halve recursively (a single item re-raises)."""
         try:
             if len(items) == 1:
                 inputs = items[0].inputs
@@ -530,8 +566,8 @@ class ModelManager:
             inputs = {k: v.to(model_device) for k, v in inputs.items()}
 
             active_precision = self.get_active_precision()
-            if active_precision == "fp16" and self.use_gpu:
-                with torch.autocast("cuda", dtype=torch.float16):
+            if active_precision == "fp16" and self.use_gpu and self.device != "cpu":
+                with torch.autocast(self.device, dtype=torch.float16):
                     image_features = model.get_image_features(**inputs)
             else:
                 image_features = model.get_image_features(**inputs)
@@ -547,24 +583,25 @@ class ModelManager:
             image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
             return image_features.cpu().numpy().tolist()
 
-        except torch.cuda.OutOfMemoryError as oom:
+        except (*_OOM_TYPES, RuntimeError) as oom:
+            if not self._is_gpu_oom(oom):
+                raise
             self.oom_triggered = True
             self.oom_triggered_count += 1
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            self._empty_device_cache()
             gc.collect()
 
             if len(items) > 1:
                 mid = len(items) // 2
                 left_len, right_len = mid, len(items) - mid
-                print(f"[OOM Warning] CUDA Out of memory (batch_size={len(items)}). Flushing cache and micro-batching -> ({left_len}, {right_len})...")
+                print(f"[OOM Warning] GPU Out of memory (batch_size={len(items)}). Flushing cache and micro-batching -> ({left_len}, {right_len})...")
                 left_embeds = self.embed_prepared(items[:mid], task_context=task_context)
                 if task_context and not task_context.check_paused_or_cancelled():
                     return left_embeds
                 right_embeds = self.embed_prepared(items[mid:], task_context=task_context)
                 return left_embeds + right_embeds
             else:
-                print(f"[OOM Error] CUDA Out of memory on single item (batch_size=1).")
+                print(f"[OOM Error] GPU Out of memory on single item (batch_size=1).")
                 raise oom
 
     @torch.no_grad()
@@ -628,8 +665,8 @@ class ModelManager:
         inputs = {k: v.to(model_device) for k, v in inputs.items()}
         
         print(f"Inference session (Text) on: {model_device}")
-        if self._text_tower_is_half(model):
-            with torch.autocast("cuda", dtype=torch.float16):
+        if self._text_tower_is_half(model) and device != "cpu":
+            with torch.autocast(device, dtype=torch.float16):
                 text_features = model.get_text_features(**inputs)
         else:
             text_features = model.get_text_features(**inputs)

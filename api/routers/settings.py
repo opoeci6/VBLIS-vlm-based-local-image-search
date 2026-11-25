@@ -19,14 +19,25 @@ def _gpu_problem(check):
         return None
     return {"code": check.code, "gpu_name": check.gpu_name, "capability": check.capability}
 
+def _gpu_backend(cuda_check, mps_check):
+    if cuda_check.usable:
+        return "cuda"
+    if mps_check.usable:
+        return "mps"
+    return None
+
 @router.get("/settings/gpu")
 def get_gpu_settings():
-    check = gpu_support.check_cuda()
+    cuda_check = gpu_support.check_cuda()
+    mps_check = gpu_support.check_mps()
+    backend = _gpu_backend(cuda_check, mps_check)
     return {
         "use_gpu": app_state.model_manager.use_gpu,
-        # False also for a card or driver this PyTorch build can't run; gpu_problem then says why
-        "cuda_available": check.usable,
-        "gpu_problem": _gpu_problem(check),
+        # True when any GPU backend (CUDA or MPS) is usable so the Settings switch works on Macs too;
+        # False also for an NVIDIA card or driver this PyTorch build can't run (gpu_problem then says why)
+        "cuda_available": backend is not None,
+        "gpu_backend": backend,
+        "gpu_problem": _gpu_problem(cuda_check),
         "device": app_state.model_manager.device,
         "batch_size": app_state.model_manager.batch_size,
         "effective_batch_size": app_state.model_manager.get_effective_batch_size(),
@@ -41,12 +52,16 @@ def get_gpu_settings():
 @router.post("/settings/gpu")
 def set_gpu_settings(req: GPUSettingsRequest):
     print(f"Set GPU settings requested: GPU={req.use_gpu}, Batch={req.batch_size}, Precision={req.precision_mode}")
-    if req.use_gpu:
-        check = gpu_support.check_cuda(probe=True)
-        if not check.usable and check.code:
+    if req.use_gpu and gpu_support.pick_device(True, probe=True) == "cpu":
+        cuda_check = gpu_support.check_cuda(probe=True)
+        if cuda_check.code:
             # Nothing changes: the GPU stays off and the settings are not saved
-            return JSONResponse({"detail": f"The GPU can't be used ({check.code}): {check.detail}",
-                                 "code": check.code}, status_code=409)
+            return JSONResponse({"detail": f"The GPU can't be used ({cuda_check.code}): {cuda_check.detail}",
+                                 "code": cuda_check.code}, status_code=409)
+        mps_check = gpu_support.check_mps(probe=True)
+        if mps_check.code:
+            return JSONResponse({"detail": f"The GPU can't be used ({mps_check.code}): {mps_check.detail}",
+                                 "code": mps_check.code}, status_code=409)
     # Set before set_device, so a device switch already reloads the model with the new precision
     app_state.model_manager.precision_mode = req.precision_mode.lower()
     result = app_state.model_manager.set_device(req.use_gpu)

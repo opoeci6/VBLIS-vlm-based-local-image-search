@@ -68,6 +68,38 @@ Open `https://<the server's address>:8080` in a browser, sign in with the owner 
 
 To keep the service running after you log out: `sudo loginctl enable-linger $USER`.
 
+## macOS (Apple Silicon, from source)
+
+Requirements: a Mac with Apple Silicon and macOS 14 or newer. No admin rights, no Xcode and no Homebrew are needed.
+
+In Terminal:
+
+1. Download the source archive and unzip it. Replace `<branch>` with the branch name, for example `main`. GitHub names the unzipped folder after the branch, turning each `/` into `-`.
+
+   ```bash
+   curl -L -o vblis.zip https://github.com/opoeci6/VBLIS-vlm-based-local-image-search/archive/refs/heads/<branch>.zip
+   unzip -q vblis.zip
+   cd VBLIS-vlm-based-local-image-search-*/
+   ```
+
+2. Download `VBLIS-web-<version>.zip` from the latest release.
+3. Install into a private Python environment (downloads a standalone Python 3.11 into `~/.local/share/vblis/python`):
+
+   ```bash
+   bash scripts/install-linux.sh --fetch-python --web-zip /path/to/VBLIS-web-<version>.zip
+   ```
+
+4. Add an owner account, allow your photo folders, and start the server (`serve`), as in [Install on Linux](#install-on-linux).
+5. Open the address it prints. On the Mac itself, open `https://localhost:8080`.
+
+Good to know on macOS:
+- The Apple GPU (Metal / MPS) is used automatically.
+- **Auto** precision runs in fp32 on the Apple GPU (an explicit fp16 choice is still honoured).
+- The macOS firewall may ask whether to allow incoming connections; only other devices on your network need that.
+- Video decoding runs on the CPU.
+- On a shared Mac, start the install command with `PIP_NO_CACHE_DIR=1`, so pip leaves no download cache in `~/Library/Caches/pip`.
+- macOS disks usually ignore upper and lower case in file and folder names, while VBLIS on macOS compares paths exactly.
+
 ## Docker
 
 The `deploy` folder has a `Dockerfile` and a `compose.yml`. The image holds the program only. Your models, the index and the settings live in a folder you mount at `/data`, so you can rebuild the image without losing them.
