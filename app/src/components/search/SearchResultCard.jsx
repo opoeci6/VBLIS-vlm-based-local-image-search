@@ -6,6 +6,7 @@ import { formatTakenDate, formatVideoTimestamp } from '../../utils/formatters';
 import { getMediaPreviewUrl } from '../../utils/media';
 import { API_BASE } from '../../config';
 import { formatScoreLabel, hasScore } from '../../utils/scoreLabel';
+import { cardAnimationDelay } from '../../utils/cardAnimation';
 
 export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSelect, uiTheme = 'modern' }) {
   const { t } = useTranslation('search');
@@ -24,7 +25,7 @@ export const SearchResultCard = memo(function SearchResultCard({ res, idx, onSel
         res.isDuplicate && (isModern ? "ring-2" : "border-2")
       )}
       style={{
-        animationDelay: `${idx * 50}ms`,
+        animationDelay: cardAnimationDelay(idx),
         animationDuration: '400ms',
         boxShadow: isModern && res.isDuplicate ? `0 0 20px -5px ${res.dupeColor}66, 0 0 0 2px ${res.dupeColor}` : undefined
       }}

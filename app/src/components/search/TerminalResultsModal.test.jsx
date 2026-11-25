@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { setNetworkModeForTests } from '../../config';
 import { resetBackToCloseForTests } from '../../hooks/useBackToClose';
 import { resetEscapeKeyForTests, useEscapeKey } from '../../hooks/useEscapeKey';
@@ -203,6 +203,83 @@ describe('TerminalResultsModal', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Search filters' }));
       expect(props.onToggleFilters).toHaveBeenCalledTimes(1);
       expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('progressive video groups', () => {
+    const makeGroups = (n) => Array.from({ length: n }, (_, i) => makeGroup(`v${i}.mp4`));
+
+    it('renders only visibleVideoGroups, keeps total in header badge, and calls onShowMoreVideos on click', () => {
+      const videoGroups = makeGroups(30);
+      const props = makeProps({
+        videoGroups,
+        visibleVideoGroups: videoGroups.slice(0, 24),
+        onShowMoreVideos: vi.fn(),
+      });
+      render(<TerminalResultsModal {...props} />);
+
+      expect(screen.getAllByAltText(/Best matching frame from/)).toHaveLength(24);
+      expect(screen.getByText('v0.mp4')).toBeTruthy();
+      expect(screen.queryByText('v24.mp4')).toBeNull();
+
+      const videoHeader = screen.getByRole('heading', { name: 'Video Results' }).parentElement;
+      expect(within(videoHeader).getByText('30')).toBeTruthy();
+      expect(screen.getByText('32 MATCHES')).toBeTruthy();
+
+      const button = screen.getByRole('button', { name: 'MORE VIDEOS (24 OF 30)' });
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.querySelector('.animate-spin')).toBeNull();
+
+      fireEvent.click(button);
+      expect(props.onShowMoreVideos).toHaveBeenCalledTimes(1);
+      expect(props.handleCloseSearchResults).not.toHaveBeenCalled();
+    });
+
+    it('hides the more videos button when all groups are visible', () => {
+      const videoGroups = makeGroups(30);
+      render(
+        <TerminalResultsModal
+          {...makeProps({
+            videoGroups,
+            visibleVideoGroups: videoGroups,
+            onShowMoreVideos: vi.fn(),
+          })}
+        />
+      );
+
+      expect(screen.getAllByAltText(/Best matching frame from/)).toHaveLength(30);
+      expect(screen.queryByRole('button', { name: /MORE VIDEOS/ })).toBeNull();
+    });
+
+    it('renders every group without a button when visibleVideoGroups is omitted', () => {
+      const videoGroups = makeGroups(30);
+      render(<TerminalResultsModal {...makeProps({ videoGroups })} />);
+
+      expect(screen.getAllByAltText(/Best matching frame from/)).toHaveLength(30);
+      expect(screen.queryByRole('button', { name: /MORE VIDEOS/ })).toBeNull();
+    });
+
+    it('keeps the picture section and its load more button working independently', () => {
+      const videoGroups = makeGroups(30);
+      const props = makeProps({
+        videoGroups,
+        visibleVideoGroups: videoGroups.slice(0, 24),
+        onShowMoreVideos: vi.fn(),
+        imageResults: makeImages(100),
+        visibleResultsCount: 80,
+      });
+      render(<TerminalResultsModal {...props} />);
+
+      expect(screen.getAllByAltText('Result')).toHaveLength(80);
+      const videoBtn = screen.getByRole('button', { name: 'MORE VIDEOS (24 OF 30)' });
+      const imageBtn = screen.getByRole('button', { name: 'LOAD MORE (80 OF 100)' });
+
+      fireEvent.click(imageBtn);
+      expect(props.setVisibleResultsCount).toHaveBeenCalledTimes(1);
+      expect(props.onShowMoreVideos).not.toHaveBeenCalled();
+
+      fireEvent.click(videoBtn);
+      expect(props.onShowMoreVideos).toHaveBeenCalledTimes(1);
     });
   });
 });

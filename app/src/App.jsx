@@ -116,6 +116,8 @@ function App() {
     imageResults,
     visibleImageResults,
     videoGroups,
+    visibleVideoGroups,
+    showMoreVideos,
     expandVideo,
     expandingVideoPath,
     canExpandVideos,
@@ -441,10 +443,10 @@ function App() {
         {models.active_model && !isSearching && query.length === 0 && results.length === 0 && !isSwitchingModel && !showNoMatches && <ReadyToSearch uiTheme={uiTheme} indexedFolders={indexedFolders} models={models} openSettings={openSettings} handleUnloadModel={handleUnloadModel} isUnloadingModel={isUnloadingModel} status={status} />}
 
         {/* In-page results grid for Modern theme */}
-        <SearchResultsGrid results={results} uiTheme={uiTheme} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelRef={sentinelRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} isBrowsing={isBrowsing} browseSort={browseSort} onBrowseSortChange={setBrowseSort} browseTotal={browseTotal} showBrowseHint={showBrowseHint} onDismissBrowseHint={dismissBrowseHint} />
+        <SearchResultsGrid results={results} uiTheme={uiTheme} videoGroups={videoGroups} visibleVideoGroups={visibleVideoGroups} onShowMoreVideos={showMoreVideos} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelRef={sentinelRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} isBrowsing={isBrowsing} browseSort={browseSort} onBrowseSortChange={setBrowseSort} browseTotal={browseTotal} showBrowseHint={showBrowseHint} onDismissBrowseHint={dismissBrowseHint} />
 
         {/* Terminal Modal Console for Terminal theme */}
-        <TerminalResultsModal showSearchResults={showSearchResults} results={results} uiTheme={uiTheme} handleCloseSearchResults={handleCloseSearchResults} imageSearchContext={imageSearchContext} query={query} videoGroups={videoGroups} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelTerminalRef={sentinelTerminalRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} filterChips={filterChips} onClearFilters={clearFilters} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} isBrowsing={isBrowsing} browseSort={browseSort} onBrowseSortChange={setBrowseSort} browseTotal={browseTotal} showBrowseHint={showBrowseHint} onDismissBrowseHint={dismissBrowseHint} />
+        <TerminalResultsModal showSearchResults={showSearchResults} results={results} uiTheme={uiTheme} handleCloseSearchResults={handleCloseSearchResults} imageSearchContext={imageSearchContext} query={query} videoGroups={videoGroups} visibleVideoGroups={visibleVideoGroups} onShowMoreVideos={showMoreVideos} imageResults={imageResults} visibleImageResults={visibleImageResults} visibleResultsCount={visibleResultsCount} setVisibleResultsCount={setVisibleResultsCount} sentinelTerminalRef={sentinelTerminalRef} setSelectedVideoGroup={setSelectedVideoGroup} setSelectedImage={setSelectedImage} filterChips={filterChips} onClearFilters={clearFilters} activeFilterCount={activeFilterCount} filtersOpen={searchFilters.isOpen} onToggleFilters={searchFilters.toggleOpen} isBrowsing={isBrowsing} browseSort={browseSort} onBrowseSortChange={setBrowseSort} browseTotal={browseTotal} showBrowseHint={showBrowseHint} onDismissBrowseHint={dismissBrowseHint} />
       </main>
 
       {/* Background Task Queue Drawer (owner only: a viewer has no queue) */}

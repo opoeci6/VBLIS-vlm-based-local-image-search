@@ -7,7 +7,7 @@ import { BrowseSortToggle } from './BrowseSortToggle';
 import { BrowseHint } from './BrowseHint';
 import { countSearchResults } from '../../utils/searchResults';
 
-export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTheme, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelRef, setSelectedVideoGroup, setSelectedImage, isBrowsing = false, browseSort = 'newest', onBrowseSortChange, browseTotal = null, showBrowseHint = false, onDismissBrowseHint }) {
+export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTheme, videoGroups, visibleVideoGroups = videoGroups, onShowMoreVideos, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelRef, setSelectedVideoGroup, setSelectedImage, isBrowsing = false, browseSort = 'newest', onBrowseSortChange, browseTotal = null, showBrowseHint = false, onDismissBrowseHint }) {
   const { t } = useTranslation('search');
   if (!(results.length > 0 && uiTheme === 'modern')) return null;
 
@@ -42,7 +42,7 @@ export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTh
             </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {videoGroups.map((group, idx) => (
+            {visibleVideoGroups.map((group, idx) => (
               <VideoResultFolder
                 key={group.path}
                 group={group}
@@ -52,6 +52,17 @@ export const SearchResultsGrid = memo(function SearchResultsGrid({ results, uiTh
               />
             ))}
           </div>
+          {videoGroups.length > visibleVideoGroups.length && (
+            <div className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={onShowMoreVideos}
+                className="min-h-10 px-6 py-2.5 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-2xl border border-indigo-200 dark:border-indigo-500/30 transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center gap-2"
+              >
+                <span>{t('grid.showMoreVideos', { shown: visibleVideoGroups.length, total: videoGroups.length })}</span>
+              </button>
+            </div>
+          )}
         </section>
       )}
 

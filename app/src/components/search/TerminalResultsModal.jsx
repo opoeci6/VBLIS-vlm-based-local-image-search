@@ -11,7 +11,7 @@ import { BrowseHint } from './BrowseHint';
 import { ActiveFilterChips } from './filters/ActiveFilterChips';
 import { SearchFiltersButton } from './filters/SearchFiltersButton';
 
-export const TerminalResultsModal = memo(function TerminalResultsModal({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage, filterChips, onClearFilters, activeFilterCount = 0, filtersOpen = false, onToggleFilters, isBrowsing = false, browseSort = 'newest', onBrowseSortChange, browseTotal = null, showBrowseHint = false, onDismissBrowseHint }) {
+export const TerminalResultsModal = memo(function TerminalResultsModal({ showSearchResults, results, uiTheme, handleCloseSearchResults, imageSearchContext, query, videoGroups, visibleVideoGroups = videoGroups, onShowMoreVideos, imageResults, visibleImageResults, visibleResultsCount, setVisibleResultsCount, sentinelTerminalRef, setSelectedVideoGroup, setSelectedImage, filterChips, onClearFilters, activeFilterCount = 0, filtersOpen = false, onToggleFilters, isBrowsing = false, browseSort = 'newest', onBrowseSortChange, browseTotal = null, showBrowseHint = false, onDismissBrowseHint }) {
   const { t } = useTranslation('search');
   const backdropDismiss = useBackdropDismiss(handleCloseSearchResults);
 
@@ -81,7 +81,7 @@ export const TerminalResultsModal = memo(function TerminalResultsModal({ showSea
                 <span className="ml-auto text-xs">{isBrowsing ? sortWords : t('terminal.sortedByBestMatch')}</span>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {videoGroups.map((group, idx) => (
+                {visibleVideoGroups.map((group, idx) => (
                   <VideoResultFolder
                     key={group.path}
                     group={group}
@@ -91,6 +91,17 @@ export const TerminalResultsModal = memo(function TerminalResultsModal({ showSea
                   />
                 ))}
               </div>
+              {videoGroups.length > visibleVideoGroups.length && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={onShowMoreVideos}
+                    className="min-h-10 px-6 py-2.5 bg-black border border-white text-white hover:bg-white hover:text-black font-bold text-xs transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    <span>{t('terminal.showMoreVideos', { shown: visibleVideoGroups.length, total: videoGroups.length })}</span>
+                  </button>
+                </div>
+              )}
             </section>
           )}
 

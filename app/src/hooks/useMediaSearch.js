@@ -10,6 +10,7 @@ import i18n from '../i18n';
 const FILTER_RERUN_DELAY_MS = 250;
 
 export const SEARCH_TUNING_DEFAULTS = { minScore: 0.10, minSimilarity: 0.70, maxResults: 50 };
+export const VIDEO_GROUP_PAGE = 24;
 
 const SEARCH_TUNING_KEY = 'search_tuning';
 
@@ -55,6 +56,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   const [minSimilarity, setMinSimilarity] = useState(savedTuning.minSimilarity);
   const [maxResults, setMaxResults] = useState(savedTuning.maxResults);
   const [visibleResultsCount, setVisibleResultsCount] = useState(80);
+  const [visibleVideoCount, setVisibleVideoCount] = useState(VIDEO_GROUP_PAGE);
   const [imageSearchContext, setImageSearchContext] = useState(null);
   // Sort order of "browse the library" (an empty Search). Not saved across restarts. The ref lets the
   // stable setBrowseSort see the latest value.
@@ -127,6 +129,16 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
   const videoGroups = useMemo(
     () => groupVideoResults(results, expandedFramesByPath),
     [results, expandedFramesByPath]
+  );
+
+  const visibleVideoGroups = useMemo(
+    () => videoGroups.slice(0, visibleVideoCount),
+    [videoGroups, visibleVideoCount]
+  );
+
+  const showMoreVideos = useCallback(
+    () => setVisibleVideoCount(n => n + VIDEO_GROUP_PAGE),
+    []
   );
 
   const queryRef = searchInfo?.queryRef ?? null;
@@ -245,7 +257,10 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     const seq = beginSearch(sameSearch);
     setIsSearching(true);
     try {
-      if (await postBrowse(sort, seq) && resetVisible) setVisibleResultsCount(80);
+      if (await postBrowse(sort, seq) && resetVisible) {
+        setVisibleResultsCount(80);
+        setVisibleVideoCount(VIDEO_GROUP_PAGE);
+      }
     } catch (err) {
       console.error(err);
       if (seq === searchSeq.current) onFailure();
@@ -284,6 +299,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     setHasSearched(true);
     setImageSearchContext(null);
     setVisibleResultsCount(80);
+    setVisibleVideoCount(VIDEO_GROUP_PAGE);
     setBrowseHintDismissed(false);
     setQuery('');
     lastTextSearchBody.current = null;
@@ -310,6 +326,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     setHasSearched(true);
     setImageSearchContext(null);
     setVisibleResultsCount(80);
+    setVisibleVideoCount(VIDEO_GROUP_PAGE);
     const body = { query, top_k: parseInt(maxResults) === 0 ? 20000 : parseInt(maxResults), min_score: parseFloat(minScore) };
     lastTextSearchBody.current = body;
     try {
@@ -335,6 +352,7 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     setHasSearched(true);
     setImageSearchContext(file.name);
     setVisibleResultsCount(80);
+    setVisibleVideoCount(VIDEO_GROUP_PAGE);
     setQuery('');
 
     try {
@@ -603,6 +621,8 @@ export const useMediaSearch = ({ setToast, onSearchStart, onClose, filters = nul
     imageResults,
     visibleImageResults,
     videoGroups,
+    visibleVideoGroups,
+    showMoreVideos,
     queryRef,
     expandVideo,
     expandingVideoPath,
