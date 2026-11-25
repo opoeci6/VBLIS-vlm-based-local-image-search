@@ -484,14 +484,22 @@ describe('App in a browser', () => {
       expect(calls).toContain('GET /fs/roots');
     });
 
-    it('offers image search by drop and says folders cannot be dropped', async () => {
+    it('offers image search by drop and opens the folder picker for a dropped folder', async () => {
       const { container } = renderApp(sessionInfo('owner'));
       await screen.findByText('Ready to Search');
       fireEvent.dragOver(container.firstChild, { dataTransfer: { types: ['Files'], files: [] } });
       expect(await screen.findByText('Drop an image to search')).toBeTruthy();
 
       fireEvent.drop(container.firstChild, { dataTransfer: { types: ['Files'], files: [{ name: 'photos', type: '' }] } });
-      expect(await screen.findByText("Folders can't be dropped into a browser. Use the Add Folder(s) button instead.")).toBeTruthy();
+      const dialog = await screen.findByRole('dialog', { name: 'Add folders from the server' });
+      expect(within(dialog).getByRole('note').textContent).toMatch(/^You dropped “photos”\./);
+      expect(calls).toContain('GET /fs/roots');
+
+      // Add Folder(s) opens it again without the note
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      fireEvent.click(screen.getByText('Add Folder(s)'));
+      const again = await screen.findByRole('dialog', { name: 'Add folders from the server' });
+      expect(within(again).queryByRole('note')).toBeNull();
     });
   });
 

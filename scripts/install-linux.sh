@@ -253,7 +253,9 @@ Installed. Next steps:
   1. Add an owner account (it asks for the password twice). You can add viewers now or later in the browser:
        ${RUN[*]} add-account NAME --role owner
        ${RUN[*]} add-account NAME --role viewer
-  2. Allow the folders browsers may index:
+  2. Keep the server on this Mac so Add folders in the browser reaches your folders and drives:
+       ${RUN[*]} set host 127.0.0.1
+     Or, to use it from other devices, allow the folders browsers may index:
        ${RUN[*]} add-library-folder /path/to/photos
   3. HTTPS is on, with a certificate the server makes itself; browsers warn on the first visit.
      Other choices (your own certificate, a reverse proxy) are in SERVER.md. Plain HTTP, only on a

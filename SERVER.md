@@ -24,7 +24,7 @@ In **Manage accounts**, a change that gives someone access (adding an account, a
 
 Original files keep the location data the camera wrote. So a viewer with **Originals** on can still read where a photo was taken from a downloaded file, even with **Places** off.
 
-A browser can only index folders inside the **library folders** you list in the server settings, so nobody can reach other folders through the browser.
+A browser can only index folders inside the **library folders** you list in the server settings, so nobody can reach other folders through the browser. When the server listens only on this computer (`set host 127.0.0.1`) and you open it there as `localhost`, the owner's **Add folders** shows the home folder, connected drives and the whole disk, and can add any folder; through a proxy, another address or another device, only the library folders apply. Plainly: an owner session used on this computer (an SSH tunnel counts) can index any folder the server can read.
 
 ## Share from the Windows app
 
@@ -89,10 +89,12 @@ In Terminal:
    bash scripts/install-linux.sh --fetch-python --web-zip /path/to/VBLIS-web-<version>.zip
    ```
 
-4. Add an owner account, allow your photo folders, and start the server (`serve`), as in [Install on Linux](#install-on-linux).
+4. Add an owner account, choose where the server listens, and start it (`serve`), as in [Install on Linux](#install-on-linux). For a Mac you use yourself, run `vblis set host 127.0.0.1` instead of `add-library-folder`: it keeps the server on this Mac and lets **Add folders** reach your folders and drives directly. To open it from other devices on your network, skip `set host` and allow folders with `add-library-folder`.
 5. Open the address it prints. On the Mac itself, open `https://localhost:8080`.
 
 Good to know on macOS:
+- macOS asks before Terminal may read Desktop, Documents, Downloads or a USB drive; click **Allow**, or allow Terminal in **System Settings → Privacy & Security → Files and Folders**.
+- A harmless `objc[...] Class AVFFrameReceiver is implemented in both ...` warning appears at start (PyAV and OpenCV each bundle FFmpeg's device library; VBLIS doesn't use it).
 - The Apple GPU (Metal / MPS) is used automatically.
 - **Auto** precision runs in fp32 on the Apple GPU (an explicit fp16 choice is still honoured).
 - The macOS firewall may ask whether to allow incoming connections; only other devices on your network need that.

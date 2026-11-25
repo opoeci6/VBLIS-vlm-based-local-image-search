@@ -229,6 +229,129 @@ describe('FolderPickerModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Up' }));
     await waitFor(() => expect(fetchMock.mock.calls.map(([url]) => decodeURIComponent(String(url)))).toContain('http://127.0.0.1:8000/fs/list?path=D:\\Photos'));
   });
+
+  it('keeps the non-local view unchanged when local is false and kind is library', async () => {
+    routes['/fs/roots'] = () => reply({
+      local: false,
+      roots: [{ path: '/lib/photos', name: 'photos', kind: 'library', available: true }],
+    });
+    renderPicker();
+    expect(await screen.findByRole('dialog', { name: 'Add folders from the server' })).toBeTruthy();
+    expect(screen.getByText('Choose folders on the server to add to the library.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Library folders' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open photos' })).toBeTruthy();
+  });
+
+  it('shows local title, labels by kind, and path lines when on this computer', async () => {
+    routes['/fs/roots'] = () => reply({
+      local: true,
+      roots: [
+        { path: '/Users/alice', name: 'alice', kind: 'home', available: true },
+        { path: '/Volumes/USB', name: 'USB', kind: 'volume', available: true },
+        { path: '/', name: '/', kind: 'disk', available: true },
+        { path: '/srv/shared', name: 'shared', kind: 'library', available: true },
+      ],
+    });
+    routes['/fs/list'] = (path) => {
+      if (path === '/Users/alice') {
+        return reply({
+          path: '/Users/alice',
+          root: '/Users/alice',
+          parent: null,
+          indexed: false,
+          folders: [{ name: 'Pictures', path: '/Users/alice/Pictures', indexed: false }],
+          skipped: 0,
+          truncated: false,
+        });
+      }
+      if (path === '/Users/alice/Pictures') {
+        return reply({
+          path: '/Users/alice/Pictures',
+          root: '/Users/alice',
+          parent: '/Users/alice',
+          indexed: false,
+          folders: [],
+          skipped: 0,
+          truncated: false,
+        });
+      }
+      return reply({
+        path: '/',
+        root: '/',
+        parent: null,
+        indexed: false,
+        folders: [],
+        skipped: 0,
+        truncated: false,
+      });
+    };
+
+    renderPicker();
+    expect(await screen.findByRole('dialog', { name: 'Add folders from this computer' })).toBeTruthy();
+    expect(screen.getByText('Choose folders on this computer to add to the library.')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'This computer' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'This computer' })).toBeTruthy();
+
+    expect(screen.getByRole('button', { name: 'Open Home folder' })).toBeTruthy();
+    expect(screen.getByText('/Users/alice')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open USB' })).toBeTruthy();
+    expect(screen.getByText('/Volumes/USB')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open Entire disk' })).toBeTruthy();
+    expect(screen.getByText('/')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open shared' })).toBeTruthy();
+    expect(screen.getByText('/srv/shared')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Home folder' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Pictures' }));
+    await screen.findByText('No subfolders here.');
+    expect(screen.getByRole('navigation').textContent).toContain('Home folder');
+    expect(screen.getByRole('navigation').textContent).toContain('Pictures');
+
+    fireEvent.click(screen.getByRole('button', { name: 'This computer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Entire disk' }));
+    await screen.findByText('No subfolders here.');
+    expect(screen.getByRole('navigation').textContent).toContain('Entire disk');
+  });
+
+  it('shows friendly messages for macos_privacy and no_permission error codes', async () => {
+    routes['/fs/list'] = () => reply({ detail: 'Raw detail', code: 'macos_privacy' }, 403);
+    renderPicker();
+    fireEvent.click(await screen.findByRole('button', { name: 'Open photos' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/macOS didn't let VBLIS read this folder/);
+
+    routes['/fs/list'] = () => reply({ detail: 'Raw detail', code: 'no_permission' }, 403);
+    fireEvent.click(screen.getByRole('button', { name: 'Library folders' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open photos' }));
+    expect((await screen.findByRole('alert')).textContent).toBe("The server isn't allowed to read this folder.");
+  });
+
+  describe('opened by dropping folders onto the page', () => {
+    it('names the dropped folders and keeps the note while browsing', async () => {
+      renderPicker({ droppedNames: ['Trip 2024', 'photos'] });
+      const note = await screen.findByRole('note');
+      expect(note.textContent).toBe(
+        "You dropped “Trip 2024” and “photos”. A browser doesn't tell VBLIS where a dropped folder is, so find it below and tick it.",
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Open photos' }));
+      await screen.findByText('Add this folder');
+      expect(screen.getByRole('note')).toBe(note);
+    });
+
+    it('explains without names when the browser gave none, or more than three', async () => {
+      const generic = "A browser doesn't tell VBLIS where a dropped folder is, so find it below and tick it.";
+      renderPicker({ droppedNames: [] });
+      expect((await screen.findByRole('note')).textContent).toBe(generic);
+      cleanup();
+      renderPicker({ droppedNames: ['a', 'b', 'c', 'd'] });
+      expect((await screen.findByRole('note')).textContent).toBe(generic);
+    });
+
+    it('shows no note when opened with the Add Folder(s) button', async () => {
+      renderPicker();
+      await screen.findByRole('button', { name: 'Open photos' });
+      expect(screen.queryByRole('note')).toBeNull();
+    });
+  });
 });
 
 // jsdom runs history traversals asynchronously and fires popstate, like a browser: wait for them to land.

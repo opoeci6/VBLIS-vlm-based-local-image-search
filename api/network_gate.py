@@ -102,7 +102,7 @@ def scan_web_dir(web_dir) -> dict:
 
 class NetworkGate:
     def __init__(self, app, route_table, store, web_dir=None, port=8080, hostname=None, limiter=None, log=print,
-                 require_owner=True, confirmations=None, challenges=None):
+                 require_owner=True, confirmations=None, challenges=None, loopback_only=False):
         self.app = app
         self.route_table = dict(route_table)
         self.store = store
@@ -113,6 +113,7 @@ class NetworkGate:
         self.require_owner = require_owner
         self.confirmations = confirmations if confirmations is not None else RecentConfirmations()
         self.challenges = challenges if challenges is not None else ChallengeStore()
+        self.loopback_only = bool(loopback_only)
         self._default_names = netaddr.default_host_names(socket.gethostname() if hostname is None else hostname)
         self._parsed_proxies = ((), ())
         self._parsed_local = ((), ())
@@ -202,7 +203,8 @@ class NetworkGate:
             send = self._secured(send, ())
 
         # 1. Proxies
-        if any(name in headers for name in netaddr.FORWARDED_HEADERS):
+        has_proxy = any(name in headers for name in netaddr.FORWARDED_HEADERS)
+        if has_proxy:
             trusted = self._proxies(config)
             if not netaddr.in_networks(peer, trusted):
                 self.log(f"[Network] Refused {peer}: proxy headers from an address not in trusted_proxies")
@@ -253,7 +255,21 @@ class NetworkGate:
         if not is_api:
             await self._serve_static(scope, receive, send)
             return
-        await self._serve_api(scope, receive, send, headers, config, client, scheme, locality or ratelimit.PUBLIC)
+        parsed_host = netaddr.split_host(headers.get("host"))
+        host_is_loopback = (
+            parsed_host is not None
+            and (parsed_host[0] == "localhost" or netaddr.is_loopback_client(parsed_host[0]))
+        )
+        on_this_computer = (
+            self.loopback_only
+            and not has_proxy
+            and netaddr.is_loopback_client(peer)
+            and host_is_loopback
+        )
+        await self._serve_api(
+            scope, receive, send, headers, config, client, scheme, locality or ratelimit.PUBLIC,
+            on_this_computer=on_this_computer,
+        )
 
     async def _serve_static(self, scope, receive, send):
         request_headers = Headers(scope=scope)
@@ -287,7 +303,8 @@ class NetworkGate:
                                 headers=response_headers)
         await response(scope, receive, send)
 
-    async def _serve_api(self, scope, receive, send, headers, config, client, scheme, sign_in_group):
+    async def _serve_api(self, scope, receive, send, headers, config, client, scheme, sign_in_group,
+                         on_this_computer=False):
         method = scope["method"]
         sub_path = scope["path"][len(API_PREFIX):] or "/"
         child = dict(scope)
@@ -325,7 +342,8 @@ class NetworkGate:
             account = config.account_by_id(session.account_id)
             if account is not None:
                 grants = account.grants if account.role == VIEWER else frozenset()
-                auth = Auth(account.role, NETWORK, frozenset(grants), client, account.id, account.name)
+                auth = Auth(account.role, NETWORK, frozenset(grants), client, account.id, account.name,
+                            on_this_computer=on_this_computer)
         child[NET_SCOPE_KEY] = NetRequest(client, scheme, cookie_name, self.store, self.limiter,
                                           self.require_owner, session if auth is not None else None,
                                           self.confirmations, sign_in_group, self.challenges)

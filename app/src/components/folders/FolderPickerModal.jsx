@@ -11,6 +11,19 @@ import { cn } from '../../utils/cn';
 const sepOf = (path) => (path.includes('\\') && !path.includes('/') ? '\\' : '/');
 const lastSegment = (path) => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
 
+const rootLabel = (t, root) => {
+  const kind = root?.kind || 'library';
+  if (kind === 'home') return t('picker.home');
+  if (kind === 'disk') return t('picker.disk');
+  return root?.name;
+};
+
+const errorText = (t, result) => {
+  if (result.errorCode === 'macos_privacy') return t('picker.macosPrivacy');
+  if (result.errorCode === 'no_permission') return t('picker.noPermission');
+  return result.error || t('picker.readFailed');
+};
+
 // The path from the library folder down to the folder being listed: [{ name, path }, ...].
 const buildCrumbs = (listing, rootName) => {
   const rootTrimmed = listing.root.replace(/[\\/]+$/, '');
@@ -51,16 +64,31 @@ function Checkbox({ checked, disabled, label, onToggle }) {
   );
 }
 
+// The note shown when dropping folders onto the page opened the picker: a browser gives their names, never where they are.
+const droppedText = (t, language, names) => {
+  if (names.length === 0 || names.length > 3) return t('picker.droppedUnnamed');
+  const quoted = names.map((name) => `“${name}”`);
+  let list;
+  try {
+    list = new Intl.ListFormat(language, { type: 'conjunction' }).format(quoted);
+  } catch {
+    list = quoted.join(', ');
+  }
+  return t('picker.droppedNamed', { names: list });
+};
+
 // Picks folders on the server (network mode, owner). `onConfirm(paths)` queues them for indexing and
-// resolves to something truthy when they were queued, which closes the picker.
-export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
-  const { t } = useTranslation('folders');
+// resolves to something truthy when they were queued, which closes the picker. `droppedNames`: the picker
+// was opened by dropping these folders onto the page (an empty list when the browser gave no names).
+export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern', droppedNames = null }) {
+  const { t, i18n } = useTranslation('folders');
   const backdropDismiss = useBackdropDismiss(onClose);
   // null shows the library folders (the roots); a path shows that folder.
   const [location, setLocation] = useState(null);
   // The last answer: { location, roots | listing | error }. It is loading until it matches `location`.
   const [result, setResult] = useState(null);
   const [roots, setRoots] = useState([]);
+  const [local, setLocal] = useState(false);
   const [selected, setSelected] = useState([]);
   const [isAdding, setIsAdding] = useState(false);
 
@@ -75,17 +103,24 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
         const res = await apiFetch(url);
         const data = await res.json().catch(() => null);
         if (!res.ok) {
-          outcome = { location, error: typeof data?.detail === 'string' && data.detail ? data.detail : null };
+          outcome = {
+            location,
+            error: typeof data?.detail === 'string' && data.detail ? data.detail : null,
+            errorCode: typeof data?.code === 'string' ? data.code : null,
+          };
         } else if (location === null) {
-          outcome = { location, roots: Array.isArray(data?.roots) ? data.roots : [] };
+          outcome = { location, local: Boolean(data?.local), roots: Array.isArray(data?.roots) ? data.roots : [] };
         } else {
           outcome = { location, listing: data };
         }
       } catch {
-        outcome = { location, error: null };
+        outcome = { location, error: null, errorCode: null };
       }
       if (cancelled) return;
-      if (outcome.roots) setRoots(outcome.roots);
+      if (outcome.roots) {
+        setRoots(outcome.roots);
+        setLocal(outcome.local);
+      }
       setResult(outcome);
     })();
     return () => { cancelled = true; };
@@ -101,8 +136,8 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
   const crumbs = useMemo(() => {
     if (!listing) return [];
     const root = roots.find((item) => item.path === listing.root);
-    return buildCrumbs(listing, root?.name || lastSegment(listing.root));
-  }, [listing, roots]);
+    return buildCrumbs(listing, root ? rootLabel(t, root) : lastSegment(listing.root));
+  }, [listing, roots, t]);
 
   const isSelected = (path) => selected.includes(path);
   const toggle = (path) => setSelected((prev) => (prev.includes(path) ? prev.filter((item) => item !== path) : [...prev, path]));
@@ -176,7 +211,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t('picker.title')}
+        aria-label={local ? t('picker.titleLocal') : t('picker.title')}
         className={cn(
           'w-full sm:w-[640px] max-w-full h-dvh sm:h-auto sm:max-h-[85dvh] pt-safe pb-safe px-safe sm:p-0 flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200',
           modern
@@ -187,8 +222,8 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
       >
         <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-neutral-800 flex items-start justify-between gap-4 bg-gray-50/50 dark:bg-neutral-900/50">
           <div className="min-w-0">
-            <h2 className="text-xl font-bold text-neutral-900 dark:text-white">{t('picker.title')}</h2>
-            <p className="text-xs text-neutral-500 mt-1">{t('picker.subtitle')}</p>
+            <h2 className="text-xl font-bold text-neutral-900 dark:text-white">{local ? t('picker.titleLocal') : t('picker.title')}</h2>
+            <p className="text-xs text-neutral-500 mt-1">{local ? t('picker.subtitleLocal') : t('picker.subtitle')}</p>
           </div>
           <button
             type="button"
@@ -202,7 +237,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
         </div>
 
         <nav
-          aria-label={t('picker.roots')}
+          aria-label={local ? t('picker.thisComputer') : t('picker.roots')}
           className="px-4 sm:px-5 py-2.5 border-b border-gray-100 dark:border-neutral-800 flex items-center gap-1.5 flex-wrap text-xs"
         >
           <button
@@ -220,7 +255,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
             disabled={location === null}
             className="px-1.5 py-1 max-sm:min-h-10 font-bold cursor-pointer disabled:cursor-default"
           >
-            {t('picker.roots')}
+            {local ? t('picker.thisComputer') : t('picker.roots')}
           </button>
           {crumbs.map((crumb, index) => (
             <span key={crumb.path} className="inline-flex items-center gap-1 sm:gap-1.5 min-w-0">
@@ -237,6 +272,14 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
         </nav>
 
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2 custom-scrollbar">
+          {droppedNames && (
+            <div
+              className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 text-xs text-indigo-800 dark:text-indigo-200"
+              role="note"
+            >
+              {droppedText(t, i18n.language, droppedNames)}
+            </div>
+          )}
           {isLoading ? (
             <div className="flex items-center justify-center gap-3 py-16 text-neutral-500" role="status">
               <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" aria-hidden="true" />
@@ -245,7 +288,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
           ) : hasError ? (
             <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2" role="alert">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
-              <span>{result.error || t('picker.readFailed')}</span>
+              <span>{errorText(t, result)}</span>
             </div>
           ) : location === null ? (
             roots.length === 0 ? (
@@ -257,7 +300,7 @@ export function FolderPickerModal({ onClose, onConfirm, uiTheme = 'modern' }) {
                 </p>
               </div>
             ) : (
-              roots.map((root) => renderRow({ key: root.path, path: root.path, name: root.name, unavailable: !root.available }))
+              roots.map((root) => renderRow({ key: root.path, path: root.path, name: rootLabel(t, root), unavailable: !root.available }))
             )
           ) : (
             <>

@@ -81,7 +81,8 @@ def check_index_target(auth, path) -> str:
     """The canonical form of a folder a client wants indexed or re-synced. On the desktop any
     folder is accepted, as before: the person at this PC can read it anyway. From the network it
     must be absolute and lie in a library folder from the server settings, or in a folder that is
-    already indexed, also once links are resolved."""
+    already indexed, also once links are resolved; when the request is from an owner on this
+    computer, any other absolute folder resolves links (realpath) so serving its files later works."""
     if not isinstance(path, str) or not path.strip() or "\0" in path:
         raise HTTPException(status_code=400, detail="Invalid folder path.")
     if auth is None or not auth.is_network:
@@ -93,6 +94,8 @@ def check_index_target(auth, path) -> str:
     for root in allowed:
         if is_within(normalized, [root]) and real_path_inside(normalized, [root]):
             return normalized
+    if auth.on_this_computer:
+        return os.path.realpath(normalized)
     raise HTTPException(status_code=403, detail="This folder is outside the library folders set on the server.")
 
 

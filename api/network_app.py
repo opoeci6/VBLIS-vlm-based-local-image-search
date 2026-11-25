@@ -8,6 +8,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import netaddr
 import ratelimit
 import replica
 import security
@@ -116,8 +117,14 @@ def build_core_app() -> FastAPI:
     return app
 
 
+def _is_loopback_host(host) -> bool:
+    if not isinstance(host, str):
+        return False
+    return host.strip().lower() == "localhost" or netaddr.is_loopback_client(host)
+
+
 def build_network_app(store, web_dir=None, port=8080, hostname=None, limiter=None, log=print,
-                      require_owner=True, confirmations=None) -> NetworkGate:
+                      require_owner=True, confirmations=None, listen_host=None) -> NetworkGate:
     """require_owner=False when the desktop app shares (see NetworkListener). `confirmations` remembers
     password confirmations in the Accounts window; a new gate starts with an empty one."""
     return NetworkGate(
@@ -131,4 +138,5 @@ def build_network_app(store, web_dir=None, port=8080, hostname=None, limiter=Non
         log=log,
         require_owner=require_owner,
         confirmations=confirmations,
+        loopback_only=_is_loopback_host(listen_host),
     )

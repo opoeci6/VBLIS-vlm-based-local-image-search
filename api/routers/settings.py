@@ -1,3 +1,4 @@
+import sys
 from typing import Literal
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -14,10 +15,10 @@ class GPUSettingsRequest(BaseModel):
     precision_mode: Literal["auto", "fp16", "fp32"] = "auto"
 
 def _gpu_problem(check):
-    """Why a present NVIDIA GPU isn't used (Settings explains it), or None."""
+    """Why a present GPU isn't used (Settings explains it), or None."""
     if check.code is None:
         return None
-    return {"code": check.code, "gpu_name": check.gpu_name, "capability": check.capability}
+    return {"code": check.code, "gpu_name": check.gpu_name, "capability": getattr(check, "capability", None)}
 
 def _gpu_backend(cuda_check, mps_check):
     if cuda_check.usable:
@@ -31,13 +32,15 @@ def get_gpu_settings():
     cuda_check = gpu_support.check_cuda()
     mps_check = gpu_support.check_mps()
     backend = _gpu_backend(cuda_check, mps_check)
+    is_apple = sys.platform == "darwin"
     return {
         "use_gpu": app_state.model_manager.use_gpu,
         # True when any GPU backend (CUDA or MPS) is usable so the Settings switch works on Macs too;
         # False also for an NVIDIA card or driver this PyTorch build can't run (gpu_problem then says why)
         "cuda_available": backend is not None,
         "gpu_backend": backend,
-        "gpu_problem": _gpu_problem(cuda_check),
+        "gpu_family": "apple" if is_apple else "nvidia",
+        "gpu_problem": _gpu_problem(mps_check if is_apple else cuda_check),
         "device": app_state.model_manager.device,
         "batch_size": app_state.model_manager.batch_size,
         "effective_batch_size": app_state.model_manager.get_effective_batch_size(),

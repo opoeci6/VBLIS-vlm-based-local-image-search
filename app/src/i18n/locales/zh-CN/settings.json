@@ -139,11 +139,22 @@
       "unsupportedGpu": "此版本的 VBLIS 不支持 {{name}}（{{capability}}），因此使用 CPU 运行。GPU 加速需要 GeForce GTX 16 或 RTX 20 系列及更新的显卡。",
       "unsupportedGpuUnnamed": "此版本的 VBLIS 不支持这块 NVIDIA GPU，因此使用 CPU 运行。GPU 加速需要 GeForce GTX 16 或 RTX 20 系列及更新的显卡。",
       "driverTooOld": "请将 NVIDIA 驱动程序更新到 580 或更高版本以使用 GPU。在此之前，VBLIS 使用 CPU 运行。",
-      "cudaFailed": "无法启动 NVIDIA GPU，因此 VBLIS 使用 CPU 运行。更新 NVIDIA 驱动程序可能会有帮助。"
+      "cudaFailed": "无法启动 NVIDIA GPU，因此 VBLIS 使用 CPU 运行。更新 NVIDIA 驱动程序可能会有帮助。",
+      "mpsFailed": "无法启动 Apple GPU，因此 VBLIS 使用 CPU 运行。"
     },
     "gpuDisable": "停用 NVIDIA GPU 支持",
     "gpuEnable": "启用 NVIDIA GPU 支持",
     "cudaRequired": "GPU 加速需要支持 CUDA 的 GPU。",
+    "apple": {
+      "gpuSupport": "Apple GPU（Metal）",
+      "gpuUsing": "正在使用 Apple GPU",
+      "gpuNotDetected": "未找到可用的 Apple GPU",
+      "gpuUnusableUnnamed": "无法使用 Apple GPU",
+      "gpuEnable": "启用 Apple GPU 加速",
+      "gpuDisable": "停用 Apple GPU 加速",
+      "required": "在 Mac 上使用 GPU 加速需要 Apple 芯片（M1 或更新）。",
+      "precisionAuto": "在 Apple GPU 上，自动模式使用 FP32"
+    },
     "batchSize": {
       "title": "批大小",
       "auto": "自动",
