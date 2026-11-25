@@ -6,6 +6,7 @@ import { formatTakenDate } from '../../utils/formatters';
 import { getMediaPreviewUrl, prewarmVideoGroup } from '../../utils/media';
 import { API_BASE } from '../../config';
 import { formatScorePercent, hasScore } from '../../utils/scoreLabel';
+import { cardAnimationDelay } from '../../utils/cardAnimation';
 
 export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, onSelect, uiTheme = 'modern' }) {
   const { t } = useTranslation('search');
@@ -25,7 +26,7 @@ export const VideoResultFolder = memo(function VideoResultFolder({ group, idx, o
           : "border border-white bg-black focus:ring-2 focus:ring-white"
       )}
       style={{
-        animationDelay: `${idx * 50}ms`,
+        animationDelay: cardAnimationDelay(idx),
         animationDuration: '400ms'
       }}
       onMouseEnter={() => prewarmVideoGroup(API_BASE, group)}

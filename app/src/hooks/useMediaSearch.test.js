@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useMediaSearch, SEARCH_TUNING_DEFAULTS } from './useMediaSearch';
+import { useMediaSearch, SEARCH_TUNING_DEFAULTS, VIDEO_GROUP_PAGE } from './useMediaSearch';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -2050,6 +2050,133 @@ describe('useMediaSearch', () => {
       act(() => { result.current.setMinScore(0.5); });
       rerender();
       expect(result.current.resetSearchTuning).toBe(first);
+    });
+  });
+
+  describe('progressive video groups', () => {
+    const makeVideos = (count) => Array.from({ length: count }, (_, i) => (
+      videoHit(`/videos/v${i}.mp4`, 5, 0.95 - i * 0.001)
+    ));
+
+    const makeLibraryVideos = (count) => Array.from({ length: count }, (_, i) => ({
+      path: `/videos/lib${i}.mp4`,
+      media_type: 'video',
+      timestamp_seconds: 5,
+      score: null,
+      score_kind: 'none',
+      taken_at: '2024-03-12T10:00:00',
+    }));
+
+    it('exports VIDEO_GROUP_PAGE = 24 and shows 24 video groups after a search', async () => {
+      expect(VIDEO_GROUP_PAGE).toBe(24);
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeVideos(60), query_ref: 'ref-v' }));
+      const { result } = render();
+      await submit(result, 'videos');
+      await runSearch(result);
+
+      expect(result.current.videoGroups).toHaveLength(60);
+      expect(result.current.visibleVideoGroups).toHaveLength(24);
+      expect(result.current.visibleVideoGroups).toEqual(result.current.videoGroups.slice(0, 24));
+    });
+
+    it('showMoreVideos advances 24 -> 48 -> 60 and stays at 60 on another call', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeVideos(60), query_ref: 'ref-v' }));
+      const { result } = render();
+      await submit(result, 'videos');
+      await runSearch(result);
+
+      expect(result.current.visibleVideoGroups).toHaveLength(24);
+      act(() => result.current.showMoreVideos());
+      expect(result.current.visibleVideoGroups).toHaveLength(48);
+      act(() => result.current.showMoreVideos());
+      expect(result.current.visibleVideoGroups).toHaveLength(60);
+      act(() => result.current.showMoreVideos());
+      expect(result.current.visibleVideoGroups).toHaveLength(60);
+    });
+
+    it('resets back to 24 on a new text search, an image search and a browse', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeVideos(60), query_ref: 'ref-1' }));
+      const { result } = render();
+      await submit(result, 'first');
+      await runSearch(result);
+      act(() => result.current.showMoreVideos());
+      expect(result.current.visibleVideoGroups).toHaveLength(48);
+
+      // New text search resets to 24.
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeVideos(60), query_ref: 'ref-2' }));
+      await submit(result, 'second');
+      await runSearch(result);
+      expect(result.current.visibleVideoGroups).toHaveLength(24);
+
+      // Image search resets to 24.
+      act(() => result.current.showMoreVideos());
+      expect(result.current.visibleVideoGroups).toHaveLength(48);
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeVideos(60), query_ref: 'img-ref' }));
+      await act(async () => {
+        await result.current.handleImageDrop(new File(['x'], 'cat.png', { type: 'image/png' }));
+      });
+      expect(result.current.visibleVideoGroups).toHaveLength(24);
+
+      // Browse (empty query) resets to 24.
+      act(() => result.current.showMoreVideos());
+      expect(result.current.visibleVideoGroups).toHaveLength(48);
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeLibraryVideos(60), total: 60 }));
+      await runSearch(result);
+      expect(result.current.isBrowsing).toBe(true);
+      expect(result.current.visibleVideoGroups).toHaveLength(24);
+    });
+
+    it('resets back to 24 when a browse sort change resets the picture count', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeLibraryVideos(60), total: 60 }));
+      const { result } = render();
+      await runSearch(result);
+      act(() => {
+        result.current.setVisibleResultsCount(160);
+        result.current.showMoreVideos();
+      });
+      expect(result.current.visibleResultsCount).toBe(160);
+      expect(result.current.visibleVideoGroups).toHaveLength(48);
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeLibraryVideos(60), total: 60 }));
+      await act(async () => { result.current.setBrowseSort('oldest'); });
+      expect(result.current.visibleResultsCount).toBe(80);
+      expect(result.current.visibleVideoGroups).toHaveLength(24);
+    });
+
+    it('keeps the visible video count when expanding a video with "Find more frames"', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeVideos(60), query_ref: 'ref-v' }));
+      const { result } = render();
+      await submit(result, 'videos');
+      await runSearch(result);
+      act(() => result.current.showMoreVideos());
+      expect(result.current.visibleVideoGroups).toHaveLength(48);
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({
+        path: '/videos/v0.mp4',
+        frames: [
+          { ...videoHit('/videos/v0.mp4', 5, 0.95), id: 'f0' },
+          { ...videoHit('/videos/v0.mp4', 15, 0.85), id: 'f1' },
+        ],
+        total_frames: 2,
+      }));
+      await act(async () => { await result.current.expandVideo('/videos/v0.mp4'); });
+
+      expect(result.current.videoGroups[0].isExpanded).toBe(true);
+      expect(result.current.visibleVideoGroups).toHaveLength(48);
+    });
+
+    it('keeps showMoreVideos identity stable across re-renders', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ results: makeVideos(60), query_ref: 'ref-v' }));
+      const { result, rerender } = render();
+      const first = result.current.showMoreVideos;
+
+      await submit(result, 'videos');
+      await runSearch(result);
+      act(() => result.current.showMoreVideos());
+      act(() => result.current.setQuery('other'));
+      rerender();
+
+      expect(result.current.showMoreVideos).toBe(first);
     });
   });
 });

@@ -34,6 +34,7 @@
     "itemCount_other": "{{count}} items",
     "sortedByBestMatch": "Sorted by best match",
     "loadingMore": "Loading more results ({{shown}} of {{total}})",
+    "showMoreVideos": "Show more videos ({{shown}} of {{total}})",
     "showingItems": "Showing {{shown}} of {{total}} items",
     "showingMatches": "Showing {{shown}} of {{total}} matches"
   },
@@ -50,7 +51,8 @@
     "matches_other": "{{count}} MATCHES",
     "close": "Close search results",
     "sortedByBestMatch": "SORTED BY BEST MATCH",
-    "loadMore": "LOAD MORE ({{shown}} OF {{total}})"
+    "loadMore": "LOAD MORE ({{shown}} OF {{total}})",
+    "showMoreVideos": "MORE VIDEOS ({{shown}} OF {{total}})"
   },
   "frameCard": {
     "frame": "FRAME {{n}}"

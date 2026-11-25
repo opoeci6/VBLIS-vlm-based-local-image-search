@@ -31,6 +31,7 @@
     "itemCount_other": "{{count}} 项",
     "sortedByBestMatch": "按匹配度排序",
     "loadingMore": "正在加载更多结果（{{shown}} / {{total}}）",
+    "showMoreVideos": "显示更多视频（{{shown}} / {{total}}）",
     "showingItems": "显示 {{shown}} / {{total}} 项",
     "showingMatches": "显示 {{shown}} / {{total}} 个匹配项"
   },
@@ -45,7 +46,8 @@
     "matches_other": "{{count}} 个匹配项",
     "close": "关闭搜索结果",
     "sortedByBestMatch": "按匹配度排序",
-    "loadMore": "加载更多（{{shown}} / {{total}}）"
+    "loadMore": "加载更多（{{shown}} / {{total}}）",
+    "showMoreVideos": "更多视频（{{shown}} / {{total}}）"
   },
   "frameCard": {
     "frame": "第 {{n}} 帧"
